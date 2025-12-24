@@ -31,3 +31,9 @@ analysis/*.png
 
 # Logs
 *.log
+
+# macOS resource fork junk
+._*
+
+# optional: keep raw datasets out of git (recommended for bigger data)
+data/moth_sounds/
