@@ -1,3 +1,5 @@
+# scripts/run_full.ps1
+
 param(
   [string]$DataRoot   = "data\moth_sounds",
   [string]$CacheDir   = "data_cache",
@@ -12,97 +14,119 @@ param(
 $ErrorActionPreference = "Stop"
 $env:PYTHONPATH = (Get-Location).Path
 
+# Avoid OpenMP duplicate runtime crash on Windows (Intel MKL / matplotlib / numpy combos)
+$env:KMP_DUPLICATE_LIB_OK = "TRUE"
+
+function Invoke-Python([string]$cmd) {
+  Write-Host "  $cmd" -ForegroundColor DarkGray
+  iex $cmd
+  if ($LASTEXITCODE -ne 0) { throw "Python command failed ($LASTEXITCODE): $cmd" }
+}
+
+# --------------------- Run directory scheme: runs/<Variant>/<Variant>_### ---------------------
+$VariantSafe = ($Variant -replace '[^A-Za-z0-9_-]', '_')
+$variantDir  = Join-Path $RunsRoot $VariantSafe
+
+New-Item -ItemType Directory -Path $RunsRoot   -ErrorAction SilentlyContinue | Out-Null
+New-Item -ItemType Directory -Path $variantDir -ErrorAction SilentlyContinue | Out-Null
+
+$variantEsc = [regex]::Escape($VariantSafe)
+$maxN = 0
+Get-ChildItem -Path $variantDir -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+  if ($_.Name -match "^$variantEsc`_(\d+)$") {
+    $n = [int]$Matches[1]
+    if ($n -gt $maxN) { $maxN = $n }
+  }
+}
+$nextN = $maxN + 1
+$runId = "{0}_{1:000}" -f $VariantSafe, $nextN
+$runPath = Join-Path $variantDir $runId
+
+if (Test-Path $runPath) {
+  throw "Target run folder already exists: $runPath"
+}
+
 # Start wall-clock timer for the whole pipeline
 $pipelineStart = Get-Date
 
 Write-Host "== ASHADIP: full pipeline run ==" -ForegroundColor Cyan
 Write-Host "  DataRoot   = $DataRoot"   -ForegroundColor DarkGray
 Write-Host "  CacheDir   = $CacheDir"   -ForegroundColor DarkGray
+Write-Host "  Config     = $Config"     -ForegroundColor DarkGray
 Write-Host "  RunsRoot   = $RunsRoot"   -ForegroundColor DarkGray
 Write-Host "  Variant    = $Variant"    -ForegroundColor DarkGray
 Write-Host "  Device     = $Device"     -ForegroundColor DarkGray
 Write-Host "  SegmentSec = $SegmentSec" -ForegroundColor DarkGray
 Write-Host "  HopSec     = $HopSec"     -ForegroundColor DarkGray
-
-# --------------------- 1) Prep segments ---------------------
-Write-Host "`n[1/9] Prep segments..." -ForegroundColor Yellow
-python -m scripts.prep_segments `
-  --root $DataRoot `
-  --cache $CacheDir `
-  --sr 16000 `
-  --segment_sec $SegmentSec `
-  --hop $HopSec `
-  --silence_dbfs -40 `
-  --bandpass 100 3000
-
-# --------------------- 2) Extract features ---------------------
-Write-Host "`n[2/9] Extract features..." -ForegroundColor Yellow
-python -m scripts.extract_features `
-  --cache $CacheDir `
-  --n_mels 64 `
-  --n_fft 1024 `
-  --win_ms 25 `
-  --hop_ms 10 `
-  --cmvn
-
-# --------------------- 3) Train ExitNet ---------------------
-Write-Host "`n[3/9] Train ExitNet..." -ForegroundColor Yellow
-python -m training.train --config $Config
-
-# Find the latest run directory under RunsRoot
-$runDir = Get-ChildItem -Directory $RunsRoot | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-if (-not $runDir) { throw "No run directory found under '$RunsRoot'." }
-$runPath = $runDir.FullName
-$runId   = Split-Path $runPath -Leaf
-Write-Host "Using run: $runPath" -ForegroundColor Green
+Write-Host "  RunDir     = $runPath"    -ForegroundColor DarkGray
 
 # Common paths for later steps
 $SegCsv   = Join-Path $CacheDir "segments.csv"
 $FeatRoot = Join-Path $CacheDir "features"
 
-# --------------------- 4) Calibrate temperatures ---------------------
-Write-Host "`n[4/9] Calibrate temperatures..." -ForegroundColor Yellow
-python -m training.calibrate `
-  --run_dir      $runPath `
-  --segments_csv $SegCsv `
-  --features_root $FeatRoot
+# --------------------- 1/10) Prep segments ---------------------
+Write-Host "`n[1/10] Prep segments..." -ForegroundColor Yellow
+Invoke-Python ('python -m scripts.prep_segments --root "{0}" --cache "{1}" --sr 16000 --segment_sec {2} --hop {3} --silence_dbfs -40 --bandpass 100 3000' -f `
+  $DataRoot, $CacheDir, $SegmentSec, $HopSec)
 
-# --------------------- 5) Select threshold (tau) ---------------------
-Write-Host "`n[5/9] Select threshold (tau)..." -ForegroundColor Yellow
-python -m training.thresholds_offline `
-  --run_dir      $runPath `
-  --segments_csv $SegCsv `
-  --features_root $FeatRoot
+# --------------------- 2/10) Extract features ---------------------
+Write-Host "`n[2/10] Extract features..." -ForegroundColor Yellow
+Invoke-Python ('python -m scripts.extract_features --cache "{0}" --n_mels 64 --n_fft 1024 --win_ms 25 --hop_ms 10 --cmvn' -f `
+  $CacheDir)
 
-# --------------------- 6) Policy test ---------------------
-Write-Host "`n[6/9] Policy test..." -ForegroundColor Yellow
-python -m scripts.policy_test `
-  --run_dir      $runPath `
-  --segments_csv $SegCsv `
-  --features_root $FeatRoot
+# --------------------- 3/10) Train ExitNet ---------------------
+Write-Host "`n[3/10] Train ExitNet..." -ForegroundColor Yellow
+Invoke-Python ('python -m training.train --config "{0}" --run_dir "{1}" --device "{2}" --segment_sec {3} --hop_sec {4} --variant "{5}"' -f `
+  $Config, $runPath, $Device, $SegmentSec, $HopSec, $Variant)
 
-# --------------------- 7) Summarise run ---------------------
-Write-Host "`n[7/9] Summarise run..." -ForegroundColor Yellow
-python -m scripts.summarize_run `
-  --run_dir      $runPath `
-  --segments_csv $SegCsv `
-  --features_root $FeatRoot
+Write-Host "Using run: $runPath" -ForegroundColor Green
 
-# --------------------- 8) Analyse run (CM, ROC, learning curves) ---------------------
-Write-Host "`n[8/9] Analyse run (CM, ROC, learning curves)..." -ForegroundColor Yellow
-python -m scripts.analyse_run `
-  --run_dir      $runPath `
-  --segments_csv $SegCsv `
-  --features_root $FeatRoot
+# Save meta.json for traceability
+$createdAtIso = Get-Date -Format o
+$meta = @{
+  run_id       = $runId
+  variant      = $Variant
+  variant_safe = $VariantSafe
+  created_at   = $createdAtIso
+  runs_root    = $RunsRoot
+  variant_dir  = $variantDir
+  data_root    = $DataRoot
+  cache_dir    = $CacheDir
+  device       = $Device
+  segment_sec  = $SegmentSec
+  hop_sec      = $HopSec
+}
+$meta | ConvertTo-Json -Depth 4 | Out-File -FilePath (Join-Path $runPath "meta.json") -Encoding UTF8
 
-# --------------------- 9) Profile latency (on-device-style) ---------------------
-Write-Host "`n[9/9] Profile latency (on-device-style)..." -ForegroundColor Yellow
-python -m scripts.profile_latency `
-  --run_dir      $runPath `
-  --segments_csv $SegCsv `
-  --features_root $FeatRoot `
-  --variant $Variant `
-  --device  $Device
+# --------------------- 4/10) Calibrate temperatures ---------------------
+Write-Host "`n[4/10] Calibrate temperatures..." -ForegroundColor Yellow
+Invoke-Python ('python -m training.calibrate --run_dir "{0}" --segments_csv "{1}" --features_root "{2}"' -f `
+  $runPath, $SegCsv, $FeatRoot)
+
+# --------------------- 5/10) Select threshold (tau) ---------------------
+Write-Host "`n[5/10] Select threshold (tau)..." -ForegroundColor Yellow
+Invoke-Python ('python -m training.thresholds_offline --run_dir "{0}" --segments_csv "{1}" --features_root "{2}"' -f `
+  $runPath, $SegCsv, $FeatRoot)
+
+# --------------------- 6/10) Policy test ---------------------
+Write-Host "`n[6/10] Policy test..." -ForegroundColor Yellow
+Invoke-Python ('python -m scripts.policy_test --run_dir "{0}" --segments_csv "{1}" --features_root "{2}"' -f `
+  $runPath, $SegCsv, $FeatRoot)
+
+# --------------------- 7/10) Summarise run ---------------------
+Write-Host "`n[7/10] Summarise run..." -ForegroundColor Yellow
+Invoke-Python ('python -m scripts.summarize_run --run_dir "{0}" --segments_csv "{1}" --features_root "{2}"' -f `
+  $runPath, $SegCsv, $FeatRoot)
+
+# --------------------- 8/10) Analyse run (CM, ROC, learning curves) ---------------------
+Write-Host "`n[8/10] Analyse run (CM, ROC, learning curves)..." -ForegroundColor Yellow
+Invoke-Python ('python -m scripts.analyse_run --run_dir "{0}" --segments_csv "{1}" --features_root "{2}"' -f `
+  $runPath, $SegCsv, $FeatRoot)
+
+# --------------------- 9/10) Profile latency (on-device-style) ---------------------
+Write-Host "`n[9/10] Profile latency (on-device-style)..." -ForegroundColor Yellow
+Invoke-Python ('python -m scripts.profile_latency --run_dir "{0}" --segments_csv "{1}" --features_root "{2}" --variant "{3}" --device "{4}"' -f `
+  $runPath, $SegCsv, $FeatRoot, $Variant, $Device)
 
 # --------------------- Pipeline timing & logging ---------------------
 $pipelineEnd   = Get-Date
@@ -114,39 +138,30 @@ $timestampIso  = Get-Date -Format o
 Write-Host ""
 Write-Host ("Total wall-clock time: {0} seconds (~{1} minutes)" -f $totalSeconds, $totalMinutes) -ForegroundColor Cyan
 
-# Ensure analysis directory exists
-$analysisDir  = "analysis"
+$analysisDir = "analysis"
 New-Item -ItemType Directory -Path $analysisDir -ErrorAction SilentlyContinue | Out-Null
-
-# CSV path for pipeline runtimes
 $runtimeCsv = Join-Path $analysisDir "pipeline_runtime.csv"
 
-# If CSV doesn't exist, write header
 if (-not (Test-Path $runtimeCsv)) {
-    "timestamp,variant,segment_sec,hop_sec,device,cache_dir,runs_root,run_id,total_seconds,total_minutes" | Out-File $runtimeCsv -Encoding UTF8
+  "timestamp,variant,segment_sec,hop_sec,device,cache_dir,runs_root,run_id,total_seconds,total_minutes" | Out-File $runtimeCsv -Encoding UTF8
 }
 
-# Append one row for this run
 $csvLine = "{0},{1},{2},{3},{4},{5},{6},{7},{8},{9}" -f `
-    $timestampIso, `
-    $Variant, `
-    $SegmentSec, `
-    $HopSec, `
-    $Device, `
-    $CacheDir, `
-    $RunsRoot, `
-    $runId, `
-    $totalSeconds, `
-    $totalMinutes
+  $timestampIso, `
+  $Variant, `
+  $SegmentSec, `
+  $HopSec, `
+  $Device, `
+  $CacheDir, `
+  $RunsRoot, `
+  $runId, `
+  $totalSeconds, `
+  $totalMinutes
 
 Add-Content -Path $runtimeCsv -Value $csvLine
-
-Write-Host "`n== Done. Artifacts at: $runPath ==" -ForegroundColor Cyan
-Write-Host "You can now regenerate LaTeX tables if needed (classification, variants, on-device)." -ForegroundColor DarkGray
 Write-Host "Pipeline runtime logged to: $runtimeCsv" -ForegroundColor DarkGray
 
-
-# --------------------- 10) Generate reports & LaTeX tables ---------------------
+# --------------------- 10/10) Generate reports & LaTeX tables ---------------------
 Write-Host "`n[10/10] Generate reports & LaTeX tables..." -ForegroundColor Yellow
 powershell -ExecutionPolicy Bypass -File scripts\run_reports.ps1 `
   -RunDir $runPath `
@@ -155,5 +170,3 @@ powershell -ExecutionPolicy Bypass -File scripts\run_reports.ps1 `
 
 Write-Host "`n== Done. Artifacts at: $runPath ==" -ForegroundColor Cyan
 Write-Host "All reports + LaTeX tables up to date (classification, variants, on-device)." -ForegroundColor DarkGray
-
-

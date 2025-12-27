@@ -1,10 +1,17 @@
+# utils/config.py
+
 import argparse, yaml, os
 
 
 def load_config(path):
-    with open(path, 'r') as f:
+    with open(path, 'r', encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
     return cfg
+
+
+def save_config(cfg, path):
+    with open(path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(cfg, f, sort_keys=False)
 
 
 def parse_args_with_config():
