@@ -66,6 +66,11 @@ def _parse_extra_args():
                    help="Explicit run directory to write outputs.")
     p.add_argument("--device", type=str, default=None,
                    help="Force device: cpu | cuda (default: auto).")
+
+    # NEW: allow run_full.ps1 to point training at data_caches/<Variant>/<cache_id>
+    p.add_argument("--cache_dir", type=str, default=None,
+                   help="Override cache directory containing segments.csv + features/.")
+
     p.add_argument("--segment_sec", type=float, default=None,
                    help="Optional: record segment_sec in effective config.")
     p.add_argument("--hop_sec", type=float, default=None,
@@ -90,6 +95,11 @@ def main():
     paths = (cfg.get("paths") or {})
     runs_root = paths.get("runs_root", "runs")
     cache_root = paths.get("cache_root", "data_cache")
+
+    # NEW/CHANGED: allow CLI override of cache_root
+    if extra.cache_dir:
+        cache_root = extra.cache_dir
+
     ensure_dirs(runs_root)
 
     # Choose run_dir
@@ -106,7 +116,7 @@ def main():
     # --------- Build & save EFFECTIVE CONFIG used for this run ---------
     cfg.setdefault("paths", {})
     cfg["paths"]["runs_root"] = runs_root
-    cfg["paths"]["cache_root"] = cache_root
+    cfg["paths"]["cache_root"] = cache_root   # NEW/CHANGED: record the actual cache used
 
     cfg.setdefault("runtime", {})
     cfg["runtime"]["device"] = device
@@ -124,6 +134,7 @@ def main():
     save_config(cfg, os.path.join(run_dir, "config_used.yaml"))
     # -------------------------------------------------------------------
 
+    # Uses cache_root (which may be overridden by --cache_dir)
     seg_csv = os.path.join(cache_root, "segments.csv")
     feat_root = os.path.join(cache_root, "features")
 

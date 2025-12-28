@@ -7,6 +7,7 @@ param(
   [string]$Variant      = "V0",   # used only to help resolve RunDir when short id is provided
   [string]$DeviceFilter = "cpu",  # currently used only as a label in logs
 
+  # NOTE: these are defaults; if not explicitly provided, we will override from meta.json.cache_dir
   [string]$SegmentsCsv  = "data_cache\segments.csv",
   [string]$FeaturesRoot = "data_cache\features",
 
@@ -30,7 +31,7 @@ Write-Host ""
 # Support:
 #   1) RunDir is an existing path
 #   2) RunDir is a short run id like "EA_003" -> runs\<VariantSafe>\EA_003
-#   3) Legacy fallback: runs\<RunDir>  (will be rejected by strict meta/summary requirement)
+#   3) Legacy fallback: runs\<RunDir>  (will be rejected by strict meta requirement)
 $VariantSafe = ($Variant -replace '[^A-Za-z0-9_-]', '_')
 
 function Resolve-RunPath([string]$InputRunDir) {
@@ -54,29 +55,22 @@ function Resolve-RunPath([string]$InputRunDir) {
 $runPath = Resolve-RunPath $RunDir
 Write-Host "Resolved RunDir -> $runPath" -ForegroundColor Green
 
-# --------------------- STRICT: require meta.json + summary.json ---------------------
+# --------------------- STRICT: require meta.json ---------------------
 $metaPath = Join-Path $runPath "meta.json"
-$summaryPath = Join-Path $runPath "summary.json"
-
 if (-not (Test-Path $metaPath)) {
   throw "STRICT mode: meta.json not found at $metaPath. This script only supports NEW runs (runs/<Variant>/<RunId>/...)."
 }
-if (-not (Test-Path $summaryPath)) {
-  throw "STRICT mode: summary.json not found at $summaryPath. Run summarize_run first."
-}
 
-# Read meta.json for canonical run_id + variant
+# Read meta.json for canonical run_id + variant + cache_dir
 $meta = Get-Content -Raw -Path $metaPath | ConvertFrom-Json
 
 $RunIdEffective = $meta.run_id
 if (-not $RunIdEffective -or "$RunIdEffective".Trim().Length -eq 0) {
-  # fallback to folder name if meta is missing run_id (shouldn't happen)
   $RunIdEffective = Split-Path $runPath -Leaf
 }
 
 $VariantEffective = $meta.variant
 if (-not $VariantEffective -or "$VariantEffective".Trim().Length -eq 0) {
-  # fallback to meta.variant_safe or the Variant arg
   if ($meta.variant_safe -and "$($meta.variant_safe)".Trim().Length -gt 0) {
     $VariantEffective = $meta.variant_safe
   } else {
@@ -85,6 +79,42 @@ if (-not $VariantEffective -or "$VariantEffective".Trim().Length -eq 0) {
 }
 
 Write-Host "Canonical (from meta.json): Variant=$VariantEffective, RunId=$RunIdEffective" -ForegroundColor Green
+
+# --------------------- NEW: Auto-resolve cache paths from meta.json ---------------------
+# If user didn't explicitly override SegmentsCsv/FeaturesRoot (still at old defaults),
+# use meta.cache_dir to point to data_caches/<Variant>/<CacheId>/...
+$defaultSeg = "data_cache\segments.csv"
+$defaultFeat = "data_cache\features"
+
+$metaCacheDir = $meta.cache_dir
+if ($metaCacheDir -and "$metaCacheDir".Trim().Length -gt 0) {
+  $metaCacheDirPath = $metaCacheDir
+  # If meta.cache_dir is relative, make it relative to project root (current working directory)
+  if (-not [System.IO.Path]::IsPathRooted($metaCacheDirPath)) {
+    $metaCacheDirPath = Join-Path (Get-Location).Path $metaCacheDirPath
+  }
+
+  if (($SegmentsCsv -eq $defaultSeg) -or [string]::IsNullOrWhiteSpace($SegmentsCsv)) {
+    $SegmentsCsv = Join-Path $metaCacheDirPath "segments.csv"
+  }
+  if (($FeaturesRoot -eq $defaultFeat) -or [string]::IsNullOrWhiteSpace($FeaturesRoot)) {
+    $FeaturesRoot = Join-Path $metaCacheDirPath "features"
+  }
+
+  Write-Host "Cache (from meta.json): $metaCacheDir" -ForegroundColor DarkGray
+  Write-Host "Using SegmentsCsv  -> $SegmentsCsv" -ForegroundColor DarkGray
+  Write-Host "Using FeaturesRoot -> $FeaturesRoot" -ForegroundColor DarkGray
+} else {
+  Write-Host "[warn] meta.json has no cache_dir. Using provided SegmentsCsv/FeaturesRoot as-is." -ForegroundColor DarkYellow
+}
+
+# Validate cache paths exist (fail early, clearer errors)
+if (-not (Test-Path $SegmentsCsv)) {
+  throw "segments.csv not found: $SegmentsCsv"
+}
+if (-not (Test-Path $FeaturesRoot)) {
+  throw "features root not found: $FeaturesRoot"
+}
 
 # Ensure analysis folders exist
 New-Item -ItemType Directory -Path "analysis" -ErrorAction SilentlyContinue | Out-Null
@@ -135,7 +165,7 @@ if (-not (Test-Path $analysisJson)) {
 # Use canonical variant from meta.json for output filename
 $outClsTex = "analysis\tables\{0}_classification_table.tex" -f $VariantEffective
 
-# Use canonical run_id in label (this is what you wanted: EA_003 etc.)
+# Use canonical run_id in label (EA_003 etc.)
 $runLabel  = $RunIdEffective
 
 python -m scripts.analysis_to_latex `
