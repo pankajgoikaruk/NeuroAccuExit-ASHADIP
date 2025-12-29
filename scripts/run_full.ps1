@@ -100,7 +100,7 @@ if ($cacheReady) {
 
 # --------------------- 1/10) Prep segments ---------------------
 Write-Host "`n[1/10] Prep segments..." -ForegroundColor Yellow
-Invoke-Python ('python -m scripts.prep_segments --root "{0}" --cache "{1}" --sr 16000 --segment_sec {2} --hop {3} --silence_dbfs -40 --bandpass 100 3000' -f `
+Invoke-Python ('python -m scripts.prep_segments --root "{0}" --cache "{1}" --sr 16000 --segment_sec {2} --hop {3} --silence_dbfs -40 --bandpass 100 3000 --config "$Config"' -f `
   $DataRoot, $variantCacheDir, $SegmentSec, $HopSec)
 
 # --------------------- 2/10) Extract features ---------------------
