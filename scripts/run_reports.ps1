@@ -159,7 +159,8 @@ Write-Host "`n[2/5] Summarising run (summary.json, calibration plots)..." -Foreg
 python -m scripts.summarize_run `
   --run_dir "$runPath" `
   --segments_csv "$SegmentsCsv" `
-  --features_root "$FeaturesRoot"
+  --features_root "$FeaturesRoot" `
+  --no_log
 
 Write-Host "  -> summarize_run finished." -ForegroundColor Green
 

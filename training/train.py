@@ -3,6 +3,8 @@
 import os
 import sys
 import argparse
+import random
+import numpy as np
 
 import torch
 from torch.optim import Adam
@@ -13,6 +15,23 @@ from utils.logging import make_run_dir, save_json
 from data.datasets import make_loaders
 from adapters.audio_adapter import TinyAudioCNN
 from models.exit_net import ExitNet
+
+
+def set_global_seed(seed: int):
+    seed = int(seed)
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+    # Determinism knobs (safe on CPU; important if you ever use CUDA)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    try:
+        torch.use_deterministic_algorithms(True)
+    except Exception:
+        pass
 
 
 def train_one_epoch(model, dl, opt, device, loss_w):
@@ -67,7 +86,7 @@ def _parse_extra_args():
     p.add_argument("--device", type=str, default=None,
                    help="Force device: cpu | cuda (default: auto).")
 
-    # NEW: allow run_full.ps1 to point training at data_caches/<Variant>/<cache_id>
+    # allow run_full.ps1 to point training at data_caches/<Variant>/<cache_id>
     p.add_argument("--cache_dir", type=str, default=None,
                    help="Override cache directory containing segments.csv + features/.")
 
@@ -86,6 +105,10 @@ def main():
     extra = _parse_extra_args()
     cfg = parse_args_with_config()
 
+    # ✅ FIX: use your function name (no more unresolved set_seed)
+    seed = int(cfg.get("seed", 42))
+    set_global_seed(seed)
+
     # Device selection
     if extra.device is not None:
         device = extra.device
@@ -96,7 +119,7 @@ def main():
     runs_root = paths.get("runs_root", "runs")
     cache_root = paths.get("cache_root", "data_cache")
 
-    # NEW/CHANGED: allow CLI override of cache_root
+    # CLI override cache directory
     if extra.cache_dir:
         cache_root = extra.cache_dir
 
@@ -113,17 +136,16 @@ def main():
     ckpt_dir = os.path.join(run_dir, "ckpt")
     ensure_dirs(ckpt_dir)
 
-    # --------- Build & save EFFECTIVE CONFIG used for this run ---------
+    # --------- Save EFFECTIVE CONFIG used for this run ---------
     cfg.setdefault("paths", {})
     cfg["paths"]["runs_root"] = runs_root
-    cfg["paths"]["cache_root"] = cache_root   # NEW/CHANGED: record the actual cache used
+    cfg["paths"]["cache_root"] = cache_root
 
     cfg.setdefault("runtime", {})
     cfg["runtime"]["device"] = device
     if extra.variant is not None:
         cfg["runtime"]["variant"] = extra.variant
 
-    # Record segment/hop if provided (helps reproducibility)
     if extra.segment_sec is not None or extra.hop_sec is not None:
         cfg.setdefault("audio", {})
         if extra.segment_sec is not None:
@@ -132,9 +154,8 @@ def main():
             cfg["audio"]["segment_hop"] = float(extra.hop_sec)
 
     save_config(cfg, os.path.join(run_dir, "config_used.yaml"))
-    # -------------------------------------------------------------------
+    # -----------------------------------------------------------
 
-    # Uses cache_root (which may be overridden by --cache_dir)
     seg_csv = os.path.join(cache_root, "segments.csv")
     feat_root = os.path.join(cache_root, "features")
 
@@ -146,7 +167,8 @@ def main():
     loss_w = tr.get("loss_weights", [0.3, 0.3, 1.0])
     epochs = int(tr.get("epochs", 40))
 
-    dl_tr, dl_va, dl_te, label2id = make_loaders(seg_csv, feat_root, bs, nw)
+    # ✅ Deterministic loaders (shuffle + workers) because we pass seed
+    dl_tr, dl_va, dl_te, label2id = make_loaders(seg_csv, feat_root, bs, nw, seed=seed)
 
     n_mels = int((cfg.get("features") or {}).get("n_mels", 64))
     num_classes = int((cfg.get("model") or {}).get("num_classes", 2))
