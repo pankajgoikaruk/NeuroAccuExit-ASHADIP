@@ -7,6 +7,7 @@ param(
   [string]$Variant      = "V0",   # used only to help resolve RunDir when short id is provided
   [string]$DeviceFilter = "cpu",  # currently used only as a label in logs
 
+  # NOTE: defaults; if not explicitly provided, we will override from meta.json.cache_dir
   [string]$SegmentsCsv  = "data_cache\segments.csv",
   [string]$FeaturesRoot = "data_cache\features",
 
@@ -16,6 +17,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $env:PYTHONPATH = (Get-Location).Path
+$env:KMP_DUPLICATE_LIB_OK = "TRUE"
 
 Write-Host "== ASHADIP: generate reports & tables ==" -ForegroundColor Cyan
 Write-Host "  RunDir       = $RunDir"
@@ -30,53 +32,63 @@ Write-Host ""
 # Support:
 #   1) RunDir is an existing path
 #   2) RunDir is a short run id like "EA_003" -> runs\<VariantSafe>\EA_003
-#   3) Legacy fallback: runs\<RunDir>  (will be rejected by strict meta/summary requirement)
+#   3) Try auto-find: runs\*\EA_003  (helps if Variant arg is wrong)
+#   4) Legacy fallback: runs\<RunDir> (likely rejected by strict meta requirement)
 $VariantSafe = ($Variant -replace '[^A-Za-z0-9_-]', '_')
 
 function Resolve-RunPath([string]$InputRunDir) {
+  # Case 1: direct path exists
   if (Test-Path $InputRunDir) {
     return (Resolve-Path $InputRunDir).Path
   }
 
+  # Case 2: runs\<VariantSafe>\<InputRunDir>
   $cand2 = Join-Path (Join-Path $RunsRoot $VariantSafe) $InputRunDir
   if (Test-Path $cand2) {
     return (Resolve-Path $cand2).Path
   }
 
-  $cand3 = Join-Path $RunsRoot $InputRunDir
-  if (Test-Path $cand3) {
-    return (Resolve-Path $cand3).Path
+  # Case 3: auto-find under runs\*\InputRunDir
+  $matches = @()
+  if (Test-Path $RunsRoot) {
+    Get-ChildItem -Path $RunsRoot -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+      $cand = Join-Path $_.FullName $InputRunDir
+      if (Test-Path $cand) { $matches += (Resolve-Path $cand).Path }
+    }
+  }
+  if ($matches.Count -eq 1) { return $matches[0] }
+  if ($matches.Count -gt 1) {
+    throw "Ambiguous RunDir '$InputRunDir'. Found multiple matches under '$RunsRoot': `n - " + ($matches -join "`n - ")
   }
 
-  throw "Run directory not found. Tried: '$InputRunDir', '$cand2', '$cand3'"
+  # Case 4: legacy runs\<InputRunDir>
+  $cand4 = Join-Path $RunsRoot $InputRunDir
+  if (Test-Path $cand4) {
+    return (Resolve-Path $cand4).Path
+  }
+
+  throw "Run directory not found. Tried: '$InputRunDir', '$cand2', '$RunsRoot\*\$InputRunDir', '$cand4'"
 }
 
 $runPath = Resolve-RunPath $RunDir
 Write-Host "Resolved RunDir -> $runPath" -ForegroundColor Green
 
-# --------------------- STRICT: require meta.json + summary.json ---------------------
+# --------------------- STRICT: require meta.json ---------------------
 $metaPath = Join-Path $runPath "meta.json"
-$summaryPath = Join-Path $runPath "summary.json"
-
 if (-not (Test-Path $metaPath)) {
   throw "STRICT mode: meta.json not found at $metaPath. This script only supports NEW runs (runs/<Variant>/<RunId>/...)."
 }
-if (-not (Test-Path $summaryPath)) {
-  throw "STRICT mode: summary.json not found at $summaryPath. Run summarize_run first."
-}
 
-# Read meta.json for canonical run_id + variant
+# Read meta.json for canonical run_id + variant + cache_dir
 $meta = Get-Content -Raw -Path $metaPath | ConvertFrom-Json
 
 $RunIdEffective = $meta.run_id
 if (-not $RunIdEffective -or "$RunIdEffective".Trim().Length -eq 0) {
-  # fallback to folder name if meta is missing run_id (shouldn't happen)
   $RunIdEffective = Split-Path $runPath -Leaf
 }
 
 $VariantEffective = $meta.variant
 if (-not $VariantEffective -or "$VariantEffective".Trim().Length -eq 0) {
-  # fallback to meta.variant_safe or the Variant arg
   if ($meta.variant_safe -and "$($meta.variant_safe)".Trim().Length -gt 0) {
     $VariantEffective = $meta.variant_safe
   } else {
@@ -86,9 +98,46 @@ if (-not $VariantEffective -or "$VariantEffective".Trim().Length -eq 0) {
 
 Write-Host "Canonical (from meta.json): Variant=$VariantEffective, RunId=$RunIdEffective" -ForegroundColor Green
 
-# Ensure analysis folders exist
+# --------------------- Auto-resolve cache paths from meta.json ---------------------
+$defaultSeg  = "data_cache\segments.csv"
+$defaultFeat = "data_cache\features"
+
+$metaCacheDir = $meta.cache_dir
+if ($metaCacheDir -and "$metaCacheDir".Trim().Length -gt 0) {
+  $metaCacheDirPath = $metaCacheDir
+
+  # If meta.cache_dir is relative, make it relative to project root (cwd)
+  if (-not [System.IO.Path]::IsPathRooted($metaCacheDirPath)) {
+    $metaCacheDirPath = Join-Path (Get-Location).Path $metaCacheDirPath
+  }
+
+  # Override only if user didn't explicitly pass custom values (still default)
+  if (($SegmentsCsv -eq $defaultSeg) -or [string]::IsNullOrWhiteSpace($SegmentsCsv)) {
+    $SegmentsCsv = Join-Path $metaCacheDirPath "segments.csv"
+  }
+  if (($FeaturesRoot -eq $defaultFeat) -or [string]::IsNullOrWhiteSpace($FeaturesRoot)) {
+    $FeaturesRoot = Join-Path $metaCacheDirPath "features"
+  }
+
+  Write-Host "Cache (from meta.json): $metaCacheDir" -ForegroundColor DarkGray
+  Write-Host "Using SegmentsCsv  -> $SegmentsCsv" -ForegroundColor DarkGray
+  Write-Host "Using FeaturesRoot -> $FeaturesRoot" -ForegroundColor DarkGray
+} else {
+  Write-Host "[warn] meta.json has no cache_dir. Using provided SegmentsCsv/FeaturesRoot as-is." -ForegroundColor DarkYellow
+}
+
+# Validate cache paths exist (fail early)
+if (-not (Test-Path $SegmentsCsv)) { throw "segments.csv not found: $SegmentsCsv" }
+if (-not (Test-Path $FeaturesRoot)) { throw "features root not found: $FeaturesRoot" }
+
+# Ensure analysis folders exist (global + per-run)
 New-Item -ItemType Directory -Path "analysis" -ErrorAction SilentlyContinue | Out-Null
 New-Item -ItemType Directory -Path "analysis\tables" -ErrorAction SilentlyContinue | Out-Null
+
+# Per-run analysis dir to avoid overwriting tables
+$VariantEffectiveSafe = ($VariantEffective -replace '[^A-Za-z0-9_-]', '_')
+$runAnalysisDir = Join-Path (Join-Path "analysis\runs" $VariantEffectiveSafe) $RunIdEffective
+New-Item -ItemType Directory -Path $runAnalysisDir -ErrorAction SilentlyContinue | Out-Null
 
 # ---------------------------------------------------------------------------
 # [1/5] Ensure report.json exists (test-set classification per exit)
@@ -106,12 +155,12 @@ Write-Host "  -> training.eval finished." -ForegroundColor Green
 # [2/5] Summarise run (summary.json + calibration plots)
 # ---------------------------------------------------------------------------
 Write-Host "`n[2/5] Summarising run (summary.json, calibration plots)..." -ForegroundColor Yellow
-$env:KMP_DUPLICATE_LIB_OK = "TRUE"
 
 python -m scripts.summarize_run `
   --run_dir "$runPath" `
   --segments_csv "$SegmentsCsv" `
-  --features_root "$FeaturesRoot"
+  --features_root "$FeaturesRoot" `
+  --no_log
 
 Write-Host "  -> summarize_run finished." -ForegroundColor Green
 
@@ -119,23 +168,23 @@ Write-Host "  -> summarize_run finished." -ForegroundColor Green
 # [3/5] Global variants summary CSV (analysis/all_runs_summary.csv)
 # ---------------------------------------------------------------------------
 Write-Host "`n[3/5] Updating global variants summary (analysis/all_runs_summary.csv)..." -ForegroundColor Yellow
+
 python -m scripts.compare_variants --root .
+
 Write-Host "  -> compare_variants finished." -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-# [4/5] Per-run classification LaTeX table for this run
+# [4/5] Per-run classification LaTeX table (no overwrites)
+#     analysis/runs/<Variant>/<RunId>/classification_table.*
 # ---------------------------------------------------------------------------
-Write-Host "`n[4/5] Generating classification LaTeX table for this run..." -ForegroundColor Yellow
+Write-Host "`n[4/5] Generating classification table for this run..." -ForegroundColor Yellow
 
 $analysisJson = Join-Path $runPath "analysis_run.json"
 if (-not (Test-Path $analysisJson)) {
   throw "analysis_run.json not found at $analysisJson. Did analyse_run.py run?"
 }
 
-# Use canonical variant from meta.json for output filename
-$outClsTex = "analysis\tables\{0}_classification_table.tex" -f $VariantEffective
-
-# Use canonical run_id in label (this is what you wanted: EA_003 etc.)
+$outClsTex = Join-Path $runAnalysisDir "classification_table.tex"
 $runLabel  = $RunIdEffective
 
 python -m scripts.analysis_to_latex `
@@ -143,10 +192,10 @@ python -m scripts.analysis_to_latex `
   --out_tex "$outClsTex" `
   --run_label "$runLabel"
 
-Write-Host "  -> Wrote classification table: $outClsTex" -ForegroundColor Green
+Write-Host "  -> Wrote per-run classification table: $outClsTex" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-# [5/5] Cross-variant summary + on-device performance tables
+# [5/5] Cross-variant summary + on-device performance tables (global)
 # ---------------------------------------------------------------------------
 Write-Host "`n[5/5] Generating cross-variant & on-device LaTeX tables..." -ForegroundColor Yellow
 
@@ -174,4 +223,6 @@ else {
   Write-Host "  (skip) analysis\on_device_summary.csv not found; run profile_latency.py / run_full.ps1 first." -ForegroundColor DarkYellow
 }
 
-Write-Host "`n== Done. Reports & LaTeX tables updated for $VariantEffective / $RunIdEffective ($runPath) ==" -ForegroundColor Cyan
+Write-Host "`n== Done. Reports updated for $VariantEffective / $RunIdEffective ==" -ForegroundColor Cyan
+Write-Host "Per-run tables at: $runAnalysisDir" -ForegroundColor DarkGray
+Write-Host "Global tables at : analysis\tables" -ForegroundColor DarkGray
