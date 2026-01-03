@@ -1,5 +1,4 @@
 # scripts/run_full.ps1
-
 param(
   [string]$DataRoot   = "data\moth_sounds",
 
@@ -12,6 +11,14 @@ param(
   [string]$Config     = "configs\audio_moth.yaml",
   [string]$RunsRoot   = "runs",
   [string]$Variant    = "V0",
+
+  # NEW: Policy override
+  #   auto  -> follow Variant rule (EA for EA/v0.2, otherwise greedy)
+  #   greedy-> force greedy tau
+  #   ea    -> force Depth-EA
+  [ValidateSet("auto","greedy","ea")]
+  [string]$Policy     = "auto",
+
   [string]$Device     = "cpu",
   [double]$SegmentSec = 1.0,
   [double]$HopSec     = 0.5
@@ -37,6 +44,26 @@ function Num-ToId([double]$x) {
 $VariantSafe = ($Variant -replace '[^A-Za-z0-9_-]', '_')
 $variantRunDir = Join-Path $RunsRoot $VariantSafe
 
+# --------------------- Decide whether to run Depth-EA ---------------------
+# Variant-based rule
+$VariantLooksEA = ($Variant -match '^(?i:EA|v0\.?2|v0_?2)$')
+
+# Policy override rule
+$IsDepthEA = $false
+if ($Policy -eq "ea") {
+  $IsDepthEA = $true
+} elseif ($Policy -eq "greedy") {
+  $IsDepthEA = $false
+} else {
+  # auto: follow Variant rule
+  $IsDepthEA = $VariantLooksEA
+}
+
+Write-Host "== ASHADIP: full pipeline run ==" -ForegroundColor Cyan
+Write-Host "  Variant         = $Variant" -ForegroundColor DarkGray
+Write-Host "  Policy(param)   = $Policy" -ForegroundColor DarkGray
+Write-Host "  Depth-EA active = $IsDepthEA" -ForegroundColor DarkGray
+
 New-Item -ItemType Directory -Path $RunsRoot       -ErrorAction SilentlyContinue | Out-Null
 New-Item -ItemType Directory -Path $variantRunDir  -ErrorAction SilentlyContinue | Out-Null
 
@@ -54,11 +81,9 @@ $runPath = Join-Path $variantRunDir $runId
 if (Test-Path $runPath) { throw "Target run folder already exists: $runPath" }
 
 # --------------------- Cache directory scheme: data_caches/<Variant>/<cache_id>/... ---------------------
-# Auto CacheId if not provided (encode the things that change the cache)
 if ([string]::IsNullOrWhiteSpace($CacheId)) {
   $segId = Num-ToId $SegmentSec
   $hopId = Num-ToId $HopSec
-  # Keep it short but informative; extend later if you change feature params
   $CacheId = "seg$segId" + "_hop$hopId" + "_bp100-3000" + "_mels64"
 }
 
@@ -69,21 +94,17 @@ New-Item -ItemType Directory -Path $CacheRoot -ErrorAction SilentlyContinue | Ou
 New-Item -ItemType Directory -Path (Join-Path $CacheRoot $VariantSafe) -ErrorAction SilentlyContinue | Out-Null
 New-Item -ItemType Directory -Path $variantCacheDir -ErrorAction SilentlyContinue | Out-Null
 
-# Common cache paths
 $SegCsv   = Join-Path $variantCacheDir "segments.csv"
 $FeatRoot = Join-Path $variantCacheDir "features"
 
-# Start wall-clock timer
 $pipelineStart = Get-Date
 
-Write-Host "== ASHADIP: full pipeline run ==" -ForegroundColor Cyan
 Write-Host "  DataRoot   = $DataRoot"        -ForegroundColor DarkGray
 Write-Host "  CacheRoot  = $CacheRoot"       -ForegroundColor DarkGray
 Write-Host "  CacheId    = $CacheIdSafe"     -ForegroundColor DarkGray
 Write-Host "  CacheDir   = $variantCacheDir" -ForegroundColor DarkGray
 Write-Host "  Config     = $Config"          -ForegroundColor DarkGray
 Write-Host "  RunsRoot   = $RunsRoot"        -ForegroundColor DarkGray
-Write-Host "  Variant    = $Variant"         -ForegroundColor DarkGray
 Write-Host "  Device     = $Device"          -ForegroundColor DarkGray
 Write-Host "  SegmentSec = $SegmentSec"      -ForegroundColor DarkGray
 Write-Host "  HopSec     = $HopSec"          -ForegroundColor DarkGray
@@ -94,19 +115,23 @@ $cacheReady = (Test-Path $SegCsv) -and (Test-Path $FeatRoot)
 if ($cacheReady) {
   Write-Host "`n[cache] Reusing existing cache: $variantCacheDir" -ForegroundColor Green
 } else {
-  # run step 1 + 2
+  Write-Host "`n[cache] Cache not ready; will generate segments + features." -ForegroundColor DarkYellow
 }
 
-
 # --------------------- 1/10) Prep segments ---------------------
-Write-Host "`n[1/10] Prep segments..." -ForegroundColor Yellow
-Invoke-Python ('python -m scripts.prep_segments --root "{0}" --cache "{1}" --sr 16000 --segment_sec {2} --hop {3} --silence_dbfs -40 --bandpass 100 3000 --config "$Config"' -f `
-  $DataRoot, $variantCacheDir, $SegmentSec, $HopSec)
+if (-not $cacheReady) {
+  Write-Host "`n[1/10] Prep segments..." -ForegroundColor Yellow
+  Invoke-Python ('python -m scripts.prep_segments --root "{0}" --cache "{1}" --sr 16000 --segment_sec {2} --hop {3} --silence_dbfs -40 --bandpass 100 3000 --config "{4}"' -f `
+    $DataRoot, $variantCacheDir, $SegmentSec, $HopSec, $Config)
 
-# --------------------- 2/10) Extract features ---------------------
-Write-Host "`n[2/10] Extract features..." -ForegroundColor Yellow
-Invoke-Python ('python -m scripts.extract_features --cache "{0}" --n_mels 64 --n_fft 1024 --win_ms 25 --hop_ms 10 --cmvn' -f `
-  $variantCacheDir)
+  # --------------------- 2/10) Extract features ---------------------
+  Write-Host "`n[2/10] Extract features..." -ForegroundColor Yellow
+  Invoke-Python ('python -m scripts.extract_features --cache "{0}" --n_mels 64 --n_fft 1024 --win_ms 25 --hop_ms 10 --cmvn' -f `
+    $variantCacheDir)
+} else {
+  Write-Host "`n[1/10] Prep segments... (skip; cache ready)" -ForegroundColor DarkGray
+  Write-Host "[2/10] Extract features... (skip; cache ready)" -ForegroundColor DarkGray
+}
 
 # --------------------- 3/10) Train ExitNet ---------------------
 Write-Host "`n[3/10] Train ExitNet..." -ForegroundColor Yellow
@@ -121,6 +146,8 @@ $meta = @{
   run_id       = $runId
   variant      = $Variant
   variant_safe = $VariantSafe
+  policy       = $Policy
+  depth_ea     = $IsDepthEA
   created_at   = $createdAtIso
   runs_root    = $RunsRoot
   variant_dir  = $variantRunDir
@@ -135,22 +162,33 @@ $meta = @{
   hop_sec      = $HopSec
 }
 New-Item -ItemType Directory -Path $runPath -ErrorAction SilentlyContinue | Out-Null
-$meta | ConvertTo-Json -Depth 5 | Out-File -FilePath (Join-Path $runPath "meta.json") -Encoding UTF8
+$meta | ConvertTo-Json -Depth 6 | Out-File -FilePath (Join-Path $runPath "meta.json") -Encoding UTF8
 
 # --------------------- 4/10) Calibrate temperatures ---------------------
 Write-Host "`n[4/10] Calibrate temperatures..." -ForegroundColor Yellow
 Invoke-Python ('python -m training.calibrate --run_dir "{0}" --segments_csv "{1}" --features_root "{2}"' -f `
   $runPath, $SegCsv, $FeatRoot)
 
-# --------------------- 5/10) Select threshold (tau) ---------------------
-Write-Host "`n[5/10] Select threshold (tau)..." -ForegroundColor Yellow
-Invoke-Python ('python -m training.thresholds_offline --run_dir "{0}" --segments_csv "{1}" --features_root "{2}"' -f `
-  $runPath, $SegCsv, $FeatRoot)
+# --------------------- 5/10) Select thresholds (tau OR EA threshold) ---------------------
+if ($IsDepthEA) {
+  Write-Host "`n[5/10] Select EA threshold (Depth-EA)..." -ForegroundColor Yellow
+  Invoke-Python ('python -m training.ea_thresholds_offline --run_dir "{0}" --segments_csv "{1}" --features_root "{2}"' -f `
+    $runPath, $SegCsv, $FeatRoot)
+} else {
+  Write-Host "`n[5/10] Select threshold (tau)..." -ForegroundColor Yellow
+  Invoke-Python ('python -m training.thresholds_offline --run_dir "{0}" --segments_csv "{1}" --features_root "{2}"' -f `
+    $runPath, $SegCsv, $FeatRoot)
+}
 
 # --------------------- 6/10) Policy test ---------------------
 Write-Host "`n[6/10] Policy test..." -ForegroundColor Yellow
-Invoke-Python ('python -m scripts.policy_test --run_dir "{0}" --segments_csv "{1}" --features_root "{2}"' -f `
-  $runPath, $SegCsv, $FeatRoot)
+if ($IsDepthEA) {
+  Invoke-Python ('python -m scripts.policy_test --policy ea --run_dir "{0}" --segments_csv "{1}" --features_root "{2}"' -f `
+    $runPath, $SegCsv, $FeatRoot)
+} else {
+  Invoke-Python ('python -m scripts.policy_test --policy greedy --run_dir "{0}" --segments_csv "{1}" --features_root "{2}"' -f `
+    $runPath, $SegCsv, $FeatRoot)
+}
 
 # --------------------- 7/10) Summarise run ---------------------
 Write-Host "`n[7/10] Summarise run..." -ForegroundColor Yellow
@@ -182,11 +220,11 @@ New-Item -ItemType Directory -Path $analysisDir -ErrorAction SilentlyContinue | 
 $runtimeCsv = Join-Path $analysisDir "pipeline_runtime.csv"
 
 if (-not (Test-Path $runtimeCsv)) {
-  "timestamp,variant,segment_sec,hop_sec,device,cache_dir,runs_root,run_id,total_seconds,total_minutes" | Out-File $runtimeCsv -Encoding UTF8
+  "timestamp,variant,policy,depth_ea,segment_sec,hop_sec,device,cache_dir,runs_root,run_id,total_seconds,total_minutes" | Out-File $runtimeCsv -Encoding UTF8
 }
 
-$csvLine = "{0},{1},{2},{3},{4},{5},{6},{7},{8},{9}" -f `
-  $timestampIso, $Variant, $SegmentSec, $HopSec, $Device, $variantCacheDir, $RunsRoot, $runId, $totalSeconds, $totalMinutes
+$csvLine = "{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10},{11}" -f `
+  $timestampIso, $Variant, $Policy, $IsDepthEA, $SegmentSec, $HopSec, $Device, $variantCacheDir, $RunsRoot, $runId, $totalSeconds, $totalMinutes
 
 Add-Content -Path $runtimeCsv -Value $csvLine
 Write-Host "Pipeline runtime logged to: $runtimeCsv" -ForegroundColor DarkGray
