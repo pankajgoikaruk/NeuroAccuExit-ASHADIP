@@ -4,8 +4,8 @@ seed: 42
 
 paths:
   data_root: data
-  cache_root: data_cache # Edit version here to save results in various directories. Ex: data_cache_V0, V1 so on...
-  runs_root: runs # Edit this directory name to store results of various version in suitable directories.
+  cache_root: data_cache
+  runs_root: runs
 
 audio:
   sample_rate: 16000
@@ -29,8 +29,25 @@ train:
   weight_decay: 0.0
   optimizer: adam
   num_workers: 0
-  loss_weights: [0.3, 0.3, 1.0]
   val_every: 1
+
+  # ✅ Make early exits stronger (important for EA depth~1.3)
+  # Old: [0.3, 0.3, 1.0]
+  loss_weights: [1.0, 0.5, 0.2]
+
+  # ✅ Knowledge Distillation: exit3 teaches exit1/exit2
+  kd:
+    enable: true
+    alpha: 0.6     # strength of KD term (0.4–0.8 typical)
+    temp: 2.0      # distillation temperature
+    weights: [1.0, 0.7]   # [exit1, exit2] -> distill exit1 more
+
+  # ✅ SpecAugment for robustness (train only)
+  specaug:
+    enable: true
+    freq_mask: 8
+    time_mask: 12
+    num_masks: 2
 
 model:
   num_classes: 2
@@ -47,11 +64,11 @@ thresholds:
 
 ea:
   enabled: true
-  mode: logprob          # logprob (recommended) or logits
+  mode: logprob
   threshold_grid: [0.05, 0.10, 0.15, 0.20, 0.25, 0.30]
-  min_exit: 0            # earliest exit index allowed (0=exit1)
-  stable_k: 1            # require same pred for last K exits
-  flip_penalty: 0.0      # optional
+  min_exit: 0
+  stable_k: 1
+  flip_penalty: 0.0
 
 split:
   train: 0.7

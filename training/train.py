@@ -8,6 +8,7 @@ import numpy as np
 
 import torch
 from torch.optim import Adam
+import torch.nn.functional as F
 from torch.nn.functional import cross_entropy
 
 from utils.config import parse_args_with_config, ensure_dirs, save_config
@@ -25,7 +26,6 @@ def set_global_seed(seed: int):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
-    # Determinism knobs (safe on CPU; important if you ever use CUDA)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     try:
@@ -34,16 +34,91 @@ def set_global_seed(seed: int):
         pass
 
 
-def train_one_epoch(model, dl, opt, device, loss_w):
+def _spec_augment(x, freq_mask=8, time_mask=12, num_masks=2):
+    """
+    Simple SpecAugment for log-mel features.
+    x: (B, n_mels, frames) or (B, 1, n_mels, frames)
+    Masks are applied with zeros.
+    """
+    if x.dim() == 4:
+        # (B,1,M,T) -> (B,M,T)
+        x2 = x[:, 0]
+        add_channel_back = True
+    else:
+        x2 = x
+        add_channel_back = False
+
+    B, M, T = x2.shape
+    out = x2.clone()
+
+    for _ in range(num_masks):
+        # Frequency mask
+        if freq_mask > 0 and M > 1:
+            f = random.randint(0, min(freq_mask, M - 1))
+            f0 = random.randint(0, max(M - f, 1) - 1) if f > 0 else 0
+            if f > 0:
+                out[:, f0:f0 + f, :] = 0.0
+
+        # Time mask
+        if time_mask > 0 and T > 1:
+            t = random.randint(0, min(time_mask, T - 1))
+            t0 = random.randint(0, max(T - t, 1) - 1) if t > 0 else 0
+            if t > 0:
+                out[:, :, t0:t0 + t] = 0.0
+
+    if add_channel_back:
+        out = out.unsqueeze(1)
+    return out
+
+
+def _kd_kl(student_logits, teacher_logits, T=2.0):
+    """
+    KL( softmax(teacher/T) || softmax(student/T) ) * T^2
+    Returns scalar.
+    """
+    T = float(T)
+    # teacher detached
+    p_t = F.softmax(teacher_logits / T, dim=1)
+    log_p_s = F.log_softmax(student_logits / T, dim=1)
+    # kl_div expects input=log_probs, target=probs
+    kl = F.kl_div(log_p_s, p_t, reduction="batchmean")
+    return kl * (T * T)
+
+
+def train_one_epoch(model, dl, opt, device, loss_w,
+                    kd_enable=False, kd_alpha=0.5, kd_temp=2.0, kd_weights=(1.0, 1.0),
+                    specaug_enable=False, specaug_cfg=None):
     model.train()
     loss_sum, n = 0.0, 0
     correct = [0, 0, 0]
+
+    if specaug_cfg is None:
+        specaug_cfg = {}
+
     for x, y in dl:
         x, y = x.to(device), y.to(device)
+
+        # Optional SpecAugment (train only)
+        if specaug_enable:
+            fm = int(specaug_cfg.get("freq_mask", 8))
+            tm = int(specaug_cfg.get("time_mask", 12))
+            nm = int(specaug_cfg.get("num_masks", 2))
+            x = _spec_augment(x, freq_mask=fm, time_mask=tm, num_masks=nm)
+
         opt.zero_grad()
-        logits = model(x)
-        losses = [cross_entropy(lg, y) for lg in logits]
-        loss = sum(w * l for w, l in zip(loss_w, losses))
+        logits = model(x)  # list of 3 tensors (B,C)
+
+        # CE losses for each exit
+        ce_losses = [cross_entropy(lg, y) for lg in logits]
+        loss = sum(float(w) * l for w, l in zip(loss_w, ce_losses))
+
+        # Optional KD: teacher=exit3, students=exit1/exit2
+        if kd_enable:
+            teacher = logits[-1].detach()
+            kd1 = _kd_kl(logits[0], teacher, T=kd_temp)
+            kd2 = _kd_kl(logits[1], teacher, T=kd_temp)
+            loss = loss + float(kd_alpha) * (float(kd_weights[0]) * kd1 + float(kd_weights[1]) * kd2)
+
         loss.backward()
         opt.step()
 
@@ -76,20 +151,13 @@ def evaluate(model, dl, device):
 
 
 def _parse_extra_args():
-    """
-    Parse our optional args without breaking parse_args_with_config().
-    We remove our extra args from sys.argv, then parse_args_with_config() handles --config.
-    """
     p = argparse.ArgumentParser(add_help=False)
     p.add_argument("--run_dir", type=str, default=None,
                    help="Explicit run directory to write outputs.")
     p.add_argument("--device", type=str, default=None,
                    help="Force device: cpu | cuda (default: auto).")
-
-    # allow run_full.ps1 to point training at data_caches/<Variant>/<cache_id>
     p.add_argument("--cache_dir", type=str, default=None,
                    help="Override cache directory containing segments.csv + features/.")
-
     p.add_argument("--segment_sec", type=float, default=None,
                    help="Optional: record segment_sec in effective config.")
     p.add_argument("--hop_sec", type=float, default=None,
@@ -105,11 +173,9 @@ def main():
     extra = _parse_extra_args()
     cfg = parse_args_with_config()
 
-    # ✅ FIX: use your function name (no more unresolved set_seed)
     seed = int(cfg.get("seed", 42))
     set_global_seed(seed)
 
-    # Device selection
     if extra.device is not None:
         device = extra.device
     else:
@@ -119,24 +185,21 @@ def main():
     runs_root = paths.get("runs_root", "runs")
     cache_root = paths.get("cache_root", "data_cache")
 
-    # CLI override cache directory
     if extra.cache_dir:
         cache_root = extra.cache_dir
 
     ensure_dirs(runs_root)
 
-    # Choose run_dir
     if extra.run_dir:
         run_dir = extra.run_dir
         ensure_dirs(run_dir)
     else:
         run_dir = make_run_dir(runs_root)
 
-    # Ensure ckpt directory exists
     ckpt_dir = os.path.join(run_dir, "ckpt")
     ensure_dirs(ckpt_dir)
 
-    # --------- Save EFFECTIVE CONFIG used for this run ---------
+    # Save effective config
     cfg.setdefault("paths", {})
     cfg["paths"]["runs_root"] = runs_root
     cfg["paths"]["cache_root"] = cache_root
@@ -154,7 +217,6 @@ def main():
             cfg["audio"]["segment_hop"] = float(extra.hop_sec)
 
     save_config(cfg, os.path.join(run_dir, "config_used.yaml"))
-    # -----------------------------------------------------------
 
     seg_csv = os.path.join(cache_root, "segments.csv")
     feat_root = os.path.join(cache_root, "features")
@@ -164,10 +226,28 @@ def main():
     nw = int(tr.get("num_workers", 4))
     lr = float(tr.get("lr", 1e-3))
     wd = float(tr.get("weight_decay", 0.0))
-    loss_w = tr.get("loss_weights", [0.3, 0.3, 1.0])
     epochs = int(tr.get("epochs", 40))
 
-    # ✅ Deterministic loaders (shuffle + workers) because we pass seed
+    # ✅ Loss weights (you already had this)
+    # Recommend for stronger exit1: [1.0, 0.5, 0.2] (try it)
+    loss_w = tr.get("loss_weights", [0.3, 0.3, 1.0])
+
+    # ✅ KD config (optional)
+    kd = tr.get("kd", {}) or {}
+    kd_enable = bool(kd.get("enable", False))
+    kd_alpha = float(kd.get("alpha", 0.5))      # strength of KD term
+    kd_temp = float(kd.get("temp", 2.0))        # distillation temperature
+    kd_weights = kd.get("weights", [1.0, 1.0])  # [exit1, exit2]
+    if isinstance(kd_weights, (list, tuple)) and len(kd_weights) >= 2:
+        kd_weights = (float(kd_weights[0]), float(kd_weights[1]))
+    else:
+        kd_weights = (1.0, 1.0)
+
+    # SpecAugment config (optional)
+    spec = tr.get("specaug", {}) or {}
+    specaug_enable = bool(spec.get("enable", False))
+
+    # deterministic loaders
     dl_tr, dl_va, dl_te, label2id = make_loaders(seg_csv, feat_root, bs, nw, seed=seed)
 
     n_mels = int((cfg.get("features") or {}).get("n_mels", 64))
@@ -182,7 +262,11 @@ def main():
     best = -1.0
 
     for ep in range(epochs):
-        tr_loss, tr_acc = train_one_epoch(model, dl_tr, opt, device, loss_w)
+        tr_loss, tr_acc = train_one_epoch(
+            model, dl_tr, opt, device, loss_w,
+            kd_enable=kd_enable, kd_alpha=kd_alpha, kd_temp=kd_temp, kd_weights=kd_weights,
+            specaug_enable=specaug_enable, specaug_cfg=spec
+        )
         va_acc = evaluate(model, dl_va, device)
 
         metrics["train"].append({"epoch": ep + 1, "loss": tr_loss, "acc": tr_acc})

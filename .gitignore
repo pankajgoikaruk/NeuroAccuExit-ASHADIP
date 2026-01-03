@@ -13,22 +13,18 @@ Thumbs.db
 .idea/
 .vscode/
 
-# Data / caches / runs (do not commit)
+# Data / caches / runs / analysis (do not commit)
 data_cache*/
 data_caches*/
 data_cache_v*/
 runs*/
-analysis/plots/
-analysis/*.png
-
-runs/
-data_caches/
 analysis/
+
+# archives / backups
 *.zip
 NeuroAccuExit-ASHADIP_v0.1/
 NeuroAccuExit-ASHADIP_v0.1.zip
 NeuroAccuExit-backup.zip
-
 
 # Model artifacts
 **/ckpt/
