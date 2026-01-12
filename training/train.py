@@ -103,7 +103,10 @@ def train_one_epoch(model, dl, opt, device, loss_w,
             fm = int(specaug_cfg.get("freq_mask", 8))
             tm = int(specaug_cfg.get("time_mask", 12))
             nm = int(specaug_cfg.get("num_masks", 2))
-            x = _spec_augment(x, freq_mask=fm, time_mask=tm, num_masks=nm)
+
+            p = float(specaug_cfg.get("prob", 1.0))
+            if random.random() < p:
+                x = _spec_augment(x, freq_mask=fm, time_mask=tm, num_masks=nm)
 
         opt.zero_grad()
         logits = model(x)  # list of 3 tensors (B,C)

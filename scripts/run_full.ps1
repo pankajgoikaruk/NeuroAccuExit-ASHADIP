@@ -21,7 +21,10 @@ param(
 
   [string]$Device     = "cpu",
   [double]$SegmentSec = 1.0,
-  [double]$HopSec     = 0.5
+  [double]$HopSec     = 0.5,
+
+  # NEW: EA selector depth penalty (used only in training.ea_thresholds_offline)
+  [double]$LambdaDepth = 0.08
 )
 
 $ErrorActionPreference = "Stop"
@@ -63,6 +66,9 @@ Write-Host "== ASHADIP: full pipeline run ==" -ForegroundColor Cyan
 Write-Host "  Variant         = $Variant" -ForegroundColor DarkGray
 Write-Host "  Policy(param)   = $Policy" -ForegroundColor DarkGray
 Write-Host "  Depth-EA active = $IsDepthEA" -ForegroundColor DarkGray
+if ($IsDepthEA) {
+  Write-Host "  LambdaDepth     = $LambdaDepth" -ForegroundColor DarkGray
+}
 
 New-Item -ItemType Directory -Path $RunsRoot       -ErrorAction SilentlyContinue | Out-Null
 New-Item -ItemType Directory -Path $variantRunDir  -ErrorAction SilentlyContinue | Out-Null
@@ -148,6 +154,7 @@ $meta = @{
   variant_safe = $VariantSafe
   policy       = $Policy
   depth_ea     = $IsDepthEA
+  lambda_depth = $LambdaDepth
   created_at   = $createdAtIso
   runs_root    = $RunsRoot
   variant_dir  = $variantRunDir
@@ -172,8 +179,8 @@ Invoke-Python ('python -m training.calibrate --run_dir "{0}" --segments_csv "{1}
 # --------------------- 5/10) Select thresholds (tau OR EA threshold) ---------------------
 if ($IsDepthEA) {
   Write-Host "`n[5/10] Select EA threshold (Depth-EA)..." -ForegroundColor Yellow
-  Invoke-Python ('python -m training.ea_thresholds_offline --run_dir "{0}" --segments_csv "{1}" --features_root "{2}"' -f `
-    $runPath, $SegCsv, $FeatRoot)
+  Invoke-Python ('python -m training.ea_thresholds_offline --run_dir "{0}" --segments_csv "{1}" --features_root "{2}" --lambda_depth {3}' -f `
+    $runPath, $SegCsv, $FeatRoot, $LambdaDepth)
 } else {
   Write-Host "`n[5/10] Select threshold (tau)..." -ForegroundColor Yellow
   Invoke-Python ('python -m training.thresholds_offline --run_dir "{0}" --segments_csv "{1}" --features_root "{2}"' -f `
@@ -220,24 +227,24 @@ New-Item -ItemType Directory -Path $analysisDir -ErrorAction SilentlyContinue | 
 $runtimeCsv = Join-Path $analysisDir "pipeline_runtime.csv"
 
 if (-not (Test-Path $runtimeCsv)) {
-  "timestamp,variant,policy,depth_ea,segment_sec,hop_sec,device,cache_dir,runs_root,run_id,total_seconds,total_minutes" | Out-File $runtimeCsv -Encoding UTF8
+  "timestamp,variant,policy,depth_ea,lambda_depth,segment_sec,hop_sec,device,cache_dir,runs_root,run_id,total_seconds,total_minutes" | Out-File $runtimeCsv -Encoding UTF8
 }
 
-$csvLine = "{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10},{11}" -f `
-  $timestampIso, $Variant, $Policy, $IsDepthEA, $SegmentSec, $HopSec, $Device, $variantCacheDir, $RunsRoot, $runId, $totalSeconds, $totalMinutes
+$csvLine = "{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10},{11},{12}" -f `
+  $timestampIso, $Variant, $Policy, $IsDepthEA, $LambdaDepth, $SegmentSec, $HopSec, $Device, $variantCacheDir, $RunsRoot, $runId, $totalSeconds, $totalMinutes
 
 Add-Content -Path $runtimeCsv -Value $csvLine
 Write-Host "Pipeline runtime logged to: $runtimeCsv" -ForegroundColor DarkGray
 
-# --------------------- 10/10) Reports & LaTeX ---------------------
-Write-Host "`n[10/10] Generate reports & LaTeX tables..." -ForegroundColor Yellow
-powershell -ExecutionPolicy Bypass -File scripts\run_reports.ps1 `
-  -RunDir $runPath `
-  -Variant $Variant `
-  -DeviceFilter $Device `
-  -SegmentsCsv $SegCsv `
-  -FeaturesRoot $FeatRoot `
-  -RunsRoot $RunsRoot
-
-Write-Host "`n== Done. Artifacts at: $runPath ==" -ForegroundColor Cyan
-Write-Host "Cache used: $variantCacheDir" -ForegroundColor DarkGray
+## --------------------- 10/10) Reports & LaTeX ---------------------
+#Write-Host "`n[10/10] Generate reports & LaTeX tables..." -ForegroundColor Yellow
+#powershell -ExecutionPolicy Bypass -File scripts\run_reports.ps1 `
+#  -RunDir $runPath `
+#  -Variant $Variant `
+#  -DeviceFilter $Device `
+#  -SegmentsCsv $SegCsv `
+#  -FeaturesRoot $FeatRoot `
+#  -RunsRoot $RunsRoot
+#
+#Write-Host "`n== Done. Artifacts at: $runPath ==" -ForegroundColor Cyan
+#Write-Host "Cache used: $variantCacheDir" -ForegroundColor DarkGray
