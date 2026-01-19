@@ -138,7 +138,7 @@ def main():
     tpath = os.path.join(args.run_dir, "temperature.json")
     if os.path.exists(tpath):
         temps = _load_json(tpath, {}).get("temperatures", temps)
-    temps = [max(float(t), 0.5) for t in temps]  # your stability clamp
+    temps = [max(float(t), 1e-3) for t in temps]  # your stability clamp
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 

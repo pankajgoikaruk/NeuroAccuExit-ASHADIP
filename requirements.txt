@@ -8,3 +8,4 @@ soundfile>=0.12.1
 tqdm>=4.66
 PyYAML>=6.0
 matplotlib>=3.8
+wandb>=0.24.0

@@ -42,10 +42,10 @@ train:
     temp: 2.0      # distillation temperature
     weights: [1.0, 0.7]   # [exit1, exit2] -> distill exit1 more
 
-  # SpecAugment for robustness (train only)
+  # SpecAugment for robustness (train only) Prob prevent model from overconfident.
   specaug:
     enable: true
-#    prob: 0.35         # IMPORTANT: do not apply every batch. This para changes the training data distribution.
+    prob: 1.0  # IMPORTANT: do not apply every batch. This parameter changes the training data distribution.
     freq_mask: 8
     time_mask: 12
     num_masks: 2

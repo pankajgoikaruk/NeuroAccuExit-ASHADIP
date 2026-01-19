@@ -212,6 +212,16 @@ Write-Host "`n[9/10] Profile latency..." -ForegroundColor Yellow
 Invoke-Python ('python -m scripts.profile_latency --run_dir "{0}" --segments_csv "{1}" --features_root "{2}" --variant "{3}" --device "{4}"' -f `
   $runPath, $SegCsv, $FeatRoot, $Variant, $Device)
 
+# --------------------- Optional) W&B post-hoc logging ---------------------
+# This is intentionally post-hoc (reads run artifacts) to avoid any impact on
+# training accuracy/efficiency.
+if (-not [string]::IsNullOrWhiteSpace($env:ENABLE_WANDB)) {
+  Write-Host "`n[W&B] Logging run artifacts to Weights & Biases..." -ForegroundColor Yellow
+  Invoke-Python ('python -m scripts.wandb_log_run --run_dir "{0}" --log_plots' -f $runPath)
+} else {
+  Write-Host "`n[W&B] Skipped (set ENABLE_WANDB=1 to enable)." -ForegroundColor DarkGray
+}
+
 # --------------------- Timing & logging ---------------------
 $pipelineEnd   = Get-Date
 $elapsed       = $pipelineEnd - $pipelineStart
@@ -236,15 +246,19 @@ $csvLine = "{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10},{11},{12}" -f `
 Add-Content -Path $runtimeCsv -Value $csvLine
 Write-Host "Pipeline runtime logged to: $runtimeCsv" -ForegroundColor DarkGray
 
-## --------------------- 10/10) Reports & LaTeX ---------------------
-#Write-Host "`n[10/10] Generate reports & LaTeX tables..." -ForegroundColor Yellow
-#powershell -ExecutionPolicy Bypass -File scripts\run_reports.ps1 `
-#  -RunDir $runPath `
-#  -Variant $Variant `
-#  -DeviceFilter $Device `
-#  -SegmentsCsv $SegCsv `
-#  -FeaturesRoot $FeatRoot `
-#  -RunsRoot $RunsRoot
-#
-#Write-Host "`n== Done. Artifacts at: $runPath ==" -ForegroundColor Cyan
-#Write-Host "Cache used: $variantCacheDir" -ForegroundColor DarkGray
+# --------------------- 10/10) Reports & LaTeX ---------------------
+Write-Host "`n[10/10] Generate reports & LaTeX tables..." -ForegroundColor Yellow
+powershell -ExecutionPolicy Bypass -File scripts\run_reports.ps1 `
+  -RunDir $runPath `
+  -Variant $Variant `
+  -DeviceFilter $Device `
+  -SegmentsCsv $SegCsv `
+  -FeaturesRoot $FeatRoot `
+  -RunsRoot $RunsRoot
+
+Write-Host "`n== Done. Artifacts at: $runPath ==" -ForegroundColor Cyan
+Write-Host "Cache used: $variantCacheDir" -ForegroundColor DarkGray
+
+
+
+

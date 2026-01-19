@@ -152,7 +152,7 @@ def policy_eval(run_dir, segments_csv, features_root, save_plots=True):
         {"temperatures": [1.0, 1.0, 1.0]},
     ).get("temperatures", [1.0, 1.0, 1.0])
 
-    temps = [max(float(t), 0.5) for t in temps]
+    temps = [max(float(t), 1e-3) for t in temps] # safety mechanism
 
     # If policy_test.py wrote policy_results.json, use it (EA/greedy)
     policy_results = load_json_safepath(os.path.join(run_dir, "policy_results.json"), None)

@@ -28,7 +28,7 @@ def main(run_dir: str, segments_csv: str, features_root: str, policy: str, num_w
         temps = _load_json(tpath).get("temperatures", [1.0, 1.0, 1.0])
     else:
         temps = [1.0, 1.0, 1.0]
-    temps = [max(float(t), 0.5) for t in temps]  # stability clamp
+    temps = [max(float(t), 1e-3) for t in temps]  # stability clamp
 
     # ---- Load policy-specific thresholds ----
     tau = None
