@@ -52,12 +52,19 @@ def main(run_dir: str, segments_csv: str, features_root: str, policy: str, num_w
         ea_stable_k = int(ea_file.get("ea_stable_k", 1))
         ea_flip_penalty = float(ea_file.get("ea_flip_penalty", 0.0))
 
+        ea_exit1_conf_min = ea_file.get("ea_exit1_conf_min", None)
+        ea_exit1_margin_mult = float(ea_file.get("ea_exit1_margin_mult", 2.0))
+        ea_exit1_margin_min = float(ea_file.get("ea_exit1_margin_min", 0.0))
+
         ea_cfg = {
             "ea_threshold": ea_threshold,
             "ea_mode": ea_mode,
             "ea_min_exit": ea_min_exit,
             "ea_stable_k": ea_stable_k,
             "ea_flip_penalty": ea_flip_penalty,
+            "ea_exit1_conf_min": ea_exit1_conf_min,
+            "ea_exit1_margin_mult": ea_exit1_margin_mult,
+            "ea_exit1_margin_min": ea_exit1_margin_min,
         }
     else:
         raise ValueError(f"Unknown policy: {policy}")
@@ -119,6 +126,9 @@ def main(run_dir: str, segments_csv: str, features_root: str, policy: str, num_w
                     ea_min_exit=ea_cfg["ea_min_exit"],
                     ea_stable_k=ea_cfg["ea_stable_k"],
                     ea_flip_penalty=ea_cfg["ea_flip_penalty"],
+                    ea_exit1_conf_min=ea_cfg["ea_exit1_conf_min"],
+                    ea_exit1_margin_mult=ea_cfg["ea_exit1_margin_mult"],
+                    ea_exit1_margin_min=ea_cfg["ea_exit1_margin_min"],
                 )
                 taken = out["taken"]            # (B,) values 0/1/2
                 pred_taken = out["pred_taken"]  # (B,)

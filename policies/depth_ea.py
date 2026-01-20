@@ -7,29 +7,32 @@ import torch.nn.functional as F
 def depth_ea_decide(
     logits_list,
     temps,
-    ea_mode="logprob",         # "logprob" (recommended) or "logits"
-    ea_threshold=0.20,         # margin threshold after accumulation (probability margin)
-    ea_min_exit=0,             # 0/1/2 -> earliest exit allowed
-    ea_stable_k=1,             # require same predicted class for last K exits
-    ea_flip_penalty=0.0,       # subtract penalty if pred flips between exits
+    ea_mode="logprob",
+    ea_threshold=0.20,
+    ea_min_exit=0,
+    ea_stable_k=1,
+    ea_flip_penalty=0.0,
+
+    # NEW: Exit1 high-confidence override (TinyML-safe)
+    ea_exit1_conf_min=None,        # if None and ea_stable_k>1 -> auto uses 0.95
+    ea_exit1_margin_mult=2.0,      # require margin >= mult * ea_threshold for Exit1
+    ea_exit1_margin_min=0.0,       # optional absolute floor on Exit1 margin
 ):
     """
     Depth Evidence Accumulation across exits.
 
-    logits_list: [logits1, logits2, logits3], each (B,C)
-    temps: list of 3 temps (or None) used for scaling (per-exit)
-    Decision is made at exit k if:
-      - k >= ea_min_exit
-      - predicted class stayed same for >= ea_stable_k consecutive exits
-      - margin(top1 - top2) of accumulated posterior >= ea_threshold
-      - optional flip penalty reduces margin when prediction changes
-
-    Returns dict with:
-      taken (B,), pred_taken (B,), pred_final (B,), flip_count (B,), margin_taken (B,)
+    NEW BEHAVIOR:
+    - If ea_stable_k > 1, Exit1 would normally be impossible.
+      We allow Exit1 only if it is VERY confident:
+        conf >= ea_exit1_conf_min  AND  margin >= max(ea_exit1_margin_min, ea_exit1_margin_mult * ea_threshold)
     """
     K = len(logits_list)
     B, C = logits_list[0].shape
     device = logits_list[0].device
+
+    # Auto-default to avoid "Exit1=0 forever" when stable_k>1
+    if ea_exit1_conf_min is None and ea_stable_k > 1:
+        ea_exit1_conf_min = 0.95
 
     # Evidence accumulator in class-space
     S = torch.zeros((B, C), device=device)
@@ -58,32 +61,38 @@ def depth_ea_decide(
         if ea_mode == "logits":
             S = S + lg
         else:
-            # default: log-prob accumulation (stable)
             S = S + F.log_softmax(lg, dim=1)
 
         # Posterior after accumulation
         p = F.softmax(S, dim=1)
         top2 = torch.topk(p, 2, dim=1).values
+        conf = top2[:, 0]
         margin = top2[:, 0] - top2[:, 1]
         pred = torch.argmax(p, dim=1)
 
         # Track stability / flips
         if prev_pred is None:
-            stable[:] = 1  # first exit counts as "1 consecutive"
+            stable[:] = 1
         else:
             same = (pred == prev_pred)
             flip_count += (~same).long()
             stable = torch.where(same, stable + 1, torch.ones_like(stable))
-
             if ea_flip_penalty > 0.0:
                 margin = margin - (ea_flip_penalty * (~same).float())
 
-        # Save last seen (for never-decide case)
+        # Save last seen
         last_margin = margin
         last_pred = pred
 
+        # ---- NEW: Exit1 override gate ----
+        exit1_ok = torch.zeros(B, dtype=torch.bool, device=device)
+        if k == 0 and ea_exit1_conf_min is not None and ea_min_exit <= 0:
+            req_margin = max(float(ea_exit1_margin_min), float(ea_exit1_margin_mult) * float(ea_threshold))
+            exit1_ok = (conf >= float(ea_exit1_conf_min)) & (margin >= req_margin)
+
         # Eligibility check
-        eligible = (k >= ea_min_exit) & (stable >= ea_stable_k) & (margin >= ea_threshold)
+        stable_ok = (stable >= ea_stable_k) | exit1_ok
+        eligible = (k >= ea_min_exit) & stable_ok & (margin >= ea_threshold)
 
         newly = eligible & (~decided)
         if newly.any():
@@ -94,17 +103,15 @@ def depth_ea_decide(
 
         prev_pred = pred
 
-    # Final prediction after the last exit
     pred_final = last_pred.clone()
 
-    # If never decided early, fall back to final
     never = ~decided
     if never.any():
         pred_taken[never] = pred_final[never]
         margin_taken[never] = last_margin[never]
 
     return {
-        "taken": taken,                 # 0/1/2
+        "taken": taken,
         "pred_taken": pred_taken,
         "pred_final": pred_final,
         "flip_count": flip_count,

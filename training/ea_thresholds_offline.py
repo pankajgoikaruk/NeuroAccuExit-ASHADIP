@@ -56,7 +56,6 @@ def greedy_decide_from_logits(logits_list_cpu, temps, tau: float):
     assert len(logits_list_cpu) == 3
     N, C = logits_list_cpu[0].shape
 
-    # scale logits and convert to probs per exit
     probs = []
     for k in range(3):
         lg = logits_list_cpu[k].float()
@@ -90,55 +89,41 @@ def main():
     ap.add_argument("--ea_mode", default="logprob", choices=["logprob", "logits"])
     ap.add_argument("--ea_min_exit", type=int, default=0)
 
-    # EA grids (defaults give exit1 a real chance)
+    # EA grids
     ap.add_argument(
         "--ea_grid",
         default="0.01,0.02,0.03,0.05,0.08,0.10,0.12,0.15,0.18,0.20,0.25,0.30,0.35",
-        help="EA margin thresholds (lower values allow earlier exits, incl. exit1).",
+        help="EA margin thresholds.",
     )
     ap.add_argument("--stable_k_grid", default="1,2")
     ap.add_argument("--flip_penalty_grid", default="0.0,0.01,0.02,0.05")
 
-    # Greedy baseline (for the “must beat greedy depth” constraint)
+    # Greedy baseline
     ap.add_argument(
         "--greedy_tau_grid",
         default="0.70,0.75,0.80,0.85,0.90,0.92,0.95",
-        help="Used only if thresholds.json is missing; selects greedy baseline on VAL.",
+        help="Used only if thresholds.json missing.",
     )
 
     # Tradeoff + constraints
-    ap.add_argument(
-        "--lambda_depth",
-        type=float,
-        default=0.08,
-        help="Penalty weight for avg_exit_depth in the EA score. Higher => more efficiency pressure.",
-    )
-    ap.add_argument(
-        "--enforce_better_than_greedy_depth",
-        action="store_true",
-        help="Hard constraint: only accept EA configs with avg_exit_depth < greedy_baseline_depth.",
-    )
-    ap.add_argument(
-        "--min_depth_improve",
-        type=float,
-        default=0.00,
-        help="Require EA avg_exit_depth <= greedy_depth - min_depth_improve (when enforcement is on).",
-    )
-    ap.add_argument(
-        "--max_f1_drop",
-        type=float,
-        default=1.00,
-        help="Optional safety constraint: EA must have f1 >= greedy_f1 - max_f1_drop (set small like 0.02).",
-    )
+    ap.add_argument("--lambda_depth", type=float, default=0.08)
+    ap.add_argument("--enforce_better_than_greedy_depth", action="store_true")
+    ap.add_argument("--min_depth_improve", type=float, default=0.00)
+    ap.add_argument("--max_f1_drop", type=float, default=1.00)
+
+    # NEW: Exit1 high-confidence override sweep (used by policies/depth_ea.py)
+    ap.add_argument("--exit1_conf_grid", default="0.90,0.95")
+    ap.add_argument("--exit1_margin_mult_grid", default="1.5,2.0,2.5")
+    ap.add_argument("--exit1_margin_min", type=float, default=0.0)
 
     args = ap.parse_args()
 
-    # Temps (safe default)
+    # Temps
     temps = [1.0, 1.0, 1.0]
     tpath = os.path.join(args.run_dir, "temperature.json")
     if os.path.exists(tpath):
         temps = _load_json(tpath, {}).get("temperatures", temps)
-    temps = [max(float(t), 1e-3) for t in temps]  # your stability clamp
+    temps = [max(float(t), 1e-3) for t in temps]
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -162,7 +147,6 @@ def main():
     # 1) Greedy baseline on VAL
     # ---------------------------
     thresholds_json = _load_json(os.path.join(args.run_dir, "thresholds.json"), None)
-    greedy_tau = None
     greedy_baseline = None
 
     if isinstance(thresholds_json, dict) and "tau" in thresholds_json:
@@ -179,7 +163,6 @@ def main():
             "source": "thresholds.json",
         }
     else:
-        # fallback: sweep greedy tau quickly from logits
         tau_grid = _parse_float_list(args.greedy_tau_grid)
         best_g = None
         for tau in tau_grid:
@@ -192,7 +175,6 @@ def main():
                 best_g = cand
         best_g["source"] = "swept_tau_grid"
         greedy_baseline = best_g
-        greedy_tau = float(best_g["tau"])
 
     greedy_depth_ref = float(greedy_baseline["avg_exit_depth"])
     greedy_f1_ref = float(greedy_baseline["f1"])
@@ -204,90 +186,102 @@ def main():
     stable_grid = _parse_int_list(args.stable_k_grid)
     flip_grid = _parse_float_list(args.flip_penalty_grid)
 
+    # include None -> means "no override" for stable_k=1; for stable_k>1 your policy may auto-default
+    exit1_conf_grid = [None] + _parse_float_list(args.exit1_conf_grid)
+    exit1_mult_grid = _parse_float_list(args.exit1_margin_mult_grid)
+
     all_rows = []
     best = None
     best_score = None
 
-    # Move logits to device once for EA runs (val N is small; OK)
     logits_val_dev = [lg.to(device) for lg in logits_val_cpu]
 
     for stable_k in stable_grid:
         for flip_penalty in flip_grid:
-            for thr in thr_grid:
-                out = depth_ea_decide(
-                    logits_list=logits_val_dev,
-                    temps=temps,
-                    ea_mode=args.ea_mode,
-                    ea_threshold=float(thr),
-                    ea_min_exit=int(args.ea_min_exit),
-                    ea_stable_k=int(stable_k),
-                    ea_flip_penalty=float(flip_penalty),
-                )
-                pred = out["pred_taken"].detach().cpu().numpy()
-                taken = out["taken"].detach().cpu().numpy()
+            for exit1_conf_min in exit1_conf_grid:
+                for exit1_mult in exit1_mult_grid:
+                    for thr in thr_grid:
+                        out = depth_ea_decide(
+                            logits_list=logits_val_dev,
+                            temps=temps,
+                            ea_mode=args.ea_mode,
+                            ea_threshold=float(thr),
+                            ea_min_exit=int(args.ea_min_exit),
+                            ea_stable_k=int(stable_k),
+                            ea_flip_penalty=float(flip_penalty),
+                            ea_exit1_conf_min=exit1_conf_min,
+                            ea_exit1_margin_mult=float(exit1_mult),
+                            ea_exit1_margin_min=float(args.exit1_margin_min),
+                        )
 
-                f1 = float(f1_score(y_val, pred, average="macro"))
-                acc = float((pred == y_val).mean())
-                avg_exit = float((taken + 1).mean())
+                        pred = out["pred_taken"].detach().cpu().numpy()
+                        taken = out["taken"].detach().cpu().numpy()
 
-                # Simple tradeoff score:
-                # - primary: F1
-                # - penalize depth (encourage exit1/exit2)
-                # - small acc tie-break inside score
-                score = f1 + 0.10 * acc - float(args.lambda_depth) * avg_exit
+                        f1 = float(f1_score(y_val, pred, average="macro"))
+                        acc = float((pred == y_val).mean())
+                        avg_exit = float((taken + 1).mean())
 
-                row = {
-                    "ea_threshold": float(thr),
-                    "ea_stable_k": int(stable_k),
-                    "ea_flip_penalty": float(flip_penalty),
-                    "f1": f1,
-                    "acc": acc,
-                    "avg_exit_depth": avg_exit,
-                    "score": float(score),
-                }
-                all_rows.append(row)
+                        score = f1 + 0.10 * acc - float(args.lambda_depth) * avg_exit
 
-                # Optional hard constraints
-                if args.enforce_better_than_greedy_depth:
-                    depth_ok = (avg_exit <= (greedy_depth_ref - float(args.min_depth_improve)))
-                else:
-                    depth_ok = True
+                        row = {
+                            "ea_threshold": float(thr),
+                            "ea_stable_k": int(stable_k),
+                            "ea_flip_penalty": float(flip_penalty),
+                            "ea_exit1_conf_min": exit1_conf_min,
+                            "ea_exit1_margin_mult": float(exit1_mult),
+                            "ea_exit1_margin_min": float(args.exit1_margin_min),
+                            "f1": f1,
+                            "acc": acc,
+                            "avg_exit_depth": avg_exit,
+                            "score": float(score),
+                        }
+                        all_rows.append(row)
 
-                f1_ok = (f1 >= (greedy_f1_ref - float(args.max_f1_drop)))
+                        # Optional constraints
+                        if args.enforce_better_than_greedy_depth:
+                            depth_ok = (avg_exit <= (greedy_depth_ref - float(args.min_depth_improve)))
+                        else:
+                            depth_ok = True
 
-                if not (depth_ok and f1_ok):
-                    continue
+                        f1_ok = (f1 >= (greedy_f1_ref - float(args.max_f1_drop)))
 
-                if best is None or (score > best_score):
-                    best = row
-                    best_score = score
+                        if not (depth_ok and f1_ok):
+                            continue
 
-    # If constraint was too strict, fallback to best score overall (but mark it)
+                        if best is None or (score > best_score):
+                            best = row
+                            best_score = float(score)
+
+    # Fallback if constraints too strict
     used_fallback = False
     if best is None:
         used_fallback = True
-        # pick best score overall, no constraints
         best = max(all_rows, key=lambda r: r["score"])
-        best_score = best["score"]
+        best_score = float(best["score"])
 
     # ---------------------------
     # 3) Save ea_thresholds.json
     # ---------------------------
     payload = {
-        # required by policy_test.py
+        # NEW knobs (policy_test should pass these through to depth_ea_decide)
+        "ea_exit1_conf_min": best.get("ea_exit1_conf_min", None),
+        "ea_exit1_margin_mult": float(best.get("ea_exit1_margin_mult", 2.0)),
+        "ea_exit1_margin_min": float(best.get("ea_exit1_margin_min", float(args.exit1_margin_min))),
+
+        # Standard EA knobs
         "ea_threshold": float(best["ea_threshold"]),
         "ea_stable_k": int(best["ea_stable_k"]),
         "ea_flip_penalty": float(best["ea_flip_penalty"]),
         "ea_mode": args.ea_mode,
         "ea_min_exit": int(args.ea_min_exit),
 
-        # selected metrics
+        # Metrics (VAL)
         "f1": float(best["f1"]),
         "acc": float(best["acc"]),
         "avg_exit_depth": float(best["avg_exit_depth"]),
         "score": float(best_score),
 
-        # metadata
+        # Metadata
         "temperatures_used": temps,
         "baseline_greedy_val": greedy_baseline,
         "selection": {
@@ -301,6 +295,9 @@ def main():
             "ea_grid": thr_grid,
             "stable_k_grid": stable_grid,
             "flip_penalty_grid": flip_grid,
+            "exit1_conf_grid": exit1_conf_grid,  # contains None -> null in json
+            "exit1_margin_mult_grid": exit1_mult_grid,
+            "exit1_margin_min": float(args.exit1_margin_min),
             "greedy_tau_grid_used_if_missing": _parse_float_list(args.greedy_tau_grid),
         },
         "selected_by": "score = f1 + 0.10*acc - lambda_depth*avg_exit_depth (with optional constraints)",
