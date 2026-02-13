@@ -1,0 +1,109 @@
+_wandb:
+    value:
+        cli_version: 0.24.0
+        e:
+            o2xa5mlcsyghkrxzvp4f1qn1ie6r8mfj:
+                args:
+                    - --run_dir
+                    - runs\v0_3\v0_3_012
+                    - --log_plots
+                cpu_count: 8
+                cpu_count_logical: 16
+                cudaVersion: "12.6"
+                disk:
+                    /:
+                        total: "479213719552"
+                        used: "329614217216"
+                email: pankajgoikaruk@gmail.com
+                executable: C:\Users\wwwsa\anaconda3\envs\ASHADIP_V0\python.exe
+                git:
+                    commit: 928a63420ae48467fe74bda3e46955fe1b3941af
+                    remote: https://github.com/pankajgoikaruk/NeuroAccuExit-ASHADIP.git
+                gpu: NVIDIA GeForce RTX 2060
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Turing
+                      cudaCores: 1920
+                      memoryTotal: "6442450944"
+                      name: NVIDIA GeForce RTX 2060
+                      uuid: GPU-57c0b43f-38b1-7932-4ce9-2486e79ec511
+                host: PankajGoikar
+                memory:
+                    total: "68547784704"
+                os: Windows-11-10.0.26100-SP0
+                program: -m scripts.wandb_log_run
+                python: CPython 3.12.12
+                root: C:\Users\wwwsa\PycharmProjects\NeuroAccuExit-ASHADIP\.wandb_runs
+                startedAt: "2026-01-17T21:23:25.177491Z"
+                writerId: o2xa5mlcsyghkrxzvp4f1qn1ie6r8mfj
+        m:
+            - "1": epoch
+              "6":
+                - 3
+              "7": []
+            - "2": '*'
+              "5": 1
+              "6":
+                - 1
+              "7": []
+        python_version: 3.12.12
+        t:
+            "3":
+                - 2
+                - 7
+                - 13
+                - 14
+                - 15
+                - 16
+            "4": 3.12.12
+            "5": 0.24.0
+            "8":
+                - 3
+            "12": 0.24.0
+            "13": windows-amd64
+meta/cache_dir:
+    value: data_caches\v0_3\seg1_hop0p5_bp100-3000_mels64
+meta/cache_id:
+    value: seg1_hop0p5_bp100-3000_mels64
+meta/cache_root:
+    value: data_caches
+meta/created_at:
+    value: "2026-01-17T21:22:40.3375673+00:00"
+meta/data_root:
+    value: data\moth_sounds
+meta/depth_ea:
+    value: true
+meta/device:
+    value: cpu
+meta/hop_sec:
+    value: 0.5
+meta/lambda_depth:
+    value: 0.08
+meta/policy:
+    value: ea
+meta/run_id:
+    value: v0_3_012
+meta/runs_root:
+    value: runs
+meta/segment_sec:
+    value: 1
+meta/variant:
+    value: v0.3
+meta/variant_dir:
+    value: runs\v0_3
+meta/variant_safe:
+    value: v0_3
+policy/compute_saving_pct:
+    value: 87.69488345625943
+policy/ea_mode:
+    value: logprob
+policy/ea_threshold:
+    value: 0.3
+policy/expected_mflops:
+    value: 3.8580340184615385
+policy/full_mflops:
+    value: 31.353088
+policy/policy_name:
+    value: ea
+policy/tau:
+    value: null

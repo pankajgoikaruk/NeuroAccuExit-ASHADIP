@@ -1,0 +1,43 @@
+{
+  "os":  "Windows-11-10.0.26100-SP0",
+  "python":  "CPython 3.12.12",
+  "startedAt":  "2026-01-17T19:33:25.254460Z",
+  "args":  [
+    "--run_dir",
+    "runs\\v0_3\\v0_3_009",
+    "--log_plots"
+  ],
+  "program":  "-m scripts.wandb_log_run",
+  "git":  {
+    "remote":  "https://github.com/pankajgoikaruk/NeuroAccuExit-ASHADIP.git",
+    "commit":  "928a63420ae48467fe74bda3e46955fe1b3941af"
+  },
+  "email":  "pankajgoikaruk@gmail.com",
+  "root":  "C:\\Users\\wwwsa\\PycharmProjects\\NeuroAccuExit-ASHADIP\\.wandb_runs",
+  "host":  "PankajGoikar",
+  "executable":  "C:\\Users\\wwwsa\\anaconda3\\envs\\ASHADIP_V0\\python.exe",
+  "cpu_count":  8,
+  "cpu_count_logical":  16,
+  "gpu":  "NVIDIA GeForce RTX 2060",
+  "gpu_count":  1,
+  "disk":  {
+    "/":  {
+      "total":  "479213719552",
+      "used":  "329075154944"
+    }
+  },
+  "memory":  {
+    "total":  "68547784704"
+  },
+  "gpu_nvidia":  [
+    {
+      "name":  "NVIDIA GeForce RTX 2060",
+      "memoryTotal":  "6442450944",
+      "cudaCores":  1920,
+      "architecture":  "Turing",
+      "uuid":  "GPU-57c0b43f-38b1-7932-4ce9-2486e79ec511"
+    }
+  ],
+  "cudaVersion":  "12.6",
+  "writerId":  "rffxmvaauh02n5ia4wbldd7wkndq2xoi"
+}
