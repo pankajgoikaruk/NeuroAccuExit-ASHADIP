@@ -13,7 +13,7 @@ def depth_ea_decide(
     ea_stable_k=1,
     ea_flip_penalty=0.0,
 
-    # NEW: Exit1 high-confidence override (TinyML-safe)
+    # Exit1 high-confidence override
     ea_exit1_conf_min=None,        # if None and ea_stable_k>1 -> auto uses 0.95
     ea_exit1_margin_mult=2.0,      # require margin >= mult * ea_threshold for Exit1
     ea_exit1_margin_min=0.0,       # optional absolute floor on Exit1 margin
@@ -25,12 +25,16 @@ def depth_ea_decide(
     - If ea_stable_k > 1, Exit1 would normally be impossible.
       We allow Exit1 only if it is VERY confident:
         conf >= ea_exit1_conf_min  AND  margin >= max(ea_exit1_margin_min, ea_exit1_margin_mult * ea_threshold)
+
+    NEW OUTPUT:
+    - logp_taken: (B,C) log-probabilities after *accumulation* at the exit where each sample stopped.
+                 (This is the posterior you should accumulate over time for clip-sequential inference.)
+    - logp_final: (B,C) final accumulated posterior at last exit.
     """
     K = len(logits_list)
     B, C = logits_list[0].shape
     device = logits_list[0].device
 
-    # Auto-default to avoid "Exit1=0 forever" when stable_k>1
     if ea_exit1_conf_min is None and ea_stable_k > 1:
         ea_exit1_conf_min = 0.95
 
@@ -42,12 +46,16 @@ def depth_ea_decide(
     pred_taken = torch.zeros(B, dtype=torch.long, device=device)
     margin_taken = torch.zeros(B, dtype=torch.float, device=device)
 
+    # NEW: store accumulated posterior at the moment of exit
+    logp_taken = torch.zeros((B, C), dtype=torch.float, device=device)
+
     prev_pred = None
     stable = torch.zeros(B, dtype=torch.long, device=device)
     flip_count = torch.zeros(B, dtype=torch.long, device=device)
 
     last_margin = torch.zeros(B, dtype=torch.float, device=device)
     last_pred = torch.zeros(B, dtype=torch.long, device=device)
+    last_logp = torch.zeros((B, C), dtype=torch.float, device=device)
 
     for k in range(K):
         lg = logits_list[k]
@@ -65,6 +73,8 @@ def depth_ea_decide(
 
         # Posterior after accumulation
         p = F.softmax(S, dim=1)
+        logp = F.log_softmax(S, dim=1)  # <-- this is the accumulated posterior in log-space
+
         top2 = torch.topk(p, 2, dim=1).values
         conf = top2[:, 0]
         margin = top2[:, 0] - top2[:, 1]
@@ -83,14 +93,14 @@ def depth_ea_decide(
         # Save last seen
         last_margin = margin
         last_pred = pred
+        last_logp = logp
 
-        # ---- NEW: Exit1 override gate ----
+        # Exit1 override gate
         exit1_ok = torch.zeros(B, dtype=torch.bool, device=device)
         if k == 0 and ea_exit1_conf_min is not None and ea_min_exit <= 0:
             req_margin = max(float(ea_exit1_margin_min), float(ea_exit1_margin_mult) * float(ea_threshold))
             exit1_ok = (conf >= float(ea_exit1_conf_min)) & (margin >= req_margin)
 
-        # Eligibility check
         stable_ok = (stable >= ea_stable_k) | exit1_ok
         eligible = (k >= ea_min_exit) & stable_ok & (margin >= ea_threshold)
 
@@ -99,6 +109,7 @@ def depth_ea_decide(
             taken[newly] = k
             pred_taken[newly] = pred[newly]
             margin_taken[newly] = margin[newly]
+            logp_taken[newly] = logp[newly]   # <-- NEW: store accumulated posterior at exit moment
             decided[newly] = True
 
         prev_pred = pred
@@ -109,6 +120,7 @@ def depth_ea_decide(
     if never.any():
         pred_taken[never] = pred_final[never]
         margin_taken[never] = last_margin[never]
+        logp_taken[never] = last_logp[never]  # <-- use final accumulated posterior if never exited
 
     return {
         "taken": taken,
@@ -116,4 +128,8 @@ def depth_ea_decide(
         "pred_final": pred_final,
         "flip_count": flip_count,
         "margin_taken": margin_taken,
+
+        # NEW:
+        "logp_taken": logp_taken,
+        "logp_final": last_logp,
     }
