@@ -8,7 +8,7 @@ This repo supports reproducible runs on cached log-mel features and produces pap
 
 ---
 
-## What’s new (v0.3.6)
+## What’s new (v0.4.1)
 
 ### 1) Clip-level (Depth×Time) policy evaluation
 `scripts/clip_policy_test.py` now reports:
