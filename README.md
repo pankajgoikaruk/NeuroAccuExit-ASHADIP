@@ -1,122 +1,118 @@
-# NeuroAccuExit / ASHADIP — TinyML Audio Early-Exit (Moth Wingbeats)
+# NeuroAccuExit-ASHADIP (ASHADIP)
 
-This repository implements a lightweight **multi-exit** audio classifier for moth wingbeats, designed for **efficient (TinyML/edge)** inference.
-The system trains an ExitNet (early exits + final head), calibrates per-exit temperatures, and selects an **evidence-accumulation (EA)** early-exit policy **offline on validation**.
+TinyML-friendly **multi-exit audio classifier** with **Depth×Time early-exit**:
+- **Depth early-exit (segment-level)**: choose the exit depth per segment using *Depth-EA*.
+- **Time early-exit (clip-level)**: process segments sequentially and stop early when the clip prediction becomes **stable + confident** via **temporal evidence accumulation**.
 
-> Data format: put raw WAVs under `data/moth_sounds/male/` and `data/moth_sounds/female/` (or the `DataRoot` you pass to the scripts).
+This repo supports reproducible runs on cached log-mel features and produces paper-ready metrics (accuracy vs compute, stopping distributions, diagnostic baselines).
 
+---
 
-## What this project does
+## What’s new (v0.3.6)
 
-### Pipeline (high-level)
-1. **Segment audio** into fixed-length windows with overlap (streaming-friendly).
-2. **Extract log-mel** features (optionally CMVN) and cache them deterministically.
-3. **Train** a small CNN backbone + multiple exit heads (ExitNet).
-4. **Calibrate** each exit head with temperature scaling (saved to `temperature.json`).
-5. **Select** EA policy parameters (saved to `ea_thresholds.json`) via offline sweep on VAL.
-6. **Evaluate** the chosen policy on TEST (saved to `policy_results.json`).
+### 1) Clip-level (Depth×Time) policy evaluation
+`scripts/clip_policy_test.py` now reports:
+- **Segment accuracy over processed windows** (comparable to `policy_test.py`, but only on windows actually processed under time-exit)
+- **Clip accuracy**
+- **Windows Saved (%)** and **Compute Saved (%)** (requires a full-clip baseline JSON)
+- **Stop-window distribution** (min/median/max/mean + histogram) when time-exit is enabled
+- **Clip-length distribution** (min/median/max/mean + histogram) when `--disable_time_exit` is used
 
+### 2) Reviewer-proof diagnostics (apples-to-apples)
+To explain why segment accuracy can drop under aggressive time-exit (because early windows are harder), `clip_policy_test.py` adds:
+- **Fixed-position diagnostic** on every clip (independent of time-exit stopping):
+  - `Acc_firstK`, `Acc_midK`, `Acc_lastK` for **First-K / Middle-K / Last-K** windows
+- **Stop-speed groups** under Depth×Time:
+  - compare early-window accuracy for clips that stop at **2**, **3–4**, and **≥5** windows
+  - demonstrates: *easy clips stop early; hard clips need more evidence* (while clip accuracy remains high)
 
-## Research contributions inside the repo (what’s “new” here)
-Keep these as *project contributions*; reviewers like them when they are tied to measured behavior.
+### 3) Traceability: per-clip window counts
+Optional printing of:
+- `clip_i -> windows_total=... , windows_used=... | id=<wav_relpath>`
+so you can trace outliers quickly.
 
-- **Stability-aware evidence accumulation across exits (Depth-EA):** decisions are made from *accumulated evidence* (log-prob/logits) across exits, with stability control (`ea_stable_k`) and optional flip penalty.
-- **Exit1 high-confidence override (fixes a real failure mode):** when `ea_stable_k>1`, exit-1 can otherwise become impossible. We add a strict confidence/margin gate so easy samples can still exit early without collapsing accuracy.
-- **Adaptive-but-offline policy selection:** EA knobs are selected on VAL with a compute–accuracy trade-off objective (via `lambda_depth`). Parameters are fixed at inference time (TinyML-friendly).
-- **Observed “regime switch” behavior:** small changes in `lambda_depth` can trigger a discrete policy flip (e.g., shallow/low-acc vs deeper/high-acc), which is useful for a paper discussion on controllable trade-offs.
+---
 
+## Quickstart
 
-## Quickstart (recommended: one command)
-
-### Windows PowerShell
+### Environment
+Create/activate your environment (example):
 ```powershell
 conda activate ASHADIP_V0
-
-powershell -ExecutionPolicy Bypass -File scripts\run_full.ps1 `
-  -Variant "v0.3" `
-  -Policy "ea" `
-  -Device "cpu" `
-  -SegmentSec 1.0 `
-  -HopSec 0.5 `
-  -LambdaDepth 0.08
 ```
 
-This runs the whole pipeline end-to-end and writes a new run folder under `runs\v0_3\...`.
+### Typical evaluation flow
 
-### Optional: Weights & Biases tracking (PowerShell)
+#### (1) Segment policy (Depth-EA per segment)
 ```powershell
-wandb login
-$env:ENABLE_WANDB="1"
-$env:WANDB_PROJECT="NeuroAccuExit-ASHADIP"
-$env:WANDB_ENTITY="pankajgoikar-lancaster-university"
-$env:WANDB_MODE="online"
-$env:WANDB_TAGS="v0.3,posthoc"
-$env:WANDB_DIR="$PWD\.wandb_runs"
-New-Item -ItemType Directory -Force -Path "$env:WANDB_DIR" | Out-Null
+python -m scripts.policy_test `
+  --policy ea `
+  --run_dir "runs\v0_3\v0_3_027" `
+  --segments_csv "data_caches\v0_3\seg1_hop0p5_bp100-3000_mels64\segments.csv" `
+  --features_root "data_caches\v0_3\seg1_hop0p5_bp100-3000_mels64\features"
 ```
 
-
-## Manual run (if you want to run steps separately)
-
-### 1) Build segments & manifest (cached)
-```bash
-python -m scripts.prep_segments --root data/moth_sounds --cache data_caches   --sr 16000 --segment_sec 1.0 --hop 0.5 --silence_dbfs -40 --bandpass 100 3000
+#### (2) Clip policy baseline (FULL clip; no time early-exit)
+This produces the compute reference used by Depth×Time to compute Compute Saved (%).
+```powershell
+python -m scripts.clip_policy_test `
+  --run_dir "runs\v0_3\v0_3_027" `
+  --segments_csv "data_caches\v0_3\seg1_hop0p5_bp100-3000_mels64\segments.csv" `
+  --features_root "data_caches\v0_3\seg1_hop0p5_bp100-3000_mels64\features" `
+  --disable_time_exit `
+  --eval_fixed_k_windows 3 `
+  --print_clip_windows
 ```
 
-### 2) Extract log-mel features (cached)
-```bash
-python -m scripts.extract_features --cache data_caches --n_mels 64   --n_fft 1024 --win_ms 25 --hop_ms 10 --cmvn
+#### (3) Clip policy with TIME early-exit (Depth×Time)
+```powershell
+python -m scripts.clip_policy_test `
+  --run_dir "runs\v0_3\v0_3_027" `
+  --segments_csv "data_caches\v0_3\seg1_hop0p5_bp100-3000_mels64\segments.csv" `
+  --features_root "data_caches\v0_3\seg1_hop0p5_bp100-3000_mels64\features" `
+  --time_conf 0.95 `
+  --time_stable_k 2 `
+  --time_min_windows 2 `
+  --eval_fixed_k_windows 3 `
+  --print_clip_windows
 ```
 
-### 3) Train ExitNet
-```bash
-python -m training.train --config configs/audio_moth.yaml --run_dir runs/latest
-```
+---
 
-### 4) Calibrate temperatures
-```bash
-python -m training.calibrate --run_dir runs/latest   --segments_csv data_caches/.../segments.csv --features_root data_caches/.../features
-```
+## Key outputs (created in `run_dir`)
 
-### 5) Select EA thresholds (offline on VAL)
-```bash
-python -m training.ea_thresholds_offline --run_dir runs/latest   --segments_csv data_caches/.../segments.csv --features_root data_caches/.../features   --lambda_depth 0.08
-```
+### Segment policy (`scripts/policy_test.py`)
+- `policy_results.json` (segment accuracy, exit mix, avg depth, flip-rate, etc.)
 
-### 6) Policy test (TEST split)
-```bash
-python -m scripts.policy_test --policy ea --run_dir runs/latest   --segments_csv data_caches/.../segments.csv --features_root data_caches/.../features
-```
+### Clip policy (`scripts/clip_policy_test.py`)
+- JSON:
+  - `clip_policy_results.json` (legacy)
+  - `clip_policy_results_full.json` (when `--disable_time_exit`)
+  - `clip_policy_results_time.json` (when time-exit enabled)
+- CSV:
+  - `clip_preds.csv` (legacy)
+  - `clip_preds_full.csv` / `clip_preds_time.csv`
+- Distribution JSON:
+  - baseline: `clip_length_hist.json` (+ mode-specific `clip_length_hist_full.json`)
+  - time-exit: `windows_used_hist.json` (+ mode-specific `windows_used_hist_time.json`)
 
+---
 
-## Outputs (per run folder)
-A typical run directory contains:
-- `ckpt/best.pt` — best checkpoint
-- `temperature.json` — per-exit temperatures
-- `ea_thresholds.json` — selected EA policy parameters
-- `ea_sweep_results.json` — sweep table for analysis
-- `policy_results.json` — final test metrics + exit mix
+## How to interpret the numbers (paper-ready)
+It’s normal for **segment accuracy over processed windows** to drop under Depth×Time, because the policy evaluates mostly **early** windows.  
+The fixed-position diagnostic provides an apples-to-apples proof:
+- if `Acc_firstK < Acc_midK` and `Acc_firstK < Acc_lastK`, then the drop is **early-window difficulty**, not a bug or “early-clip bias”.
+The stop-speed grouping further shows:
+- **easy clips stop at 2 windows** with higher early-window accuracy,
+- **hard clips require ≥5 windows**.
 
+---
 
-## EA knobs (the key policy parameters)
-Saved in `ea_thresholds.json` and used by `scripts/policy_test.py`.
+## Notes / troubleshooting
+- If `Compute Saved (%)` prints `N/A`, ensure you ran the **FULL clip baseline** first so `clip_policy_results_full.json` exists in `run_dir`.
+- If you see missing feature files, confirm `--features_root` matches your cache directory and that `segments.csv` contains valid `feat_relpath` values.
 
-- `ea_threshold`: margin threshold on accumulated evidence
-- `ea_stable_k`: require K consecutive consistent predictions before exiting
-- `ea_flip_penalty`: penalize margin on prediction flips (optional)
-- `ea_mode`: `logprob` or `logits` accumulation
-- `ea_min_exit`: minimum exit index allowed
+---
 
-**Exit1 override knobs (to avoid “Exit1 deadlock” when `stable_k>1`):**
-- `ea_exit1_conf_min`: minimum softmax confidence (e.g., 0.90 or 0.95)
-- `ea_exit1_margin_mult`: require margin >= mult × `ea_threshold` for Exit1
-- `ea_exit1_margin_min`: optional absolute margin floor for Exit1
-
-
-## Reproducibility notes
-- Feature caching and deterministic splits are used to reduce preprocessing confounders.
-- On CPU, runs are often deterministic; if you want a robustness test, change training seed (if exposed) or run on GPU with/without deterministic settings.
-
-
-## License / Citation
-Add your preferred license and (when ready) a short citation block for the paper.
+## Citation / attribution
+If you build on this repo, please cite our paper (to be added once submitted).
