@@ -1,53 +1,40 @@
+# adapters/audio_adapter.py
+from __future__ import annotations
+
+from typing import List, Sequence
 import torch
 import torch.nn as nn
 
 
 class TinyAudioCNN(nn.Module):
     """
-    TinyAudioCNN backbone extended from 3 → 5 convolutional blocks.
+    5-block TinyAudioCNN backbone with configurable tap points.
 
-    Goal (Option A: clean comparison):
-      - Keep ONLY 3 exits, but move the final exit deeper.
-      - Attach exits at depths: 1 / 3 / 5
-        * Exit1: after block1  (very early, cheap)
-        * Exit2: after block3  (mid-depth)
-        * Exit3: after block5  (final, strongest)
+    Backward compatible default:
+        tap_blocks=(1, 3) -> taps after block1 (C=16) and block3 (C=32)
+        final_feat after block5 (C=64)
+        => total exits = 2 taps + 1 final = 3 exits (same as v0.4.2)
 
-    Input:
-      x: (B, 1, M, T)  where:
-        B = batch size
-        M = n_mels (e.g., 64)
-        T = frames (time)
-
-    Output format (unchanged from your old 3-block design):
-      return final_feat, taps
-        final_feat: (B, 64)       -> used for final head
-        taps: [t1, t2]
-          t1: (B, 16)             -> exit1 head input
-          t2: (B, 32)             -> exit2 head input
-
-    Why this design is convenient:
-      - ExitNet does NOT need to change if we keep dims (16, 32, 64).
-      - Most of your pipeline remains identical, so comparisons are clean.
+    Example for 5 exits total (4 early + final):
+        tap_blocks=(1, 2, 3, 4) -> tap_dims=[16, 24, 32, 48], final_dim=64
+        => total exits = 4 taps + 1 final = 5 exits
     """
 
-    def __init__(self, n_mels: int = 64):
-        super().__init__()
+    # Output channels after each block (must match the conv out_channels below)
+    _BLOCK_CHANNELS = [16, 24, 32, 48, 64]
 
-        # Channel schedule (TinyML-friendly gradual growth)
-        # 1 -> 16 -> 24 -> 32 -> 48 -> 64
-        #
-        # We are NOT adding extra downsampling yet (that comes later),
-        # so we keep pooling exactly like before in blocks 1–2 only.
+    def __init__(self, n_mels: int = 64, tap_blocks: Sequence[int] = (1, 3)):
+        super().__init__()
+        self.n_mels = int(n_mels)
 
         # -----------------------
         # Block 1 (cheap + early pooling)
         # -----------------------
         self.block1 = nn.Sequential(
-            nn.Conv2d(1, 16, kernel_size=3, padding=1),   # preserves spatial size
+            nn.Conv2d(1, 16, kernel_size=3, padding=1),
             nn.BatchNorm2d(16),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=(2, 2)),             # halves (M,T)
+            nn.MaxPool2d(kernel_size=(2, 2)),
         )
 
         # -----------------------
@@ -57,12 +44,11 @@ class TinyAudioCNN(nn.Module):
             nn.Conv2d(16, 24, kernel_size=3, padding=1),
             nn.BatchNorm2d(24),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=(2, 2)),             # halves again
+            nn.MaxPool2d(kernel_size=(2, 2)),
         )
 
         # -----------------------
-        # Block 3 (mid-depth, NO pooling yet)
-        # Exit2 tap comes from AFTER this block.
+        # Block 3 (mid-level features)
         # -----------------------
         self.block3 = nn.Sequential(
             nn.Conv2d(24, 32, kernel_size=3, padding=1),
@@ -71,7 +57,7 @@ class TinyAudioCNN(nn.Module):
         )
 
         # -----------------------
-        # Block 4 (deeper features, still NO pooling)
+        # Block 4 (deeper features)
         # -----------------------
         self.block4 = nn.Sequential(
             nn.Conv2d(32, 48, kernel_size=3, padding=1),
@@ -80,63 +66,50 @@ class TinyAudioCNN(nn.Module):
         )
 
         # -----------------------
-        # Block 5 (final block)
-        # Add global pooling to produce a fixed-size embedding (B,64).
+        # Block 5 (final embedding + global pooling)
         # -----------------------
         self.block5 = nn.Sequential(
             nn.Conv2d(48, 64, kernel_size=3, padding=1),
             nn.BatchNorm2d(64),
             nn.ReLU(),
-            nn.AdaptiveAvgPool2d((1, 1)),                 # -> (B,64,1,1)
+            nn.AdaptiveAvgPool2d((1, 1)),  # -> (B,64,1,1)
         )
+
+        # Store blocks in order for iteration
+        self._blocks: List[nn.Module] = [self.block1, self.block2, self.block3, self.block4, self.block5]
+
+        # -----------------------
+        # Tap configuration (where to place early exits)
+        # We allow taps only after blocks 1..4.
+        # Block5 is reserved for final_feat.
+        # -----------------------
+        tb = [int(b) for b in tap_blocks]
+        if len(tb) == 0:
+            raise ValueError("tap_blocks must contain at least one tap block (e.g., (1,3) or (1,2,3,4)).")
+        if any(b < 1 or b > 4 for b in tb):
+            raise ValueError(f"tap_blocks must be in [1..4]. Got: {tap_blocks}")
+
+        self.tap_blocks = sorted(set(tb))
+        self.tap_dims = [self._BLOCK_CHANNELS[b - 1] for b in self.tap_blocks]
+        self.final_dim = self._BLOCK_CHANNELS[-1]
 
     @staticmethod
     def _tap_pool(feat_map: torch.Tensor) -> torch.Tensor:
         """
-        Convert a 2D feature map (B,C,H,W) into a compact vector (B,C)
-        in a way consistent with your previous code.
-
-        Strategy (cheap + stable):
-          1) max over time axis (W)
-          2) mean over frequency axis (H)
-
-        This roughly means:
-          "for each channel, take strongest evidence over time,
-           then average across frequency bins"
+        Convert (B,C,H,W) feature map into (B,C) vector:
+          max over time (W), then mean over freq (H).
         """
-        # feat_map: (B, C, H, W)
-        return torch.amax(feat_map, dim=-1).mean(-1)  # -> (B, C)
+        return torch.amax(feat_map, dim=-1).mean(-1)
 
     def forward(self, x: torch.Tensor):
-        """
-        Forward pass, returning:
-          final_feat: (B, 64)
-          taps: [t1 (B,16), t2 (B,32)]
-        """
+        taps: List[torch.Tensor] = []
 
-        # After block1:
-        # f1: (B,16,M/2,T/2)
-        f1 = self.block1(x)
+        f = x
+        for i, blk in enumerate(self._blocks, start=1):
+            f = blk(f)
+            if i in self.tap_blocks:
+                taps.append(self._tap_pool(f))
 
-        # After block2:
-        # f2: (B,24,M/4,T/4)
-        f2 = self.block2(f1)
-
-        # After block3:
-        # f3: (B,32,M/4,T/4)  <-- Exit2 tap source
-        f3 = self.block3(f2)
-
-        # After block4:
-        # f4: (B,48,M/4,T/4)
-        f4 = self.block4(f3)
-
-        # After block5:
-        # f5: (B,64,1,1)
-        f5 = self.block5(f4)
-
-        # Exit taps (Option A: exits at 1/3/5)
-        t1 = self._tap_pool(f1)              # (B,16) after block1
-        t2 = self._tap_pool(f3)              # (B,32) after block3
-        final_feat = f5.view(f5.size(0), -1) # (B,64) after block5
-
-        return final_feat, [t1, t2]
+        # final block output is (B,64,1,1) because of AdaptiveAvgPool2d
+        final_feat = f.view(f.size(0), -1)  # (B,64)
+        return final_feat, taps

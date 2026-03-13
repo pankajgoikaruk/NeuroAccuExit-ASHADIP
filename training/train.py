@@ -1,11 +1,13 @@
 # training/train.py
+from __future__ import annotations
 
 import os
 import sys
 import argparse
 import random
-import numpy as np
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+import numpy as np
 import torch
 from torch.optim import Adam
 import torch.nn.functional as F
@@ -25,7 +27,6 @@ def set_global_seed(seed: int):
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     try:
@@ -40,8 +41,7 @@ def _spec_augment(x, freq_mask=8, time_mask=12, num_masks=2):
     x: (B, n_mels, frames) or (B, 1, n_mels, frames)
     Masks are applied with zeros.
     """
-    if x.dim() == 4:
-        # (B,1,M,T) -> (B,M,T)
+    if x.dim() == 4:  # (B,1,M,T) -> (B,M,T)
         x2 = x[:, 0]
         add_channel_back = True
     else:
@@ -77,23 +77,50 @@ def _kd_kl(student_logits, teacher_logits, T=2.0):
     Returns scalar.
     """
     T = float(T)
-    # teacher detached
-    p_t = F.softmax(teacher_logits / T, dim=1)
+    p_t = F.softmax(teacher_logits / T, dim=1)              # teacher detached outside
     log_p_s = F.log_softmax(student_logits / T, dim=1)
-    # kl_div expects input=log_probs, target=probs
     kl = F.kl_div(log_p_s, p_t, reduction="batchmean")
     return kl * (T * T)
 
 
-def train_one_epoch(model, dl, opt, device, loss_w,
-                    kd_enable=False, kd_alpha=0.5, kd_temp=2.0, kd_weights=(1.0, 1.0),
-                    specaug_enable=False, specaug_cfg=None):
+def _pad_or_trim(seq: Sequence[float], target_len: int, pad_value: Optional[float] = None) -> List[float]:
+    """
+    Pad/trim a numeric sequence to target_len.
+    If pad_value is None, pads with last element (or 1.0 if empty).
+    """
+    seq = list(seq) if isinstance(seq, (list, tuple)) else []
+    if len(seq) == 0:
+        seq = [1.0]
+    if pad_value is None:
+        pad_value = float(seq[-1])
+
+    if len(seq) < target_len:
+        seq = seq + [float(pad_value)] * (target_len - len(seq))
+    elif len(seq) > target_len:
+        seq = seq[:target_len]
+    return [float(x) for x in seq]
+
+
+def train_one_epoch(
+    model,
+    dl,
+    opt,
+    device,
+    loss_w: Sequence[float],
+    kd_enable: bool = False,
+    kd_alpha: float = 0.5,
+    kd_temp: float = 2.0,
+    kd_weights: Sequence[float] = (1.0, 1.0),
+    specaug_enable: bool = False,
+    specaug_cfg: Optional[Dict[str, Any]] = None,
+):
     model.train()
     loss_sum, n = 0.0, 0
-    correct = [0, 0, 0]
 
     if specaug_cfg is None:
         specaug_cfg = {}
+
+    correct: Optional[List[int]] = None  # allocate after first forward (K known)
 
     for x, y in dl:
         x, y = x.to(device), y.to(device)
@@ -103,24 +130,28 @@ def train_one_epoch(model, dl, opt, device, loss_w,
             fm = int(specaug_cfg.get("freq_mask", 8))
             tm = int(specaug_cfg.get("time_mask", 12))
             nm = int(specaug_cfg.get("num_masks", 2))
-
             p = float(specaug_cfg.get("prob", 1.0))
             if random.random() < p:
                 x = _spec_augment(x, freq_mask=fm, time_mask=tm, num_masks=nm)
 
         opt.zero_grad()
-        logits = model(x)  # list of 3 tensors (B,C)
+        logits = model(x)  # list length K
 
-        # CE losses for each exit
+        if correct is None:
+            correct = [0] * len(logits)
+
+        # CE losses for each exit (K-exit)
         ce_losses = [cross_entropy(lg, y) for lg in logits]
         loss = sum(float(w) * l for w, l in zip(loss_w, ce_losses))
 
-        # Optional KD: teacher=exit3, students=exit1/exit2
+        # Optional KD: teacher=final exit, students=all earlier exits (K-1)
         if kd_enable:
             teacher = logits[-1].detach()
-            kd1 = _kd_kl(logits[0], teacher, T=kd_temp)
-            kd2 = _kd_kl(logits[1], teacher, T=kd_temp)
-            loss = loss + float(kd_alpha) * (float(kd_weights[0]) * kd1 + float(kd_weights[1]) * kd2)
+            kw = _pad_or_trim(kd_weights, target_len=max(len(logits) - 1, 1), pad_value=None)
+            kd_sum = 0.0
+            for i_exit in range(len(logits) - 1):
+                kd_sum = kd_sum + float(kw[i_exit]) * _kd_kl(logits[i_exit], teacher, T=kd_temp)
+            loss = loss + float(kd_alpha) * kd_sum
 
         loss.backward()
         opt.step()
@@ -133,41 +164,43 @@ def train_one_epoch(model, dl, opt, device, loss_w,
             pred = lg.argmax(1)
             correct[k] += int((pred == y).sum())
 
-    acc = [c / max(n, 1) for c in correct]
+    acc = [c / max(n, 1) for c in (correct or [])]
     return loss_sum / max(n, 1), acc
 
 
 @torch.no_grad()
 def evaluate(model, dl, device):
     model.eval()
-    correct = [0, 0, 0]
+    correct: Optional[List[int]] = None
     n = 0
+
     for x, y in dl:
         x, y = x.to(device), y.to(device)
-        logits = model(x)
+        logits = model(x)  # list length K
+
+        if correct is None:
+            correct = [0] * len(logits)
+
         n += x.size(0)
         for k, lg in enumerate(logits):
             pred = lg.argmax(1)
             correct[k] += int((pred == y).sum())
-    acc = [c / max(n, 1) for c in correct]
+
+    acc = [c / max(n, 1) for c in (correct or [])]
     return acc
 
 
 def _parse_extra_args():
     p = argparse.ArgumentParser(add_help=False)
-    p.add_argument("--run_dir", type=str, default=None,
-                   help="Explicit run directory to write outputs.")
-    p.add_argument("--device", type=str, default=None,
-                   help="Force device: cpu | cuda (default: auto).")
-    p.add_argument("--cache_dir", type=str, default=None,
-                   help="Override cache directory containing segments.csv + features/.")
-    p.add_argument("--segment_sec", type=float, default=None,
-                   help="Optional: record segment_sec in effective config.")
-    p.add_argument("--hop_sec", type=float, default=None,
-                   help="Optional: record hop_sec in effective config.")
-    p.add_argument("--variant", type=str, default=None,
-                   help="Optional: record variant name in effective config.")
+    p.add_argument("--run_dir", type=str, default=None, help="Explicit run directory to write outputs.")
+    p.add_argument("--device", type=str, default=None, help="Force device: cpu | cuda (default: auto).")
+    p.add_argument("--cache_dir", type=str, default=None, help="Override cache directory containing segments.csv + features/.")
+    p.add_argument("--segment_sec", type=float, default=None, help="Optional: record segment_sec in effective config.")
+    p.add_argument("--hop_sec", type=float, default=None, help="Optional: record hop_sec in effective config.")
+    p.add_argument("--variant", type=str, default=None, help="Optional: record variant name in effective config.")
     args, remaining = p.parse_known_args()
+
+    # Keep parse_args_with_config() clean
     sys.argv = [sys.argv[0]] + remaining
     return args
 
@@ -187,7 +220,6 @@ def main():
     paths = (cfg.get("paths") or {})
     runs_root = paths.get("runs_root", "runs")
     cache_root = paths.get("cache_root", "data_cache")
-
     if extra.cache_dir:
         cache_root = extra.cache_dir
 
@@ -231,21 +263,6 @@ def main():
     wd = float(tr.get("weight_decay", 0.0))
     epochs = int(tr.get("epochs", 40))
 
-    # ✅ Loss weights (you already had this)
-    # Recommend for stronger exit1: [1.0, 0.5, 0.2] (try it)
-    loss_w = tr.get("loss_weights", [0.3, 0.3, 1.0])
-
-    # ✅ KD config (optional)
-    kd = tr.get("kd", {}) or {}
-    kd_enable = bool(kd.get("enable", False))
-    kd_alpha = float(kd.get("alpha", 0.5))      # strength of KD term
-    kd_temp = float(kd.get("temp", 2.0))        # distillation temperature
-    kd_weights = kd.get("weights", [1.0, 1.0])  # [exit1, exit2]
-    if isinstance(kd_weights, (list, tuple)) and len(kd_weights) >= 2:
-        kd_weights = (float(kd_weights[0]), float(kd_weights[1]))
-    else:
-        kd_weights = (1.0, 1.0)
-
     # SpecAugment config (optional)
     spec = tr.get("specaug", {}) or {}
     specaug_enable = bool(spec.get("enable", False))
@@ -254,10 +271,41 @@ def main():
     dl_tr, dl_va, dl_te, label2id = make_loaders(seg_csv, feat_root, bs, nw, seed=seed)
 
     n_mels = int((cfg.get("features") or {}).get("n_mels", 64))
-    num_classes = int((cfg.get("model") or {}).get("num_classes", 2))
 
-    backbone = TinyAudioCNN(n_mels=n_mels)
-    model = ExitNet(backbone, tap_dims=(16, 32), final_dim=64, num_classes=num_classes).to(device)
+    # ---- C-class generic: always derive num_classes from dataset ----
+    num_classes_data = len(label2id)
+    num_classes_cfg = int((cfg.get("model") or {}).get("num_classes", num_classes_data))
+    if num_classes_cfg != num_classes_data:
+        print(f"[WARN] config num_classes={num_classes_cfg} but dataset has {num_classes_data}. Using dataset value.")
+    num_classes = num_classes_data
+
+    # ---- K-exit generic via tap_blocks ----
+    tap_blocks_cfg = (cfg.get("model") or {}).get("tap_blocks", [1, 3])
+    tap_blocks = tuple(int(x) for x in tap_blocks_cfg)
+    K = len(tap_blocks) + 1
+
+    backbone = TinyAudioCNN(n_mels=n_mels, tap_blocks=tap_blocks)
+    model = ExitNet(
+        backbone,
+        num_classes=num_classes,              # required keyword-only
+        tap_dims=backbone.tap_dims,
+        final_dim=backbone.final_dim,
+    ).to(device)
+
+    # ---- Loss weights (pad/trim to K) ----
+    # Backward-compatible default: earlier exits lower weight, final highest
+    default_loss_w = [0.3] * (K - 1) + [1.0]
+    loss_w = tr.get("loss_weights", default_loss_w)
+    loss_w = _pad_or_trim(loss_w, target_len=K, pad_value=None)
+
+    # ---- KD config (optional, pad/trim to K-1) ----
+    kd = tr.get("kd", {}) or {}
+    kd_enable = bool(kd.get("enable", False))
+    kd_alpha = float(kd.get("alpha", 0.5))
+    kd_temp = float(kd.get("temp", 2.0))
+
+    kd_weights_raw = kd.get("weights", [1.0] * max(K - 1, 1))
+    kd_weights = _pad_or_trim(kd_weights_raw, target_len=max(K - 1, 1), pad_value=None)
 
     opt = Adam(model.parameters(), lr=lr, weight_decay=wd)
 
@@ -268,7 +316,7 @@ def main():
         tr_loss, tr_acc = train_one_epoch(
             model, dl_tr, opt, device, loss_w,
             kd_enable=kd_enable, kd_alpha=kd_alpha, kd_temp=kd_temp, kd_weights=kd_weights,
-            specaug_enable=specaug_enable, specaug_cfg=spec
+            specaug_enable=specaug_enable, specaug_cfg=spec,
         )
         va_acc = evaluate(model, dl_va, device)
 
@@ -277,11 +325,12 @@ def main():
 
         print(f"Epoch {ep + 1}: loss={tr_loss:.4f}, acc@exits={va_acc}")
 
-        if va_acc[-1] > best:
+        if len(va_acc) > 0 and va_acc[-1] > best:
             best = va_acc[-1]
             torch.save(model.state_dict(), os.path.join(ckpt_dir, "best.pt"))
 
-    save_json(metrics, os.path.join(run_dir, "metrics.json"))
+        save_json(metrics, os.path.join(run_dir, "metrics.json"))
+
     print("Saved:", run_dir)
 
 

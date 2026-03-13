@@ -59,6 +59,13 @@ python -m scripts.clip_policy_test `
   --time_min_windows 2 `
   --eval_fixed_k_windows 3 `
   --print_clip_windows
+
+(3) If you train with 5 exits (tap_blocks 1,2,3,4):
+python -m scripts.clip_policy_test `
+  --tap_blocks 1,2,3,4 `
+  --run_dir ... `
+  --segments_csv ... `
+  --features_root ...
 """
 
 import os
@@ -70,7 +77,6 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
-
 from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
 
 from data.datasets import make_loaders
@@ -92,6 +98,18 @@ def _save_json(path: str, obj):
         json.dump(obj, f, indent=2)
 
 
+def _pad_or_trim_temps(temps, K: int):
+    """Pad/trim temperature list to length K."""
+    if temps is None:
+        temps = [1.0] * K
+    temps = [max(float(t), 1e-3) for t in temps]
+    if len(temps) < K:
+        temps = temps + [temps[-1]] * (K - len(temps))
+    elif len(temps) > K:
+        temps = temps[:K]
+    return temps
+
+
 def _stop_posterior_from_accum(accum_logp_cpu: torch.Tensor, used_windows: int) -> torch.Tensor:
     """
     Posterior used for TIME stopping.
@@ -104,10 +122,7 @@ def _stop_posterior_from_accum(accum_logp_cpu: torch.Tensor, used_windows: int) 
 
 
 def _print_confusion(cm: np.ndarray, labels: list[str]):
-    """
-    Pretty-print confusion matrix with labels.
-    Rows = true, Cols = pred
-    """
+    """Pretty-print confusion matrix with labels. Rows=true, Cols=pred."""
     width = max(7, max(len(l) for l in labels) + 2)
     header = " " * width + "".join([f"{l:>{width}}" for l in labels])
     print(header)
@@ -123,19 +138,15 @@ def _dist_stats(values: list[int]) -> dict:
     """
     if not values:
         return {"min": None, "median": None, "max": None, "mean": None, "hist": {}, "n_clips": 0}
-
     arr = sorted(int(x) for x in values)
     n = len(arr)
-
     # median (even/odd)
     if n % 2 == 1:
         median = float(arr[n // 2])
     else:
         median = 0.5 * (arr[n // 2 - 1] + arr[n // 2])
-
     mean = float(sum(arr) / n)
     hist = dict(Counter(arr))
-
     return {
         "min": int(arr[0]),
         "median": float(median),
@@ -172,6 +183,14 @@ def main():
     ap.add_argument("--features_root", required=True)
     ap.add_argument("--num_workers", type=int, default=0)
 
+    # ---- Model shape (Step 0: K-exit + C-class) ----
+    ap.add_argument(
+        "--tap_blocks",
+        default="1,3",
+        help="Comma list like 1,2,3,4 controlling number of exits (K=len(tap_blocks)+1). Default 1,3 (=3 exits).",
+    )
+    ap.add_argument("--n_mels", type=int, default=64, help="Number of mel bins (must match feature extraction).")
+
     # ---- TIME early-exit knobs (clip-level) ----
     ap.add_argument("--disable_time_exit", action="store_true", help="Process full clip (no time stopping).")
     ap.add_argument("--time_min_windows", type=int, default=2, help="Do not stop before this many segments.")
@@ -200,7 +219,7 @@ def main():
     ap.add_argument(
         "--print_clip_windows",
         action="store_true",
-        help="Print per-clip window counts like: clip1 -> windows_total=30  |  id=... (and windows_used if time-exit).",
+        help="Print per-clip window counts like: clip1 -> windows_total=30 | id=... (and windows_used if time-exit).",
     )
 
     # ---- For Compute Saved (%) ----
@@ -214,23 +233,21 @@ def main():
     )
 
     args = ap.parse_args()
+
+    tap_blocks = tuple(int(x) for x in str(args.tap_blocks).split(",") if str(x).strip())
+    if len(tap_blocks) == 0:
+        raise SystemExit("tap_blocks parsed empty. Provide e.g. --tap_blocks 1,3 or 1,2,3,4")
+
     time_exit_enabled = not args.disable_time_exit
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # ---- Load temps (same as policy_test.py) ----
-    tpath = os.path.join(args.run_dir, "temperature.json")
-    if os.path.exists(tpath):
-        temps = _load_json(tpath).get("temperatures", [1.0, 1.0, 1.0])
-    else:
-        temps = [1.0, 1.0, 1.0]
-    temps = [max(float(t), 1e-3) for t in temps]
+    temps = None  # loaded after model is built (needs K)
 
     # ---- Load EA knobs (same keys as policy_test.py) ----
     ea_path = os.path.join(args.run_dir, "ea_thresholds.json")
     if not os.path.exists(ea_path):
         raise FileNotFoundError(f"ea_thresholds.json not found in run_dir: {ea_path}")
     ea_file = _load_json(ea_path)
-
     ea_cfg = {
         "ea_threshold": float(ea_file["ea_threshold"]),
         "ea_mode": ea_file.get("ea_mode", "logprob"),
@@ -250,17 +267,33 @@ def main():
     labels_sorted = [id2label[i] for i in range(len(id2label))]
     num_classes = len(label2id)
 
-    # ---- Build model (same as policy_test.py) ----
-    model = ExitNet(TinyAudioCNN(), (16, 32), 64, num_classes).to(device)
+    # ---- Build model (Step 0 compatible) ----
+    backbone = TinyAudioCNN(n_mels=int(args.n_mels), tap_blocks=tap_blocks)
+    model = ExitNet(
+        backbone,
+        num_classes=num_classes,
+        tap_dims=backbone.tap_dims,
+        final_dim=backbone.final_dim,
+    ).to(device)
+
     ckpt = os.path.join(args.run_dir, "ckpt", "best.pt")
     if not os.path.exists(ckpt):
         raise FileNotFoundError(f"Model checkpoint not found: {ckpt}")
     model.load_state_dict(torch.load(ckpt, map_location=device))
     model.eval()
 
+    K = int(model.num_exits)
+
+    # ---- Load temps (pad/trim to K) ----
+    tpath = os.path.join(args.run_dir, "temperature.json")
+    if os.path.exists(tpath):
+        temps = _load_json(tpath).get("temperatures", None)
+    else:
+        temps = None
+    temps = _pad_or_trim_temps(temps, K)
+
     # ---- Load segments.csv and group by clip (wav_relpath) ----
     df = pd.read_csv(args.segments_csv)
-
     req = {"wav_relpath", "label", "start", "duration", "split", "feat_relpath"}
     missing = req - set(df.columns)
     if missing:
@@ -277,7 +310,7 @@ def main():
     n_clips = 0
     clip_correct = 0
 
-    exit_mix = Counter()  # used windows only: e1/e2/e3
+    exit_mix = Counter()  # used windows only: e1..eK
     seg_count = 0
     seg_taken_eq_final = 0
     flip_count_total = 0
@@ -295,7 +328,6 @@ def main():
     fix_last_count = 0
 
     # Stop-speed group diagnostics (Depth×Time only): use first-K within each stop group
-    # Groups: stop==2, stop==3-4, stop>=5
     group_firstk = {
         "stop_2": {"clips": 0, "correct": 0, "count": 0},
         "stop_3_4": {"clips": 0, "correct": 0, "count": 0},
@@ -313,10 +345,18 @@ def main():
 
     features_root = args.features_root
 
+    # Output filenames
+    out_json_full = os.path.join(args.run_dir, "clip_policy_results_full.json")
+    out_json_time = os.path.join(args.run_dir, "clip_policy_results_time.json")
+
+    # Legacy / histogram outputs
+    out_hist_legacy = os.path.join(args.run_dir, "windows_used_hist.json")
+    out_hist_full = os.path.join(args.run_dir, "clip_length_hist.json")
+    out_hist_time = os.path.join(args.run_dir, "windows_used_hist.json")
+
     for clip_id, g in df_te.groupby("wav_relpath"):
         g_sorted = g.sort_values("start").reset_index(drop=True)
 
-        # windows_total is based on segments.csv rows for consistency with your earlier outputs
         windows_total = int(len(g_sorted))
         windows_total_list.append(windows_total)
 
@@ -333,35 +373,17 @@ def main():
             raise SystemExit(f"No valid feature windows for clip: {clip_id}")
 
         # ------------------------------
-        # Reviewer-proof fixed-position diagnostics:
-        # Evaluate first-K, middle-K, last-K for EVERY clip (independent of time-exit).
+        # Reviewer-proof fixed-position diagnostics (independent of time-exit)
         # ------------------------------
         if K_fix > 0:
-            k = min(K_fix, n_valid)
-
-            # first-K indices
-            first_idxs = list(range(0, k))
-
-            # middle-K indices: centered contiguous block
-            if n_valid <= k:
-                mid_start = 0
-            else:
-                mid_start = (n_valid - k) // 2
-            mid_idxs = list(range(mid_start, mid_start + k))
-
-            # last-K indices
-            last_start = max(0, n_valid - k)
-            last_idxs = list(range(last_start, n_valid))
-
-            def _eval_indices(idxs: list[int]) -> tuple[int, int]:
-                c = 0
-                n = 0
-                for j in idxs:
-                    feat_path = win_rows[j]["feat_path"]
-                    S = np.load(feat_path)  # (M, T)
-                    x = torch.from_numpy(S).float().unsqueeze(0).unsqueeze(0).to(device)  # (1,1,M,T)
+            # positions computed on valid windows list
+            def _eval_positions(idxs):
+                nonlocal fix_first_correct, fix_first_count, fix_mid_correct, fix_mid_count, fix_last_correct, fix_last_count
+                for pos in idxs:
+                    w = win_rows[pos]
+                    S = np.load(w["feat_path"])
+                    x = torch.from_numpy(S).float().unsqueeze(0).unsqueeze(0).to(device)
                     logits_list = model(x)
-
                     out = depth_ea_decide(
                         logits_list=logits_list,
                         temps=temps,
@@ -375,29 +397,88 @@ def main():
                         ea_exit1_margin_min=ea_cfg["ea_exit1_margin_min"],
                     )
                     pred_taken = int(out["pred_taken"][0].item())
-                    c += int(pred_taken == y_true)
-                    n += 1
-                return c, n
+                    return pred_taken
 
-            c1, n1 = _eval_indices(first_idxs)
-            cm, nm = _eval_indices(mid_idxs)
-            cL, nL = _eval_indices(last_idxs)
+            # First-K
+            k = min(K_fix, n_valid)
+            first_idxs = list(range(0, k))
+            for pos in first_idxs:
+                S = np.load(win_rows[pos]["feat_path"])
+                x = torch.from_numpy(S).float().unsqueeze(0).unsqueeze(0).to(device)
+                logits_list = model(x)
+                out = depth_ea_decide(
+                    logits_list=logits_list,
+                    temps=temps,
+                    ea_mode=ea_cfg["ea_mode"],
+                    ea_threshold=ea_cfg["ea_threshold"],
+                    ea_min_exit=ea_cfg["ea_min_exit"],
+                    ea_stable_k=ea_cfg["ea_stable_k"],
+                    ea_flip_penalty=ea_cfg["ea_flip_penalty"],
+                    ea_exit1_conf_min=ea_cfg["ea_exit1_conf_min"],
+                    ea_exit1_margin_mult=ea_cfg["ea_exit1_margin_mult"],
+                    ea_exit1_margin_min=ea_cfg["ea_exit1_margin_min"],
+                )
+                pred_taken = int(out["pred_taken"][0].item())
+                fix_first_correct += int(pred_taken == y_true)
+                fix_first_count += 1
 
-            fix_first_correct += c1
-            fix_first_count += n1
-            fix_mid_correct += cm
-            fix_mid_count += nm
-            fix_last_correct += cL
-            fix_last_count += nL
+            # Middle-K
+            mid_start = max((n_valid // 2) - (k // 2), 0)
+            mid_start = min(mid_start, max(n_valid - k, 0))
+            mid_idxs = list(range(mid_start, mid_start + k))
+            for pos in mid_idxs:
+                S = np.load(win_rows[pos]["feat_path"])
+                x = torch.from_numpy(S).float().unsqueeze(0).unsqueeze(0).to(device)
+                logits_list = model(x)
+                out = depth_ea_decide(
+                    logits_list=logits_list,
+                    temps=temps,
+                    ea_mode=ea_cfg["ea_mode"],
+                    ea_threshold=ea_cfg["ea_threshold"],
+                    ea_min_exit=ea_cfg["ea_min_exit"],
+                    ea_stable_k=ea_cfg["ea_stable_k"],
+                    ea_flip_penalty=ea_cfg["ea_flip_penalty"],
+                    ea_exit1_conf_min=ea_cfg["ea_exit1_conf_min"],
+                    ea_exit1_margin_mult=ea_cfg["ea_exit1_margin_mult"],
+                    ea_exit1_margin_min=ea_cfg["ea_exit1_margin_min"],
+                )
+                pred_taken = int(out["pred_taken"][0].item())
+                fix_mid_correct += int(pred_taken == y_true)
+                fix_mid_count += 1
+
+            # Last-K
+            last_idxs = list(range(max(n_valid - k, 0), n_valid))
+            for pos in last_idxs:
+                S = np.load(win_rows[pos]["feat_path"])
+                x = torch.from_numpy(S).float().unsqueeze(0).unsqueeze(0).to(device)
+                logits_list = model(x)
+                out = depth_ea_decide(
+                    logits_list=logits_list,
+                    temps=temps,
+                    ea_mode=ea_cfg["ea_mode"],
+                    ea_threshold=ea_cfg["ea_threshold"],
+                    ea_min_exit=ea_cfg["ea_min_exit"],
+                    ea_stable_k=ea_cfg["ea_stable_k"],
+                    ea_flip_penalty=ea_cfg["ea_flip_penalty"],
+                    ea_exit1_conf_min=ea_cfg["ea_exit1_conf_min"],
+                    ea_exit1_margin_mult=ea_cfg["ea_exit1_margin_mult"],
+                    ea_exit1_margin_min=ea_cfg["ea_exit1_margin_min"],
+                )
+                pred_taken = int(out["pred_taken"][0].item())
+                fix_last_correct += int(pred_taken == y_true)
+                fix_last_count += 1
 
         # ------------------------------
-        # Main TIME-policy run (counts toward compute/used/stopping)
+        # Main clip processing (Depth×Time)
         # ------------------------------
-        accum_logp = torch.zeros((num_classes,), dtype=torch.float32)
+        n_clips += 1
+        accum_logp = torch.zeros((num_classes,), dtype=torch.float32)  # CPU accumulator
+        used = 0
 
-        prev_clip_pred = None
-        stable = 0
-        used = 0  # number of processed windows
+        # time stopping state
+        last_pred = None
+        stable_count = 0
+
         stopped = False
         stop_reason = "eof"
         stop_conf = None
@@ -431,7 +512,7 @@ def main():
                 ea_exit1_margin_min=ea_cfg["ea_exit1_margin_min"],
             )
 
-            taken = int(out["taken"][0].item())            # 0/1/2
+            taken = int(out["taken"][0].item())            # 0..K-1
             pred_taken = int(out["pred_taken"][0].item())  # class id
             pred_final = int(out["pred_final"][0].item())  # class id
 
@@ -458,77 +539,96 @@ def main():
             used += 1
 
             # stop posterior (normalized)
-            post_stop = _stop_posterior_from_accum(accum_logp, used)  # (C,)
-            clip_pred_stop = int(torch.argmax(post_stop).item())
-            conf = float(torch.max(post_stop).item())
+            post_stop = _stop_posterior_from_accum(accum_logp, used_windows=used)
+            conf = float(post_stop.max().item())
 
-            if num_classes >= 2:
-                top2 = torch.topk(post_stop, 2).values
+            # margin (top1 - top2) if enabled
+            if float(args.time_margin) > 0.0:
+                top2 = torch.topk(post_stop, k=2).values
                 margin = float((top2[0] - top2[1]).item())
             else:
-                margin = conf
+                margin = None
 
-            if prev_clip_pred is None or clip_pred_stop != prev_clip_pred:
-                stable = 1
-                prev_clip_pred = clip_pred_stop
+            pred_clip = int(torch.argmax(post_stop).item())
+
+            # update stability counter
+            if last_pred is None or pred_clip != last_pred:
+                stable_count = 1
             else:
-                stable += 1
+                stable_count += 1
+            last_pred = pred_clip
 
-            if time_exit_enabled and used >= int(args.time_min_windows):
-                if stable >= int(args.time_stable_k) and conf >= float(args.time_conf):
-                    if float(args.time_margin) <= 0.0 or margin >= float(args.time_margin):
-                        stop_reasons["conf/stable"] += 1
+            # TIME stopping condition
+            if time_exit_enabled:
+                if used >= int(args.time_min_windows):
+                    ok_stable = stable_count >= int(args.time_stable_k)
+                    ok_conf = conf >= float(args.time_conf)
+                    ok_margin = True
+                    if float(args.time_margin) > 0.0:
+                        ok_margin = (margin is not None) and (margin >= float(args.time_margin))
+
+                    if ok_stable and ok_conf and ok_margin:
+                        stop_reasons["time_conf_stable"] += 1
                         stopped = True
-                        stop_reason = "conf/stable"
+                        stop_reason = "time_conf_stable"
                         stop_conf = conf
                         stop_margin = margin
                         break
 
-        if not stopped:
-            stop_reasons["eof"] += 1
-
+        # end window loop
         windows_used_list.append(int(used))
-        compute_units_list.append(int(compute_units))
+        compute_units_list.append(float(compute_units))
 
-        final_clip_pred = int(torch.argmax(accum_logp).item())
-
-        n_clips += 1
-        clip_correct += int(final_clip_pred == y_true)
-
+        # final clip prediction:
+        # if time_exit disabled, still use normalized posterior at used==total (works fine)
+        post_final = _stop_posterior_from_accum(accum_logp, used_windows=used)
+        y_pred = int(torch.argmax(post_final).item())
         y_true_clips.append(y_true)
-        y_pred_clips.append(final_clip_pred)
+        y_pred_clips.append(y_pred)
 
-        clip_rows.append({
-            "wav_relpath": clip_id,
-            "y_true_id": y_true,
-            "y_true_label": id2label[y_true],
-            "y_pred_id": final_clip_pred,
-            "y_pred_label": id2label[final_clip_pred],
-            "windows_total": int(windows_total),
-            "windows_used": int(used),  # processed windows (valid feature windows until stop)
-            "windows_valid_total": int(n_valid),
-            "fraction_used": float(used / max(windows_total, 1)),
-            "compute_units_sum_depth_used": int(compute_units),
-            "stop_reason": stop_reason,
-            "stop_conf": None if stop_conf is None else float(stop_conf),
-            "stop_margin": None if stop_margin is None else float(stop_margin),
-        })
+        clip_correct += int(y_pred == y_true)
 
-        # ------------------------------
-        # Stop-speed group diagnostics (Depth×Time only)
-        # Use fixed-position first-K accuracy within each stop group.
-        # ------------------------------
-        if time_exit_enabled and K_fix > 0 and fix_first_count > 0:
-            # We must compute per-clip first-K correct/count (not global).
-            # Recompute for this clip only (cheap K windows).
-            k = min(K_fix, n_valid)
-            first_idxs = list(range(0, k))
+        # window distribution output depends on mode
+        if args.print_clip_windows:
+            if time_exit_enabled:
+                print(f"clip{n_clips} -> windows_total={windows_total}, windows_used={used}  |  id={clip_id}")
+            else:
+                print(f"clip{n_clips} -> windows_total={windows_total}  |  id={clip_id}")
 
-            c_clip = 0
-            n_clip = 0
-            for j in first_idxs:
-                feat_path = win_rows[j]["feat_path"]
-                S = np.load(feat_path)
+        clip_rows.append(
+            {
+                "clip_id": clip_id,
+                "y_true": int(y_true),
+                "y_pred": int(y_pred),
+                "y_true_label": str(id2label[y_true]),
+                "y_pred_label": str(id2label[y_pred]),
+                "windows_total": int(windows_total),
+                "windows_used": int(used),
+                "compute_units": float(compute_units),
+                "stop_reason": str(stop_reason),
+                "stop_conf": None if stop_conf is None else float(stop_conf),
+                "stop_margin": None if stop_margin is None else float(stop_margin),
+            }
+        )
+
+        windows_total_list.append(int(windows_total))
+        windows_used_list.append(int(used))
+
+        # Stop-speed group diagnostics
+        if time_exit_enabled and K_fix > 0:
+            if used == 2:
+                group = "stop_2"
+            elif used in (3, 4):
+                group = "stop_3_4"
+            else:
+                group = "stop_5_plus"
+
+            group_firstk[group]["clips"] += 1
+
+            # compute early-window accuracy on FIRST-K windows (not counted toward compute/stopping)
+            k_eval = min(K_fix, n_valid)
+            for pos in range(0, k_eval):
+                S = np.load(win_rows[pos]["feat_path"])
                 x = torch.from_numpy(S).float().unsqueeze(0).unsqueeze(0).to(device)
                 logits_list = model(x)
                 out = depth_ea_decide(
@@ -544,117 +644,99 @@ def main():
                     ea_exit1_margin_min=ea_cfg["ea_exit1_margin_min"],
                 )
                 pred_taken = int(out["pred_taken"][0].item())
-                c_clip += int(pred_taken == y_true)
-                n_clip += 1
+                group_firstk[group]["correct"] += int(pred_taken == y_true)
+                group_firstk[group]["count"] += 1
 
-            if used == 2:
-                key = "stop_2"
-            elif 3 <= used <= 4:
-                key = "stop_3_4"
-            else:
-                key = "stop_5_plus"
-
-            group_firstk[key]["clips"] += 1
-            group_firstk[key]["correct"] += c_clip
-            group_firstk[key]["count"] += n_clip
-
-    # ---- Summaries ----
+    # ---- Clip accuracy ----
     clip_acc = clip_correct / max(n_clips, 1)
 
-    total_used = sum(exit_mix.values()) if exit_mix else 0
-    exit_mix_norm = {k: (v / max(total_used, 1)) for k, v in sorted(exit_mix.items())}
+    # ---- Segment metrics over USED windows ----
+    seg_acc_used = seg_correct / max(seg_count, 1)
+    flip_rate = flip_count_total / max(seg_count, 1)
+    exit_consistency = seg_taken_eq_final / max(seg_count, 1)
 
+    # ---- Fixed-position diagnostics summary ----
+    def _safe_div(a, b):
+        return None if b == 0 else (a / b)
+
+    acc_firstK = _safe_div(fix_first_correct, fix_first_count)
+    acc_midK = _safe_div(fix_mid_correct, fix_mid_count)
+    acc_lastK = _safe_div(fix_last_correct, fix_last_count)
+
+    # ---- Stop-speed groups summary ----
+    stop_groups_summary = {}
+    for gname, d in group_firstk.items():
+        stop_groups_summary[gname] = {
+            "clips": int(d["clips"]),
+            "firstK_acc": None if d["count"] == 0 else float(d["correct"] / d["count"]),
+            "firstK_n_segments": int(d["count"]),
+        }
+
+    # ---- Windows/Compute Saved (%) ----
     avg_used = float(np.mean(windows_used_list)) if windows_used_list else 0.0
     avg_total = float(np.mean(windows_total_list)) if windows_total_list else 0.0
     frac_used = (avg_used / avg_total) if avg_total > 0 else 0.0
+    windows_saved_pct = 100.0 * (1.0 - frac_used) if avg_total > 0 else 0.0
 
     avg_compute_units = float(np.mean(compute_units_list)) if compute_units_list else 0.0
     avg_depth_per_used_window = (avg_compute_units / max(avg_used, 1e-9)) if avg_used > 0 else 0.0
 
-    flip_rate = flip_count_total / max(seg_count, 1)
-    exit_consistency = seg_taken_eq_final / max(seg_count, 1)
+    compute_full_ref = None
+    compute_saved_pct = None
 
-    # Segment policy accuracy over processed windows
-    seg_acc_used = seg_correct / max(seg_count, 1)
+    # If time-exit enabled: compare against FULL baseline JSON (if exists)
+    if time_exit_enabled:
+        baseline_json = args.full_baseline_json.strip()
+        if baseline_json == "":
+            baseline_json = out_json_full
+        if os.path.exists(baseline_json):
+            base = _load_json(baseline_json, {})
+            compute_full_ref = base.get("avg_compute_units_sum_depth_over_used_windows", None)
+            if compute_full_ref is not None:
+                compute_saved_pct = 100.0 * (1.0 - (avg_compute_units / max(float(compute_full_ref), 1e-9)))
 
-    # Fixed-position diagnostic accuracies
-    acc_firstK = None
-    acc_midK = None
-    acc_lastK = None
-    if K_fix > 0:
-        acc_firstK = (fix_first_correct / max(fix_first_count, 1)) if fix_first_count > 0 else None
-        acc_midK = (fix_mid_correct / max(fix_mid_count, 1)) if fix_mid_count > 0 else None
-        acc_lastK = (fix_last_correct / max(fix_last_count, 1)) if fix_last_count > 0 else None
-
-    # ---- Clip-level confusion + per-class precision/recall ----
+    # ---- Confusion + per-class ----
     cm = confusion_matrix(y_true_clips, y_pred_clips, labels=list(range(num_classes)))
     pr, rc, f1, sup = precision_recall_fscore_support(
         y_true_clips, y_pred_clips, labels=list(range(num_classes)), zero_division=0
     )
-    per_class = []
+    per_class = {}
     for i in range(num_classes):
-        per_class.append({
-            "label": id2label[i],
+        per_class[str(labels_sorted[i])] = {
             "precision": float(pr[i]),
             "recall": float(rc[i]),
             "f1": float(f1[i]),
             "support": int(sup[i]),
-        })
+        }
 
-    # ---- Saved % metrics (needs full baseline avg compute) ----
-    windows_saved_pct = 100.0 * (1.0 - frac_used)
+    # ---- Distribution JSONs ----
+    # legacy (for compatibility)
+    hist_path_legacy = out_hist_legacy
 
-    compute_saved_pct = None
-    compute_full_ref = None
-
-    out_json_full = os.path.join(args.run_dir, "clip_policy_results_full.json")
-    out_json_time = os.path.join(args.run_dir, "clip_policy_results_time.json")
-
-    if time_exit_enabled:
-        baseline_path = args.full_baseline_json.strip() or out_json_full
-        base = _load_json(baseline_path, default=None)
-        if isinstance(base, dict) and ("avg_compute_units_sum_depth_over_used_windows" in base):
-            compute_full_ref = float(base["avg_compute_units_sum_depth_over_used_windows"])
-            if compute_full_ref > 0:
-                compute_saved_pct = 100.0 * (1.0 - (avg_compute_units / compute_full_ref))
-
-    # ---- Distribution (baseline: clip-length, time-exit: stop-window) ----
+    # mode-specific: full vs time
     if args.disable_time_exit:
-        dist_name = "clip_length"
-        dist_label = "Clip-length distribution (windows_total)"
-        dist_vals = windows_total_list
-        dist_stats = _dist_stats(dist_vals)
-
-        hist_path_mode = os.path.join(args.run_dir, "clip_length_hist_full.json")
-        hist_path_legacy = os.path.join(args.run_dir, "clip_length_hist.json")
+        hist_path_mode = out_hist_full
+        dist_payload = _dist_stats(windows_total_list)
     else:
-        dist_name = "windows_used"
-        dist_label = "Stop-window distribution (windows_used)"
-        dist_vals = windows_used_list
-        dist_stats = _dist_stats(dist_vals)
+        hist_path_mode = out_hist_time
+        dist_payload = _dist_stats(windows_used_list)
 
-        hist_path_mode = os.path.join(args.run_dir, "windows_used_hist_time.json")
-        hist_path_legacy = os.path.join(args.run_dir, "windows_used_hist.json")
-
-    dist_payload = {"metric": dist_name, "label": dist_label, **dist_stats}
-    _save_json(hist_path_mode, dist_payload)
     _save_json(hist_path_legacy, dist_payload)
+    _save_json(hist_path_mode, dist_payload)
 
-    # ---- Stop-speed group summary (Depth×Time only) ----
-    stop_groups_summary = None
-    if time_exit_enabled and K_fix > 0:
-        stop_groups_summary = {}
-        for k, v in group_firstk.items():
-            acc = (v["correct"] / max(v["count"], 1)) if v["count"] > 0 else None
-            stop_groups_summary[k] = {
-                "n_clips": int(v["clips"]),
-                "n_segments": int(v["count"]),
-                "segment_accuracy_firstK": None if acc is None else float(acc),
-            }
+    # ---- Exit mix normalize (used windows) ----
+    total_used = sum(exit_mix.values()) if exit_mix else 0
+    exit_mix_norm = {k: (v / max(total_used, 1)) for k, v in sorted(exit_mix.items())}
 
-    # ---- Build results payload ----
+    # ---- Final JSON payload ----
     results = {
         "policy": "ea",
+
+        # Step 0 metadata (K-exit + C-class)
+        "K": int(K),
+        "tap_blocks": [int(x) for x in tap_blocks],
+        "n_mels": int(args.n_mels),
+        "num_classes": int(num_classes),
 
         # distribution
         "window_distribution": dist_payload,
@@ -724,86 +806,60 @@ def main():
     preds_csv_legacy = os.path.join(args.run_dir, "clip_preds.csv")
     preds_df.to_csv(preds_csv_legacy, index=False)
 
-    preds_csv_mode = os.path.join(args.run_dir, "clip_preds_full.csv" if args.disable_time_exit else "clip_preds_time.csv")
+    preds_csv_mode = os.path.join(
+        args.run_dir, "clip_preds_full.csv" if args.disable_time_exit else "clip_preds_time.csv"
+    )
     preds_df.to_csv(preds_csv_mode, index=False)
 
     # ---- Print summary ----
     print("== Clip-level (Depth × Time) Policy Test ==")
-
     print("Policy: ea")
     print(f"Policy test accuracy (segments, processed windows): {seg_acc_used:.4f}  (n_segments={seg_count})")
+    print(f"Clip accuracy: {clip_acc:.4f}  (n_clips={n_clips})")
 
-    if K_fix > 0:
+    if args.disable_time_exit:
+        print(f"Avg windows used: {avg_used:.3f} / {avg_total:.3f}  (frac=1.000)")
+        print(f"Avg compute units (sum depth over used windows): {avg_compute_units:.3f}")
+        print(f"Avg depth per used window: {avg_depth_per_used_window:.3f}")
+        print("Window distribution mode: clip length (windows_total)")
+    else:
+        print(f"Avg windows used: {avg_used:.3f} / {avg_total:.3f}  (frac={frac_used:.4f})")
+        print(f"Windows Saved (%): {windows_saved_pct:.2f}%")
+        print(f"Avg compute units (sum depth over used windows): {avg_compute_units:.3f}")
+        print(f"Avg depth per used window: {avg_depth_per_used_window:.3f}")
+        if compute_saved_pct is not None:
+            print(f"Compute Saved (%): {compute_saved_pct:.2f}%  (ref full avg units={compute_full_ref:.3f})")
+        print("Window distribution mode: windows used (stopping distribution)")
+
+    if exit_mix_norm:
         print(
-            f"Fixed-position diagnostic (K={K_fix} per clip): "
-            f"Acc_firstK={acc_firstK:.4f} (n={fix_first_count}), "
-            f"Acc_midK={acc_midK:.4f} (n={fix_mid_count}), "
-            f"Acc_lastK={acc_lastK:.4f} (n={fix_last_count})"
+            "Exit mix (used windows): "
+            + ", ".join([f"{k}={exit_mix_norm[k]:.3f}" for k in sorted(exit_mix_norm.keys())])
         )
 
-    print(f"Clip accuracy: {clip_acc:.4f}  (n_clips={n_clips})")
-    print(f"Avg windows used: {avg_used:.3f} / {avg_total:.3f}  (frac={frac_used:.3f})")
-    print(f"Windows Saved (%): {windows_saved_pct:.2f}%")
-
-    print(f"Avg compute units (sum depth over used windows): {avg_compute_units:.3f}")
-    if compute_saved_pct is not None:
-        print(f"Compute Saved (%): {compute_saved_pct:.2f}%  (vs full avg units={compute_full_ref:.3f})")
-    elif time_exit_enabled:
-        print(f"Compute Saved (%): N/A (baseline not found). Expected at: {args.full_baseline_json or out_json_full}")
-
-    print(f"Avg depth per used window: {avg_depth_per_used_window:.3f}")
-    if exit_mix_norm:
-        print("Exit mix (used windows): " + ", ".join([f"{k}={exit_mix_norm[k]:.3f}" for k in sorted(exit_mix_norm.keys())]))
     print(f"Flip-rate (used windows): {flip_rate:.4f}")
-    print(f"Exit-consistency (taken==final, used windows): {exit_consistency:.4f}")
-    print(f"Stop reasons: {dict(stop_reasons)}")
+    print(f"Exit-consistency taken==final (used windows): {exit_consistency:.4f}")
 
-    print("\n== Clip-level Confusion Matrix (rows=true, cols=pred) ==")
+    if K_fix > 0:
+        print("== Fixed-position diagnostic (independent of time-exit) ==")
+        print(f"K={K_fix}  Acc_firstK={acc_firstK:.4f} (n={fix_first_count})")
+        print(f"K={K_fix}  Acc_midK={acc_midK:.4f} (n={fix_mid_count})")
+        print(f"K={K_fix}  Acc_lastK={acc_lastK:.4f} (n={fix_last_count})")
+
+    if time_exit_enabled and K_fix > 0:
+        print("== Stop-speed group diagnostic (Depth×Time only; first-K accuracy) ==")
+        for gname in ["stop_2", "stop_3_4", "stop_5_plus"]:
+            d = stop_groups_summary[gname]
+            print(
+                f"{gname}: clips={d['clips']}, firstK_acc={d['firstK_acc']}, firstK_n={d['firstK_n_segments']}"
+            )
+
+    print("== Confusion matrix (clip-level) ==")
     _print_confusion(cm, labels_sorted)
 
-    print("\n== Per-class Precision / Recall / F1 (clip-level) ==")
-    for r in per_class:
-        print(f"  {r['label']}: P={r['precision']:.3f}  R={r['recall']:.3f}  F1={r['f1']:.3f}  (n={r['support']})")
-
-    # Distribution label + mini histogram
-    print(f"{dist_label}: min={dist_payload['min']}, median={dist_payload['median']:.1f}, "
-          f"max={dist_payload['max']}, mean={dist_payload['mean']:.2f}")
-    if dist_payload["hist"]:
-        print("Histogram (" + dist_payload["metric"] + " -> #clips):")
-        for k, v in dist_payload["hist"].items():
-            bar = "#" * min(int(v), 40)
-            print(f"  {int(k):>2d} -> {v:>2d}  {bar}")
-
-    # Stop-speed group table (Depth×Time only)
-    if stop_groups_summary is not None:
-        print("\n== Stop-speed groups (Depth×Time) + early-window accuracy (first-K) ==")
-        print("Group       | n_clips | n_segments | Acc_firstK")
-        print("----------- | ------: | ---------: | ---------:")
-        for key in ["stop_2", "stop_3_4", "stop_5_plus"]:
-            v = stop_groups_summary.get(key, {})
-            acc = v.get("segment_accuracy_firstK", None)
-            acc_str = f"{acc:.4f}" if acc is not None else "N/A"
-            print(f"{key:<11} | {v.get('n_clips',0):>6d} | {v.get('n_segments',0):>9d} | {acc_str:>9}")
-
-    # Per-clip window counts (exact format requested)
-    if args.print_clip_windows:
-        print("\n== Per-clip window counts ==")
-        rows_sorted = sorted(clip_rows, key=lambda d: d["wav_relpath"])
-        for i, r in enumerate(rows_sorted, 1):
-            clip_name = r["wav_relpath"]
-            wt = int(r["windows_total"])
-            wu = int(r["windows_used"])
-            if args.disable_time_exit:
-                print(f"clip{i} -> windows_total={wt}  |  id={clip_name}")
-            else:
-                print(f"clip{i} -> windows_total={wt}, windows_used={wu}  |  id={clip_name}")
-
-    print(f"\nWrote JSON (legacy): {out_path_legacy}")
-    print(f"Wrote JSON (mode):   {out_path_mode}")
-    print(f"Wrote CSV (legacy):  {preds_csv_legacy}")
-    print(f"Wrote CSV (mode):    {preds_csv_mode}")
-    print(f"Wrote dist JSON (legacy): {hist_path_legacy}")
-    print(f"Wrote dist JSON (mode):   {hist_path_mode}")
+    print(f"Wrote: {out_path_mode}")
+    print(f"Wrote: {preds_csv_mode}")
+    print(f"Wrote: {hist_path_mode}")
 
 
 if __name__ == "__main__":

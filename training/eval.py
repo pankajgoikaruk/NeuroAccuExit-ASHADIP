@@ -1,35 +1,79 @@
-import os, json, numpy as np, torch
+# training/eval.py
+from __future__ import annotations
+
+import os
+import json
+import argparse
+import numpy as np
+import torch
 from sklearn.metrics import classification_report, confusion_matrix
+
 from data.datasets import make_loaders
 from adapters.audio_adapter import TinyAudioCNN
 from models.exit_net import ExitNet
 
 
 @torch.no_grad()
-def main(run_dir, segments_csv, features_root, num_classes=2):
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    dl_tr, dl_va, dl_te, label2id = make_loaders(segments_csv, features_root, 64, 4)
-    model = ExitNet(TinyAudioCNN(), tap_dims=(16,32), final_dim=64, num_classes=num_classes).to(device)
-    model.load_state_dict(torch.load(os.path.join(run_dir,'ckpt','best.pt'), map_location=device))
+def main(run_dir: str, segments_csv: str, features_root: str, tap_blocks: tuple[int, ...], n_mels: int, batch_size: int, num_workers: int):
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    # loaders (we evaluate on TEST)
+    _, _, dl_te, label2id = make_loaders(segments_csv, features_root, batch_size, num_workers)
+    num_classes = len(label2id)
+
+    backbone = TinyAudioCNN(n_mels=n_mels, tap_blocks=tap_blocks)
+    model = ExitNet(
+        backbone,
+        num_classes=num_classes,
+        tap_dims=backbone.tap_dims,
+        final_dim=backbone.final_dim,
+    ).to(device)
+
+    ckpt = os.path.join(run_dir, "ckpt", "best.pt")
+    model.load_state_dict(torch.load(ckpt, map_location=device))
     model.eval()
-    y_true, y_pred = [], [[] for _ in range(3)]
-    for x,y in dl_te:
+
+    K = model.num_exits
+    y_true: list[int] = []
+    y_pred: list[list[int]] = [[] for _ in range(K)]
+
+    for x, y in dl_te:
         x = x.to(device)
-        logits = model(x)
-        for k in range(3):
-            y_pred[k].extend(torch.argmax(logits[k],1).cpu().numpy().tolist())
+        logits_list = model(x)  # length K
+        for k in range(K):
+            y_pred[k].extend(torch.argmax(logits_list[k], dim=1).cpu().numpy().tolist())
         y_true.extend(y.numpy().tolist())
-    reports = {f'exit{k+1}': classification_report(y_true, y_pred[k], output_dict=True) for k in range(3)}
-    with open(os.path.join(run_dir,'report.json'),'w') as f:
-        json.dump(reports, f, indent=2)
-    print('Saved report.json')
+
+    # Reports per exit
+    reports = {f"exit{k+1}": classification_report(y_true, y_pred[k], output_dict=True) for k in range(K)}
+    cms = {f"exit{k+1}": confusion_matrix(y_true, y_pred[k]).tolist() for k in range(K)}
+
+    out = {
+        "K": K,
+        "tap_blocks": list(tap_blocks),
+        "n_mels": int(n_mels),
+        "num_classes": int(num_classes),
+        "label2id": {str(k): int(v) for k, v in label2id.items()},
+        "reports": reports,
+        "confusion_matrices": cms,
+    }
+
+    with open(os.path.join(run_dir, "report.json"), "w", encoding="utf-8") as f:
+        json.dump(out, f, indent=2)
+
+    print("Saved report.json")
 
 
-if __name__ == '__main__':
-    import argparse
+if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument('--run_dir', required=True)
-    ap.add_argument('--segments_csv', default='data_cache/segments.csv')
-    ap.add_argument('--features_root', default='data_cache/features')
+    ap.add_argument("--run_dir", required=True)
+    ap.add_argument("--segments_csv", default="data_cache/segments.csv")
+    ap.add_argument("--features_root", default="data_cache/features")
+    ap.add_argument("--tap_blocks", default="1,3", help="Comma list like 1,2,3,4. Default 1,3 (=3 exits).")
+    ap.add_argument("--n_mels", type=int, default=64)
+    ap.add_argument("--batch_size", type=int, default=64)
+    ap.add_argument("--num_workers", type=int, default=4)
     args = ap.parse_args()
-    main(args.run_dir, args.segments_csv, args.features_root)
+
+    tap_blocks = tuple(int(x) for x in args.tap_blocks.split(",") if x.strip())
+    main(args.run_dir, args.segments_csv, args.features_root, tap_blocks, args.n_mels, args.batch_size, args.num_workers)

@@ -1,6 +1,9 @@
 # Repository Structure (DOC_STRUCTURE)
 
-This file documents the **current project layout** and the key scripts used for **Depth×Time early-exit** experiments.
+This file documents the project layout and key scripts used for **Depth×Time early-exit** experiments.
+Updated for **v0.5+** where the codebase is generic for:
+- **K exits** (via `tap_blocks`)
+- **C classes** (binary/multi-class)
 
 ---
 
@@ -8,129 +11,152 @@ This file documents the **current project layout** and the key scripts used for 
 
 ```
 NeuroAccuExit-ASHADIP/
-├─ adapters/                 # model backbones / adapters (e.g., TinyAudioCNN)
+├─ adapters/                 # model backbones / adapters (TinyAudioCNN)
 ├─ configs/                  # YAML configs (dataset, features, training knobs)
 ├─ data/                     # raw audio (optional; depends on your workflow)
 ├─ data_caches/              # cached segments + per-segment features (log-mel)
-├─ models/                   # ExitNet (multi-exit) + components
+├─ models/                   # ExitNet (multi-exit wrapper)
 ├─ policies/                 # early-exit policies (Depth-EA, greedy, etc.)
 ├─ scripts/                  # entry points for running and evaluating
-├─ training/                 # training utilities + EA threshold search/calibration
-├─ utils/                    # helpers (logging, misc)
-└─ runs/                     # experiment outputs (checkpoints, json, csv)
+├─ training/                 # training + calibration + threshold search
+├─ utils/                    # helpers (profiling, logging, misc)
+└─ runs/                     # experiment outputs (checkpoints, json, csv, plots)
 ```
-
-> Exact subfolders may vary by branch/tag; the entries below are the ones used in v0.3.x.
 
 ---
 
-## Core files and what they do
+## K-exit (`tap_blocks`) convention
 
-### `scripts/policy_test.py` (segment policy evaluation)
-Evaluates the **segment-by-segment** policy (Depth-EA / greedy) on the test split.
+`tap_blocks` is a comma list of backbone blocks after which an exit head is attached:
 
-**Outputs (in `run_dir`)**
-- `policy_results.json` containing:
-  - segment accuracy
-  - avg exit depth
-  - exit mix (e1/e2/e3)
-  - flip-rate and exit-consistency (taken vs final)
-  - clip-metrics computed without time stopping (for fair comparison)
+- `tap_blocks=1,3` → **K=3 exits**
+- `tap_blocks=1,2,3,4` → **K=5 exits**
 
-### `scripts/clip_policy_test.py` (Depth×Time evaluation)
-Evaluates **clip-level** inference by grouping segments by `wav_relpath` and processing them in time order.
+**Rule:** A checkpoint trained with a given `tap_blocks` must be evaluated/calibrated with the same `tap_blocks`.
 
-**Two modes**
-1) **Full clip baseline** (`--disable_time_exit`)
-   - processes all segments of each clip
-   - prints **clip-length distribution** over `windows_total`
-2) **Depth×Time** (default)
-   - stops early when prediction is **stable + confident**
-   - prints **stop-window distribution** over `windows_used`
+---
 
-**Key printed metrics**
-- Segment accuracy over processed windows:
-  - `Policy test accuracy (segments, processed windows): ... (n_segments=...)`
-- Fixed-position diagnostic (reviewer-proof):
-  - `Acc_firstK`, `Acc_midK`, `Acc_lastK` (computed for every clip regardless of stopping)
-- Stop-speed groups (Depth×Time only):
-  - stop_2 vs stop_3_4 vs stop_5_plus with early-window accuracy
-- Clip accuracy, window savings, compute savings, exit mix, flip-rate, exit consistency
+## Core model files
 
-**Outputs (in `run_dir`)**
-- JSON:
-  - `clip_policy_results.json` (legacy)
-  - `clip_policy_results_full.json` (full clip baseline)
-  - `clip_policy_results_time.json` (Depth×Time)
-- CSV:
-  - `clip_preds.csv` (+ mode-specific variants)
-- Distribution JSON:
-  - `clip_length_hist.json` (+ `clip_length_hist_full.json`)
-  - `windows_used_hist.json` (+ `windows_used_hist_time.json`)
+### `adapters/audio_adapter.py` (TinyAudioCNN)
+- 5-block CNN backbone
+- configurable `tap_blocks`
+- exposes `tap_dims` and `final_dim`
+
+### `models/exit_net.py` (ExitNet)
+- builds `K = len(taps) + 1` classifier heads
+- supports arbitrary `num_classes`
+
+### `policies/depth_ea.py` (Depth-EA)
+- generic evidence accumulation across exits (K)
+- returns `taken`, `pred_taken`, `pred_final`, `flip_count`, and (optionally) `logp_taken`
+
+---
+
+## Training and evaluation modules
+
+### `training/train.py`
+Trains the multi-exit network.
+
+**Outputs (in run_dir)**
+- `ckpt/best.pt`
+- `metrics.json`
+
+### `training/eval.py`
+Evaluates per-exit test metrics → `report.json`.
+
+### `training/calibrate.py`
+Temperature scaling per exit → `temperature.json` (length K).
+
+### `training/thresholds_offline.py`
+Greedy threshold search → `thresholds.json`.
+
+### `training/ea_thresholds_offline.py`
+EA threshold search → `ea_thresholds.json` + `ea_sweep_results.json`.
+
+> Note: `run_full.ps1` supports `-EAMinExit` (auto by default). The Python module still supports `--ea_min_exit` directly.  
+> For K=5, using `--ea_min_exit 2` is a robust way to avoid exit1-heavy policies.
+
+---
+
+## Policy evaluation scripts
+
+### `scripts/policy_test.py`
+Segment policy evaluation (greedy / EA).
+
+**Outputs**
+- `policy_results.json` (accuracy, avg depth, exit mix e1..eK, flip metrics, clip metrics)
+
+### `scripts/clip_policy_test.py`
+Depth×Time clip policy evaluation.
+
+**Outputs**
+- `clip_policy_results_full.json` (no time-exit baseline)
+- `clip_policy_results_time.json` (time-exit)
+- `clip_preds_full.csv`, `clip_preds_time.csv`
+- `clip_length_hist.json`, `windows_used_hist.json`
+
+---
+
+## Pipeline runner
+
+### `scripts/run_full.ps1`
+Runs the whole pipeline:
+1) prep segments → 2) extract features → 3) train → 4) calibrate → 5) thresholds → 6) policy_test → 7) clip_policy_test (optional) → 8) summarize → 9) analyse → 10) profile
+
+**Depth-EA knobs exposed by the runner**
+- `-LambdaDepth`: depth penalty used during EA sweep (higher = earlier exits).
+- `-EAMinExit`: minimum allowed exit index (0-indexed). `2` forces exit3+ for K=5 (recommended).
+
+Logs:
+- `analysis/pipeline_runtime.csv`
 
 ---
 
 ## Data cache expectations
 
-`segments.csv` must contain at least:
-- `wav_relpath` : clip id (relative path for grouping)
-- `start`       : start time for ordering segments within a clip
-- `feat_relpath`: relative feature path under `features_root`
-- `label`       : ground-truth clip label
-- `split`       : train/val/test
+`segments.csv` contains:
+- `wav_relpath`, `start`, `duration`
+- `feat_relpath`
+- `label`, `split`
 
-Feature files referenced by `feat_relpath` are expected to be `.npy` arrays shaped like `(M, T)` (log-mel).
+Features referenced by `feat_relpath` are `.npy` arrays shaped `(n_mels, frames)`.
 
 ---
 
 ## Example commands (PowerShell)
 
-### Segment policy
+### Run everything (K=5)
 ```powershell
-python -m scripts.policy_test `
-  --policy ea `
-  --run_dir "runs\v0_3\v0_3_027" `
-  --segments_csv "data_caches\v0_3\seg1_hop0p5_bp100-3000_mels64\segments.csv" `
-  --features_root "data_caches\v0_3\seg1_hop0p5_bp100-3000_mels64\features"
+powershell -ExecutionPolicy Bypass -File scripts\run_full.ps1 `
+  -Variant "v0.5" `
+  -Policy "ea" `
+  -Device "cpu" `
+  -SegmentSec 1.0 `
+  -HopSec 0.5 `
+  -AutoLambdaDepth `
+  -TapBlocks "1,2,3,4" `
+  -NMels 64 `
+  -RunClipPolicy `
+  -TimeConf 0.95 `
+  -TimeStableK 2 `
+  -TimeMinWindows 2 `
+  -TimeMargin 0.0 `
+  -EvalFixedKWindows 3 `
+  -PrintClipWindows
+
+# Optional: set EAMinExit explicitly (default auto picks 2 for K>=5 when Policy=ea)
+#   -EAMinExit 2
 ```
 
-### Clip baseline (full clip; no time-exit)
+### (Optional) Force strong EA behavior for K=5
 ```powershell
-python -m scripts.clip_policy_test `
-  --run_dir "runs\v0_3\v0_3_027" `
-  --segments_csv "data_caches\v0_3\seg1_hop0p5_bp100-3000_mels64\segments.csv" `
-  --features_root "data_caches\v0_3\seg1_hop0p5_bp100-3000_mels64\features" `
-  --disable_time_exit `
-  --eval_fixed_k_windows 3 `
-  --print_clip_windows
+python -m training.ea_thresholds_offline `
+  --run_dir "runs\v0_5\v0_5_002" `
+  --segments_csv "data_caches\v0_5\seg1_hop0p5_bp100-3000_mels64\segments.csv" `
+  --features_root "data_caches\v0_5\seg1_hop0p5_bp100-3000_mels64\features" `
+  --tap_blocks 1,2,3,4 `
+  --n_mels 64 `
+  --ea_min_exit 2 `
+  --lambda_depth 0.02
 ```
-
-### Clip policy (Depth×Time)
-```powershell
-python -m scripts.clip_policy_test `
-  --run_dir "runs\v0_3\v0_3_027" `
-  --segments_csv "data_caches\v0_3\seg1_hop0p5_bp100-3000_mels64\segments.csv" `
-  --features_root "data_caches\v0_3\seg1_hop0p5_bp100-3000_mels64\features" `
-  --time_conf 0.95 `
-  --time_stable_k 2 `
-  --time_min_windows 2 `
-  --eval_fixed_k_windows 3 `
-  --print_clip_windows
-```
-
----
-
-## Where to record results for the paper
-
-Recommended artifacts to keep per run:
-- `policy_results.json`
-- `clip_policy_results_full.json`
-- `clip_policy_results_time.json`
-- `windows_used_hist_time.json`
-- `clip_preds_time.csv`
-
-These provide:
-- accuracy vs compute (full vs Depth×Time)
-- stop-window distribution (median, histogram)
-- fixed-position diagnostic (first/mid/last K)
-- stop-speed group table (easy vs hard clips)

@@ -1,10 +1,11 @@
+# scripts/analyse_run.py
+
 import os
 import json
 import argparse
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 import torch
 import matplotlib.pyplot as plt
 from torch.nn.functional import softmax
@@ -16,9 +17,6 @@ from models.exit_net import ExitNet
 
 
 def load_json_safepath(path, default=None):
-    """
-    Small helper: load JSON if it exists, otherwise return a default value.
-    """
     try:
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
@@ -29,7 +27,7 @@ def load_json_safepath(path, default=None):
 def plot_training_curves(metrics_path: Path, plots_dir: Path):
     """
     Plot training loss and validation accuracy per exit over epochs
-    using the content of metrics.json produced by training/train.py.
+    using metrics.json produced by training/train.py (K-exit compatible).
     """
     metrics = load_json_safepath(metrics_path, {})
     if not metrics:
@@ -38,7 +36,6 @@ def plot_training_curves(metrics_path: Path, plots_dir: Path):
 
     train_hist = metrics.get("train", [])
     val_hist = metrics.get("val", [])
-
     if not train_hist or not val_hist:
         print("[analyse_run] metrics.json has no train/val history, skipping training curves.")
         return
@@ -59,17 +56,18 @@ def plot_training_curves(metrics_path: Path, plots_dir: Path):
     plt.close()
     print(f"[analyse_run] Saved {out}")
 
-    # --- Validation accuracy per exit ---
-    # Each val entry has acc = [acc_exit1, acc_exit2, acc_exit3]
+    # --- Validation accuracy per exit (dynamic K) ---
     epochs_val = [e["epoch"] for e in val_hist]
-    acc_exit1 = [e["acc"][0] for e in val_hist]
-    acc_exit2 = [e["acc"][1] for e in val_hist]
-    acc_exit3 = [e["acc"][2] for e in val_hist]
+    if not val_hist or "acc" not in val_hist[0]:
+        print("[analyse_run] No per-exit val acc found, skipping val acc plot.")
+        return
 
+    K = len(val_hist[0]["acc"])
     plt.figure()
-    plt.plot(epochs_val, acc_exit1, marker="o", label="exit1")
-    plt.plot(epochs_val, acc_exit2, marker="o", label="exit2")
-    plt.plot(epochs_val, acc_exit3, marker="o", label="exit3")
+    for k in range(K):
+        acc_k = [e["acc"][k] for e in val_hist]
+        plt.plot(epochs_val, acc_k, marker="o", label=f"exit{k+1}")
+
     plt.xlabel("Epoch")
     plt.ylabel("Validation accuracy")
     plt.title("Validation accuracy per exit vs epoch")
@@ -83,90 +81,73 @@ def plot_training_curves(metrics_path: Path, plots_dir: Path):
 
 
 @torch.no_grad()
-def collect_test_predictions(run_dir: Path,
-                             segments_csv: Path,
-                             features_root: Path,
-                             device: str = None):
+def collect_test_predictions(run_dir: Path, segments_csv: Path, features_root: Path, tap_blocks, n_mels: int, device: str = None):
     """
-    Reload the trained ExitNet model from ckpt/best.pt and run it on the test set.
+    Reload trained ExitNet model from ckpt/best.pt and run on TEST set.
 
     Returns:
-      y_true       : (N,) numpy array of ground-truth labels
-      y_pred_exits : list of length 3, each (N,) array of predicted labels for that exit
-      y_prob_exits : list of length 3, each (N, C) array of softmax probabilities for that exit
-      label2id     : mapping label string -> int
+      y_true        (N,)
+      y_pred_exits  list length K, each (N,)
+      y_prob_exits  list length K, each (N,C)
+      label2id
     """
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # --- Data loaders ---
-    dl_tr, dl_va, dl_te, label2id = make_loaders(
-        str(segments_csv),
-        str(features_root),
-        batch_size=64,
-        num_workers=4
-    )
+    _, _, dl_te, label2id = make_loaders(str(segments_csv), str(features_root), batch_size=64, num_workers=4)
     num_classes = len(label2id)
 
-    # --- Model ---
     ckpt_path = run_dir / "ckpt" / "best.pt"
     if not ckpt_path.exists():
         raise FileNotFoundError(f"Cannot find checkpoint at {ckpt_path}")
 
-    backbone = TinyAudioCNN()
-    model = ExitNet(backbone, tap_dims=(16, 32), final_dim=64, num_classes=num_classes).to(device)
+    backbone = TinyAudioCNN(n_mels=n_mels, tap_blocks=tap_blocks)
+    model = ExitNet(
+        backbone,
+        num_classes=num_classes,
+        tap_dims=backbone.tap_dims,
+        final_dim=backbone.final_dim,
+    ).to(device)
+
     state_dict = torch.load(ckpt_path, map_location=device)
     model.load_state_dict(state_dict)
     model.eval()
 
-    # --- Run through test set ---
+    K = model.num_exits
+
     y_true_list = []
-    y_pred_exits = [[], [], []]   # one list per exit
-    y_prob_exits = [[], [], []]   # one list per exit
+    y_pred_exits = [[] for _ in range(K)]
+    y_prob_exits = [[] for _ in range(K)]
 
     for x, y in dl_te:
         x = x.to(device)
         y_true_list.extend(y.numpy().tolist())
-        logits_list = model(x)
+
+        logits_list = model(x)  # length K
         probs_list = [softmax(lg, dim=1).cpu().numpy() for lg in logits_list]
 
-        # Append predictions & probs per exit
-        for k in range(3):
+        for k in range(K):
             preds = np.argmax(probs_list[k], axis=1)
             y_pred_exits[k].extend(preds.tolist())
             y_prob_exits[k].append(probs_list[k])
 
     y_true = np.array(y_true_list, dtype=np.int64)
-    # Concatenate prob chunks per exit
-    y_prob_exits = [np.concatenate(chunks, axis=0) if len(chunks) > 0 else None
-                    for chunks in y_prob_exits]
+    y_prob_exits = [np.concatenate(chunks, axis=0) if len(chunks) > 0 else None for chunks in y_prob_exits]
     y_pred_exits = [np.array(preds, dtype=np.int64) for preds in y_pred_exits]
-
     return y_true, y_pred_exits, y_prob_exits, label2id
 
 
-def compute_and_plot_confusion_matrices(y_true,
-                                        y_pred_exits,
-                                        label2id,
-                                        plots_dir: Path,
-                                        out_json: Path):
-    """
-    Compute confusion matrices (counts + row-normalised) for each exit,
-    save them as images and a JSON summary.
-    """
+def compute_and_plot_confusion_matrices(y_true, y_pred_exits, label2id, plots_dir: Path, out_json: Path):
     id2label = {v: k for k, v in label2id.items()}
     labels_sorted = [id2label[i] for i in range(len(id2label))]
 
     cm_info = {}
-
     for exit_idx, y_pred in enumerate(y_pred_exits, start=1):
         cm = confusion_matrix(y_true, y_pred, labels=list(range(len(id2label))))
-        # Row-normalised confusion matrix (each row sums to 1)
         with np.errstate(all="ignore"):
             row_sums = cm.sum(axis=1, keepdims=True)
             cm_norm = cm.astype(float) / np.maximum(row_sums, 1e-12)
 
-        # Save plot
         plt.figure(figsize=(5, 4))
         plt.imshow(cm_norm, interpolation="nearest")
         plt.title(f"Confusion matrix – exit{exit_idx}")
@@ -177,11 +158,9 @@ def compute_and_plot_confusion_matrices(y_true,
         plt.xlabel("Predicted label")
         plt.ylabel("True label")
 
-        # Annotate cells with values
         for i in range(cm_norm.shape[0]):
             for j in range(cm_norm.shape[1]):
-                val = cm_norm[i, j]
-                plt.text(j, i, f"{val:.2f}", ha="center", va="center", fontsize=8)
+                plt.text(j, i, f"{cm_norm[i, j]:.2f}", ha="center", va="center", fontsize=8)
 
         plt.tight_layout()
         out_png = plots_dir / f"cm_exit{exit_idx}.png"
@@ -195,84 +174,61 @@ def compute_and_plot_confusion_matrices(y_true,
             "row_normalised": cm_norm.tolist(),
         }
 
-    # Save JSON summary for confusion matrices
     with open(out_json, "w", encoding="utf-8") as f:
         json.dump(cm_info, f, indent=2)
     print(f"[analyse_run] Saved confusion matrices JSON -> {out_json}")
     return cm_info
 
 
-def compute_and_plot_roc(y_true,
-                         y_prob_exits,
-                         plots_dir: Path,
-                         out_json: Path):
+def compute_and_plot_roc(y_true, y_prob_exits, plots_dir: Path, out_json: Path):
     """
-    Compute ROC curves and AUC per exit for binary classification (num_classes == 2).
-    If num_classes != 2, this function simply returns {} and does nothing.
-
-    We treat class '1' as the "positive" class by convention.
+    ROC/AUC for binary only (num_classes == 2). For multiclass, returns {}.
     """
-    if y_prob_exits[0] is None:
+    if not y_prob_exits or y_prob_exits[0] is None:
         print("[analyse_run] No probabilities for exit1, skipping ROC/AUC.")
         return {}
 
     num_classes = y_prob_exits[0].shape[1]
     if num_classes != 2:
-        print(f"[analyse_run] ROC/AUC currently implemented only for binary tasks, "
-              f"but got num_classes={num_classes}. Skipping ROC/AUC.")
+        print(f"[analyse_run] ROC/AUC only implemented for binary tasks, got num_classes={num_classes}. Skipping.")
         return {}
 
     roc_info = {}
-    y_true_bin = (y_true == 1).astype(int)  # treat label '1' as positive
+    plt.figure()
 
     for exit_idx, probs in enumerate(y_prob_exits, start=1):
         if probs is None:
             continue
-        # positive-class probability
-        y_score = probs[:, 1]
-        fpr, tpr, _ = roc_curve(y_true_bin, y_score)
+        y_score = probs[:, 1]  # class 1 as positive
+        fpr, tpr, _ = roc_curve(y_true, y_score)
         roc_auc = auc(fpr, tpr)
-
-        # Plot ROC curve
-        plt.figure()
-        plt.plot(fpr, tpr, label=f"exit{exit_idx} (AUC={roc_auc:.3f})")
-        plt.plot([0, 1], [0, 1], linestyle="--", color="grey", label="random")
-        plt.xlabel("False positive rate")
-        plt.ylabel("True positive rate")
-        plt.title(f"ROC curve – exit{exit_idx}")
-        plt.legend()
-        plt.grid(True)
-        plt.tight_layout()
-        out_png = plots_dir / f"roc_exit{exit_idx}.png"
-        plt.savefig(out_png, dpi=150)
-        plt.close()
-        print(f"[analyse_run] Saved {out_png}")
-
         roc_info[f"exit{exit_idx}"] = {
             "auc": float(roc_auc),
             "fpr": fpr.tolist(),
             "tpr": tpr.tolist(),
         }
+        plt.plot(fpr, tpr, label=f"exit{exit_idx} (AUC={roc_auc:.3f})")
 
-    # Save AUC + ROC data to JSON
+    plt.plot([0, 1], [0, 1], linestyle="--", label="chance")
+    plt.xlabel("False Positive Rate")
+    plt.ylabel("True Positive Rate")
+    plt.title("ROC curves per exit")
+    plt.legend()
+    plt.grid(True)
+
+    out_png = plots_dir / "roc_exits.png"
+    plt.tight_layout()
+    plt.savefig(out_png, dpi=150)
+    plt.close()
+    print(f"[analyse_run] Saved {out_png}")
+
     with open(out_json, "w", encoding="utf-8") as f:
         json.dump(roc_info, f, indent=2)
-    print(f"[analyse_run] Saved ROC/AUC JSON -> {out_json}")
+    print(f"[analyse_run] Saved ROC JSON -> {out_json}")
     return roc_info
 
 
-def build_analysis_summary(run_dir: Path,
-                           cm_info: dict,
-                           roc_info: dict,
-                           label_names):
-    """
-    Aggregate key metrics into one 'analysis_run.json' file:
-
-    - Per-exit classification metrics (precision/recall/F1) from report.json
-    - Policy-level metrics from summary.json (accuracy, exit mix, compute saving, ECE)
-    - Confusion matrix & AUC info (if available)
-    - Label names (id -> human-readable label)
-    """
+def build_analysis_summary(run_dir: Path, cm_info: dict, roc_info: dict, label_names):
     report = load_json_safepath(run_dir / "report.json", {})
     summary = load_json_safepath(run_dir / "summary.json", {})
 
@@ -293,51 +249,45 @@ def build_analysis_summary(run_dir: Path,
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--run_dir", required=True,
-                    help="Path to a single run directory, e.g. runs/20251113_142831")
-    ap.add_argument("--segments_csv", default="data_cache/segments.csv",
-                    help="Path to segments.csv used for this run")
-    ap.add_argument("--features_root", default="data_cache/features",
-                    help="Root directory for .npy features used for this run")
+    ap.add_argument("--run_dir", required=True, help="Path to a run directory, e.g. runs/20251113_142831")
+    ap.add_argument("--segments_csv", default="data_cache/segments.csv", help="Path to segments.csv used for this run")
+    ap.add_argument("--features_root", default="data_cache/features", help="Root directory for .npy features used for this run")
+
+    # Step 0 (K-exit)
+    ap.add_argument("--tap_blocks", default="1,3", help="Comma list like 1,2,3,4. Default 1,3 (=3 exits).")
+    ap.add_argument("--n_mels", type=int, default=64)
+
     args = ap.parse_args()
 
     run_dir = Path(args.run_dir)
     plots_dir = run_dir / "plots"
     plots_dir.mkdir(exist_ok=True)
 
-    # 1) Training curves from metrics.json
+    tap_blocks = tuple(int(x) for x in str(args.tap_blocks).split(",") if str(x).strip())
+
+    # 1) Training curves
     metrics_path = run_dir / "metrics.json"
     plot_training_curves(metrics_path, plots_dir)
 
-    # 2) Test-set predictions, confusion matrices, ROC
+    # 2) Test predictions + confusion + ROC
     y_true, y_pred_exits, y_prob_exits, label2id = collect_test_predictions(
         run_dir,
         Path(args.segments_csv),
         Path(args.features_root),
+        tap_blocks=tap_blocks,
+        n_mels=int(args.n_mels),
     )
 
-    # Build label_names (id -> human-readable label) in index order 0..C-1
     id2label = {v: k for k, v in label2id.items()}
     label_names = [id2label[i] for i in range(len(id2label))]
 
     cm_json_path = run_dir / "confusion_matrices.json"
-    cm_info = compute_and_plot_confusion_matrices(
-        y_true,
-        y_pred_exits,
-        label2id,
-        plots_dir,
-        cm_json_path,
-    )
+    cm_info = compute_and_plot_confusion_matrices(y_true, y_pred_exits, label2id, plots_dir, cm_json_path)
 
     roc_json_path = run_dir / "roc_curves.json"
-    roc_info = compute_and_plot_roc(
-        y_true,
-        y_prob_exits,
-        plots_dir,
-        roc_json_path,
-    )
+    roc_info = compute_and_plot_roc(y_true, y_prob_exits, plots_dir, roc_json_path)
 
-    # 3) Consolidated analysis JSON (now with label_names)
+    # 3) consolidated JSON
     build_analysis_summary(run_dir, cm_info, roc_info, label_names)
 
 

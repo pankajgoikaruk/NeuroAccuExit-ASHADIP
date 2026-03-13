@@ -1,5 +1,4 @@
 # training/ea_thresholds_offline.py
-
 import os
 import json
 import argparse
@@ -29,17 +28,33 @@ def _parse_int_list(s: str):
     return [int(x) for x in s.split(",") if x.strip()]
 
 
+def _pad_or_trim(temps, K: int):
+    if temps is None:
+        return [1.0] * K
+    temps = [max(float(t), 1e-3) for t in temps]
+    if len(temps) < K:
+        temps = temps + [temps[-1]] * (K - len(temps))
+    elif len(temps) > K:
+        temps = temps[:K]
+    return temps
+
+
 @torch.no_grad()
 def collect_val_logits(model, dl, device):
     """Collect logits for val split once so sweeps are fast."""
-    logits_all = [[], [], []]
+    model.eval()
+    K = model.num_exits
+
+    logits_all = [[] for _ in range(K)]
     ys = []
+
     for x, y in dl:
         x = x.to(device)
-        logits = model(x)  # list of 3 tensors (B,C)
-        for k in range(3):
+        logits = model(x)  # list length K
+        for k in range(K):
             logits_all[k].append(logits[k].detach().cpu())
         ys.append(y.detach().cpu())
+
     logits_all = [torch.cat(v, dim=0) for v in logits_all]  # each (N,C)
     y = torch.cat(ys, dim=0).numpy()
     return logits_all, y
@@ -49,27 +64,24 @@ def collect_val_logits(model, dl, device):
 def greedy_decide_from_logits(logits_list_cpu, temps, tau: float):
     """
     Greedy per-sample decision using tau on max prob at each exit.
-    logits_list_cpu: list of 3 tensors on CPU, each (N,C)
-    temps: list of 3 floats
-    returns: pred (N,), taken (N,) in {0,1,2}
+    logits_list_cpu: list of K tensors on CPU, each (N,C)
+    temps: list of K floats
+    returns: pred (N,), taken (N,) in {0..K-1}
     """
-    assert len(logits_list_cpu) == 3
+    K = len(logits_list_cpu)
     N, C = logits_list_cpu[0].shape
 
     probs = []
-    for k in range(3):
-        lg = logits_list_cpu[k].float()
-        t = max(float(temps[k]), 1e-3)
-        lg = lg / t
-        p = torch.softmax(lg, dim=1)
-        probs.append(p)
+    for k in range(K):
+        lg = logits_list_cpu[k].float() / max(float(temps[k]), 1e-3)
+        probs.append(torch.softmax(lg, dim=1))
 
-    taken = torch.full((N,), 2, dtype=torch.long)
+    taken = torch.full((N,), K - 1, dtype=torch.long)
     pred = torch.zeros((N,), dtype=torch.long)
 
     for i in range(N):
-        tk = 2
-        for k in (0, 1, 2):
+        tk = K - 1
+        for k in range(K):
             if float(probs[k][i].max()) >= tau:
                 tk = k
                 break
@@ -85,25 +97,21 @@ def main():
     ap.add_argument("--segments_csv", required=True)
     ap.add_argument("--features_root", required=True)
 
+    # Model shape
+    ap.add_argument("--tap_blocks", default="1,3", help="Comma list like 1,2,3,4 (controls K). Default 1,3.")
+    ap.add_argument("--n_mels", type=int, default=64)
+
     # EA config
     ap.add_argument("--ea_mode", default="logprob", choices=["logprob", "logits"])
     ap.add_argument("--ea_min_exit", type=int, default=0)
 
     # EA grids
-    ap.add_argument(
-        "--ea_grid",
-        default="0.01,0.02,0.03,0.05,0.08,0.10,0.12,0.15,0.18,0.20,0.25,0.30,0.35",
-        help="EA margin thresholds.",
-    )
+    ap.add_argument("--ea_grid", default="0.01,0.02,0.03,0.05,0.08,0.10,0.12,0.15,0.18,0.20,0.25,0.30,0.35")
     ap.add_argument("--stable_k_grid", default="1,2")
     ap.add_argument("--flip_penalty_grid", default="0.0,0.01,0.02,0.05")
 
-    # Greedy baseline
-    ap.add_argument(
-        "--greedy_tau_grid",
-        default="0.70,0.75,0.80,0.85,0.90,0.92,0.95",
-        help="Used only if thresholds.json missing.",
-    )
+    # Greedy baseline if thresholds.json missing
+    ap.add_argument("--greedy_tau_grid", default="0.70,0.75,0.80,0.85,0.90,0.92,0.95")
 
     # Tradeoff + constraints
     ap.add_argument("--lambda_depth", type=float, default=0.08)
@@ -111,34 +119,43 @@ def main():
     ap.add_argument("--min_depth_improve", type=float, default=0.00)
     ap.add_argument("--max_f1_drop", type=float, default=1.00)
 
-    # NEW: Exit1 high-confidence override sweep (used by policies/depth_ea.py)
+    # Exit1 override sweep (passed to depth_ea_decide)
     ap.add_argument("--exit1_conf_grid", default="0.90,0.95")
     ap.add_argument("--exit1_margin_mult_grid", default="1.5,2.0,2.5")
     ap.add_argument("--exit1_margin_min", type=float, default=0.0)
 
     args = ap.parse_args()
 
-    # Temps
-    temps = [1.0, 1.0, 1.0]
-    tpath = os.path.join(args.run_dir, "temperature.json")
-    if os.path.exists(tpath):
-        temps = _load_json(tpath, {}).get("temperatures", temps)
-    temps = [max(float(t), 1e-3) for t in temps]
+    tap_blocks = tuple(int(x) for x in args.tap_blocks.split(",") if x.strip())
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # Validation loader
-    _, dl_va, _, label2id = make_loaders(
-        args.segments_csv, args.features_root, batch_size=64, num_workers=0
-    )
+    _, dl_va, _, label2id = make_loaders(args.segments_csv, args.features_root, batch_size=64, num_workers=0)
     num_classes = len(label2id)
 
-    # Model
-    model = ExitNet(TinyAudioCNN(), (16, 32), 64, num_classes).to(device).eval()
+    # Build model
+    backbone = TinyAudioCNN(n_mels=args.n_mels, tap_blocks=tap_blocks)
+    model = ExitNet(
+        backbone,
+        num_classes=num_classes,
+        tap_dims=backbone.tap_dims,
+        final_dim=backbone.final_dim,
+    ).to(device).eval()
+
     ckpt = os.path.join(args.run_dir, "ckpt", "best.pt")
     if not os.path.exists(ckpt):
         raise FileNotFoundError(f"Checkpoint not found: {ckpt}")
     model.load_state_dict(torch.load(ckpt, map_location=device))
+
+    K = model.num_exits
+
+    # Temps (pad/trim to K)
+    temps = [1.0] * K
+    tpath = os.path.join(args.run_dir, "temperature.json")
+    if os.path.exists(tpath):
+        temps = _load_json(tpath, {}).get("temperatures", temps)
+    temps = _pad_or_trim(temps, K)
 
     # Collect logits once
     logits_val_cpu, y_val = collect_val_logits(model, dl_va, device)
@@ -186,7 +203,6 @@ def main():
     stable_grid = _parse_int_list(args.stable_k_grid)
     flip_grid = _parse_float_list(args.flip_penalty_grid)
 
-    # include None -> means "no override" for stable_k=1; for stable_k>1 your policy may auto-default
     exit1_conf_grid = [None] + _parse_float_list(args.exit1_conf_grid)
     exit1_mult_grid = _parse_float_list(args.exit1_margin_mult_grid)
 
@@ -237,12 +253,11 @@ def main():
                         }
                         all_rows.append(row)
 
-                        # Optional constraints
+                        # constraints
                         if args.enforce_better_than_greedy_depth:
                             depth_ok = (avg_exit <= (greedy_depth_ref - float(args.min_depth_improve)))
                         else:
                             depth_ok = True
-
                         f1_ok = (f1 >= (greedy_f1_ref - float(args.max_f1_drop)))
 
                         if not (depth_ok and f1_ok):
@@ -252,7 +267,6 @@ def main():
                             best = row
                             best_score = float(score)
 
-    # Fallback if constraints too strict
     used_fallback = False
     if best is None:
         used_fallback = True
@@ -263,7 +277,12 @@ def main():
     # 3) Save ea_thresholds.json
     # ---------------------------
     payload = {
-        # NEW knobs (policy_test should pass these through to depth_ea_decide)
+        "K": int(K),
+        "tap_blocks": list(tap_blocks),
+        "n_mels": int(args.n_mels),
+        "num_classes": int(num_classes),
+
+        # Exit1 override knobs
         "ea_exit1_conf_min": best.get("ea_exit1_conf_min", None),
         "ea_exit1_margin_mult": float(best.get("ea_exit1_margin_mult", 2.0)),
         "ea_exit1_margin_min": float(best.get("ea_exit1_margin_min", float(args.exit1_margin_min))),
@@ -281,7 +300,6 @@ def main():
         "avg_exit_depth": float(best["avg_exit_depth"]),
         "score": float(best_score),
 
-        # Metadata
         "temperatures_used": temps,
         "baseline_greedy_val": greedy_baseline,
         "selection": {
@@ -295,7 +313,7 @@ def main():
             "ea_grid": thr_grid,
             "stable_k_grid": stable_grid,
             "flip_penalty_grid": flip_grid,
-            "exit1_conf_grid": exit1_conf_grid,  # contains None -> null in json
+            "exit1_conf_grid": exit1_conf_grid,  # includes None -> null
             "exit1_margin_mult_grid": exit1_mult_grid,
             "exit1_margin_min": float(args.exit1_margin_min),
             "greedy_tau_grid_used_if_missing": _parse_float_list(args.greedy_tau_grid),
@@ -311,8 +329,8 @@ def main():
     with open(sweep_path, "w", encoding="utf-8") as f:
         json.dump(all_rows, f, indent=2)
 
-    print("Saved ea_thresholds.json:", payload)
-    print("Saved ea_sweep_results.json (all combos):", sweep_path)
+    print("Saved ea_thresholds.json")
+    print("Saved ea_sweep_results.json")
 
 
 if __name__ == "__main__":

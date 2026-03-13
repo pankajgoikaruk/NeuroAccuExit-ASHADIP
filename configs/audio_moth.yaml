@@ -52,7 +52,8 @@ train:
 
 model:
   num_classes: 2
-  exits: 3
+  exits: 5
+  tap_blocks: [1, 2, 3, 4]   # taps after these blocks -> dims [16,24,32,48]
 
 calibration:
   temperature_scaling: true

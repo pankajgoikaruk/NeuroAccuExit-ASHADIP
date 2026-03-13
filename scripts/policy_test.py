@@ -4,7 +4,7 @@ import os
 import json
 import argparse
 from statistics import mean
-from collections import Counter, defaultdict
+from collections import Counter
 
 import numpy as np
 import pandas as pd
@@ -14,7 +14,6 @@ import torch.nn.functional as F
 from data.datasets import make_loaders
 from adapters.audio_adapter import TinyAudioCNN
 from models.exit_net import ExitNet
-
 from policies.depth_ea import depth_ea_decide
 
 
@@ -36,12 +35,10 @@ def _try_extract_clip_ids(meta, B: int):
         for k in ("wav_relpath", "clip_id", "wav", "file", "relpath"):
             if k in meta:
                 v = meta[k]
-                if isinstance(v, (list, tuple)):
-                    if len(v) == B:
-                        return [str(x) for x in v]
-                if torch.is_tensor(v):
-                    if v.numel() == B:
-                        return [str(x) for x in v.detach().cpu().tolist()]
+                if isinstance(v, (list, tuple)) and len(v) == B:
+                    return [str(x) for x in v]
+                if torch.is_tensor(v) and v.numel() == B:
+                    return [str(x) for x in v.detach().cpu().tolist()]
                 if isinstance(v, str):
                     return [v] * B
         return None
@@ -53,6 +50,7 @@ def _try_extract_clip_ids(meta, B: int):
             for x in meta:
                 out.append(x.decode() if isinstance(x, bytes) else x)
             return [str(x) for x in out]
+
         if all(isinstance(x, dict) for x in meta):
             out = []
             for d in meta:
@@ -60,21 +58,84 @@ def _try_extract_clip_ids(meta, B: int):
                 out.append("" if v is None else str(v))
             if all(len(x) > 0 for x in out):
                 return out
+
         return None
 
     return None
 
 
-def main(run_dir: str, segments_csv: str, features_root: str, policy: str, num_workers: int):
+def _pad_or_trim_temps(temps, K: int):
+    if temps is None:
+        temps = [1.0] * K
+    temps = [max(float(t), 1e-3) for t in temps]
+    if len(temps) < K:
+        temps = temps + [temps[-1]] * (K - len(temps))
+    elif len(temps) > K:
+        temps = temps[:K]
+    return temps
+
+
+def main(
+    run_dir: str,
+    segments_csv: str,
+    features_root: str,
+    policy: str,
+    num_workers: int,
+    tap_blocks: tuple[int, ...],
+    n_mels: int,
+):
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # ---- Load temps ----
+    # ---- Data (TEST) ----
+    # return_meta=True enables clip-id extraction if dataset provides it.
+    _, _, dl_te, label2id = make_loaders(
+        segments_csv, features_root, batch_size=64, num_workers=num_workers, return_meta=True
+    )
+    num_classes = len(label2id)
+
+    # ---- CSV-order fallback for clip ids (SAFE: verify labels match) ----
+    df = pd.read_csv(segments_csv)
+    if "split" in df.columns:
+        df_te = df[df["split"] == "test"].copy()
+    else:
+        df_te = df.copy()
+
+    clip_csv_ok = False
+    clip_ids_csv = None
+    y_csv = None
+    if {"wav_relpath", "label"}.issubset(set(df_te.columns)):
+        df_te["wav_relpath"] = df_te["wav_relpath"].astype(str).str.replace("\\", "/", regex=False)
+        df_te["label"] = df_te["label"].astype(str)
+        df_te["_y_csv"] = df_te["label"].map(label2id)
+        if not df_te["_y_csv"].isna().any():
+            clip_ids_csv = df_te["wav_relpath"].tolist()
+            y_csv = df_te["_y_csv"].astype(int).tolist()
+            clip_csv_ok = True
+
+    # ---- Build + load model ----
+    backbone = TinyAudioCNN(n_mels=n_mels, tap_blocks=tap_blocks)
+    model = ExitNet(
+        backbone,
+        num_classes=num_classes,
+        tap_dims=backbone.tap_dims,
+        final_dim=backbone.final_dim,
+    ).to(device)
+
+    ckpt_path = os.path.join(run_dir, "ckpt", "best.pt")
+    if not os.path.exists(ckpt_path):
+        raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
+    model.load_state_dict(torch.load(ckpt_path, map_location=device))
+    model.eval()
+
+    K = model.num_exits
+
+    # ---- Load temps (pad/trim to K) ----
     tpath = os.path.join(run_dir, "temperature.json")
     if os.path.exists(tpath):
-        temps = _load_json(tpath).get("temperatures", [1.0, 1.0, 1.0])
+        temps = _load_json(tpath).get("temperatures", None)
     else:
-        temps = [1.0, 1.0, 1.0]
-    temps = [max(float(t), 1e-3) for t in temps]  # stability clamp
+        temps = None
+    temps = _pad_or_trim_temps(temps, K)
 
     # ---- Load policy config ----
     tau = None
@@ -105,55 +166,22 @@ def main(run_dir: str, segments_csv: str, features_root: str, policy: str, num_w
     else:
         raise ValueError(f"Unknown policy: {policy}")
 
-    # ---- Data ----
-    _, _, dl_te, label2id = make_loaders(
-        segments_csv, features_root, batch_size=64, num_workers=num_workers, return_meta=True
-    )
-    num_classes = len(label2id)
-
-    # ---- CSV-order fallback for clip ids (SAFE: verify labels match) ----
-    df = pd.read_csv(segments_csv)
-    if "split" in df.columns:
-        df_te = df[df["split"] == "test"].copy()
-    else:
-        df_te = df.copy()
-
-    clip_csv_ok = False
-    clip_ids_csv = None
-    y_csv = None
-    if {"wav_relpath", "label"}.issubset(set(df_te.columns)):
-        df_te["wav_relpath"] = df_te["wav_relpath"].astype(str).str.replace("\\", "/", regex=False)
-        df_te["label"] = df_te["label"].astype(str)
-        df_te["_y_csv"] = df_te["label"].map(label2id)
-        if df_te["_y_csv"].isna().any():
-            clip_csv_ok = False
-        else:
-            clip_ids_csv = df_te["wav_relpath"].tolist()
-            y_csv = df_te["_y_csv"].astype(int).tolist()
-            clip_csv_ok = True
-
-    # ---- Build model ----
-    model = ExitNet(TinyAudioCNN(), (16, 32), 64, num_classes).to(device)
-    ckpt = os.path.join(run_dir, "ckpt", "best.pt")
-    if not os.path.exists(ckpt):
-        raise FileNotFoundError(f"Model checkpoint not found: {ckpt}")
-    model.load_state_dict(torch.load(ckpt, map_location=device))
-    model.eval()
-
-    # ---- Segment-level metrics (same as before) ----
+    # ---- Segment-level metrics ----
     n = 0
     correct = 0
-    exits_taken = []
+    exits_taken: list[int] = []
 
-    flip_count_total = 0
-    exit_consistent_total = 0
+    # EA-only extras
+    flip_any_total = 0               # count of samples with >=1 flip across exits
+    flip_count_sum = 0               # total flip count summed across samples
+    exit_consistent_total = 0        # count(pred_taken == pred_final)
 
-    # ---- Clip-level metrics (new) ----
-    clip_enabled = True  # will auto-disable if mapping is unsafe
+    # ---- Clip-level metrics (optional) ----
+    clip_enabled = True  # auto-disable if mapping unsafe
     clip_logp = {}       # clip_id -> torch (C,)
     clip_true = {}       # clip_id -> int label
-    clip_units = Counter()   # clip_id -> sum depth units
-    clip_windows = Counter() # clip_id -> number of segments seen
+    clip_units = Counter()     # clip_id -> sum depth units
+    clip_windows = Counter()   # clip_id -> number of segments seen
 
     # global sample index for CSV-order fallback
     global_i = 0
@@ -176,7 +204,6 @@ def main(run_dir: str, segments_csv: str, features_root: str, policy: str, num_w
             y_expected = int(y_csv[global_i])
             if int(y_val_int) != y_expected:
                 csv_mismatch += 1
-                # disable to avoid reporting wrong clip metrics
                 clip_enabled = False
                 return None
             return cid
@@ -187,7 +214,6 @@ def main(run_dir: str, segments_csv: str, features_root: str, policy: str, num_w
 
     with torch.no_grad():
         for batch in dl_te:
-            # allow loader to yield (x,y) or (x,y,meta)
             meta = None
             if isinstance(batch, (list, tuple)) and len(batch) == 3:
                 x, y, meta = batch
@@ -196,35 +222,37 @@ def main(run_dir: str, segments_csv: str, features_root: str, policy: str, num_w
 
             x = x.to(device)
             y = y.to(device)
-            logits_list = model(x)  # list of 3 tensors (B,C)
+            logits_list = model(x)  # list length K
             B = x.size(0)
 
             meta_clip_ids = _try_extract_clip_ids(meta, B) if clip_enabled else None
 
             if policy == "greedy":
-                scaled = [lg / max(float(temps[i]), 1e-3) for i, lg in enumerate(logits_list)]
+                scaled = [logits_list[k] / max(float(temps[k]), 1e-3) for k in range(K)]
                 probs = [torch.softmax(lg, dim=1) for lg in scaled]
 
                 for i in range(B):
                     # decide taken exit
-                    taken = 2
-                    for k in (0, 1, 2):
+                    taken = K - 1
+                    for k in range(K):
                         if float(probs[k][i].max()) >= tau:
                             taken = k
                             break
 
-                    pred = int(torch.argmax(probs[taken][i]))
-                    correct += int(pred == int(y[i]))
+                    pred = int(torch.argmax(probs[taken][i]).item())
+                    y_i = int(y[i].item())
+
+                    correct += int(pred == y_i)
                     exits_taken.append(taken + 1)
                     n += 1
 
                     # clip metrics update
                     if clip_enabled:
-                        cid = _get_clip_id_for_sample(meta_clip_ids, i, int(y[i]))
+                        cid = _get_clip_id_for_sample(meta_clip_ids, i, y_i)
                         if cid is not None:
                             if cid not in clip_logp:
                                 clip_logp[cid] = torch.zeros((num_classes,), dtype=torch.float32)
-                                clip_true[cid] = int(y[i])
+                                clip_true[cid] = y_i
 
                             lg = (logits_list[taken][i].float() / max(float(temps[taken]), 1e-3)).detach().cpu()
                             logp = F.log_softmax(lg, dim=-1)
@@ -249,7 +277,7 @@ def main(run_dir: str, segments_csv: str, features_root: str, policy: str, num_w
                     ea_exit1_margin_min=ea_cfg["ea_exit1_margin_min"],
                 )
 
-                taken_t = out["taken"]            # (B,) 0/1/2
+                taken_t = out["taken"]            # (B,) in [0..K-1]
                 pred_taken = out["pred_taken"]    # (B,)
                 pred_final = out["pred_final"]    # (B,)
 
@@ -257,21 +285,25 @@ def main(run_dir: str, segments_csv: str, features_root: str, policy: str, num_w
                 exits_taken.extend((taken_t + 1).detach().cpu().tolist())
                 n += B
 
-                flip_count_total += int((out["flip_count"] > 0).sum().item())
+                # flip-rate and consistency
+                flips = out["flip_count"]  # (B,)
+                flip_any_total += int((flips > 0).sum().item())
+                flip_count_sum += int(flips.sum().item())
                 exit_consistent_total += int((pred_taken == pred_final).sum().item())
 
                 # clip metrics update (per sample for mapping)
                 for i in range(B):
                     taken = int(taken_t[i].item())
+                    y_i = int(y[i].item())
 
                     if clip_enabled:
-                        cid = _get_clip_id_for_sample(meta_clip_ids, i, int(y[i]))
+                        cid = _get_clip_id_for_sample(meta_clip_ids, i, y_i)
                         if cid is not None:
                             if cid not in clip_logp:
                                 clip_logp[cid] = torch.zeros((num_classes,), dtype=torch.float32)
-                                clip_true[cid] = int(y[i])
+                                clip_true[cid] = y_i
 
-                            # Prefer logp_taken if your depth_ea returns it; else fallback to taken-exit logp
+                            # Prefer logp_taken if depth_ea_decide returns it
                             if isinstance(out, dict) and ("logp_taken" in out):
                                 logp = out["logp_taken"][i].detach().cpu().float()
                             else:
@@ -288,15 +320,13 @@ def main(run_dir: str, segments_csv: str, features_root: str, policy: str, num_w
     acc = correct / max(n, 1)
     avg_exit = mean(exits_taken) if exits_taken else 0.0
 
-    e1 = exits_taken.count(1) / max(n, 1)
-    e2 = exits_taken.count(2) / max(n, 1)
-    e3 = exits_taken.count(3) / max(n, 1)
-    exit_mix = {"e1": float(e1), "e2": float(e2), "e3": float(e3)}
+    exit_counts = Counter(exits_taken)  # exits_taken stores 1..K
+    exit_mix = {f"e{i}": exit_counts.get(i, 0) / max(n, 1) for i in range(1, K + 1)}
 
     print(f"Policy: {policy}")
     print(f"Policy test accuracy: {acc:.4f}")
     print(f"Avg exit depth: {avg_exit:.3f}")
-    print(f"Exit mix: e1={exit_mix['e1']:.3f}, e2={exit_mix['e2']:.3f}, e3={exit_mix['e3']:.3f}")
+    print("Exit mix: " + ", ".join([f"{k}={exit_mix[k]:.3f}" for k in sorted(exit_mix.keys())]))
 
     results = {
         "policy": policy,
@@ -305,28 +335,39 @@ def main(run_dir: str, segments_csv: str, features_root: str, policy: str, num_w
         "n_samples": int(n),
         "exit_mix": exit_mix,
         "temperatures_used": temps,
+        "K": int(K),
+        "tap_blocks": list(tap_blocks),
+        "n_mels": int(n_mels),
+        "num_classes": int(num_classes),
     }
 
+    if policy == "greedy":
+        results["tau"] = float(tau)
+
     if policy == "ea":
-        flip_rate = flip_count_total / max(n, 1)
+        flip_any_rate = flip_any_total / max(n, 1)
+        avg_flip_count = flip_count_sum / max(n, 1)
         exit_consistency = exit_consistent_total / max(n, 1)
-        print(f"Flip-rate: {flip_rate:.4f}")
+
+        print(f"Flip-rate (any flip): {flip_any_rate:.4f}")
+        print(f"Avg flip-count: {avg_flip_count:.4f}")
         print(f"Exit-consistency (taken==final): {exit_consistency:.4f}")
 
         results.update({
-            "flip_rate": float(flip_rate),
+            "flip_any_rate": float(flip_any_rate),
+            "avg_flip_count": float(avg_flip_count),
             "exit_consistency": float(exit_consistency),
             "ea": ea_cfg,
         })
 
-    # ---- Clip summaries (new) ----
-    # Only report if mapping was safe and we actually got clips.
+    # ---- Clip summaries ----
     clip_metrics_available = bool(clip_enabled and len(clip_logp) > 0 and len(clip_true) == len(clip_logp))
     results["clip_metrics_available"] = bool(clip_metrics_available)
 
     if clip_csv_ok and (not clip_enabled):
-        # helpful debug
-        results["clip_metrics_disabled_reason"] = "clip_id mapping unsafe (likely loader order != segments.csv order or missing meta)."
+        results["clip_metrics_disabled_reason"] = (
+            "clip_id mapping unsafe (likely loader order != segments.csv order or missing meta)."
+        )
         results["clip_metrics_csv_label_mismatches"] = int(csv_mismatch)
 
     if clip_metrics_available:
@@ -348,7 +389,6 @@ def main(run_dir: str, segments_csv: str, features_root: str, policy: str, num_w
         avg_windows = float(np.mean(windows)) if windows else 0.0
         avg_depth_per_window = (avg_units / max(avg_windows, 1e-9)) if avg_windows > 0 else 0.0
 
-        # These match your clip_policy_test metrics (disable_time_exit case)
         results.update({
             "clip_accuracy": float(clip_acc),
             "n_clips": int(n_clips),
@@ -380,6 +420,21 @@ if __name__ == "__main__":
     ap.add_argument("--features_root", default="data_cache/features")
     ap.add_argument("--policy", default="greedy", choices=["greedy", "ea"])
     ap.add_argument("--num_workers", type=int, default=0)
+
+    # Step 0 (K-exit): expose tap_blocks in CLI
+    ap.add_argument("--tap_blocks", default="1,3", help="Comma list like 1,2,3,4. Default 1,3 (=3 exits).")
+    ap.add_argument("--n_mels", type=int, default=64)
+
     args = ap.parse_args()
 
-    main(args.run_dir, args.segments_csv, args.features_root, args.policy, args.num_workers)
+    tap_blocks = tuple(int(x) for x in args.tap_blocks.split(",") if x.strip())
+
+    main(
+        run_dir=args.run_dir,
+        segments_csv=args.segments_csv,
+        features_root=args.features_root,
+        policy=args.policy,
+        num_workers=args.num_workers,
+        tap_blocks=tap_blocks,
+        n_mels=args.n_mels,
+    )
