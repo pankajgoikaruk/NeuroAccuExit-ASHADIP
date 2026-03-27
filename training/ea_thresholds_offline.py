@@ -7,8 +7,7 @@ import numpy as np
 from sklearn.metrics import f1_score
 
 from data.datasets import make_loaders
-from adapters.audio_adapter import TinyAudioCNN
-from models.exit_net import ExitNet
+from utils.model_factory import build_audio_exit_net, load_run_model_cfg
 from policies.depth_ea import depth_ea_decide
 
 
@@ -135,12 +134,12 @@ def main():
     num_classes = len(label2id)
 
     # Build model
-    backbone = TinyAudioCNN(n_mels=args.n_mels, tap_blocks=tap_blocks)
-    model = ExitNet(
-        backbone,
+    model_cfg = load_run_model_cfg(args.run_dir)
+    model = build_audio_exit_net(
         num_classes=num_classes,
-        tap_dims=backbone.tap_dims,
-        final_dim=backbone.final_dim,
+        n_mels=args.n_mels,
+        tap_blocks=tap_blocks,
+        model_cfg=model_cfg,
     ).to(device).eval()
 
     ckpt = os.path.join(args.run_dir, "ckpt", "best.pt")

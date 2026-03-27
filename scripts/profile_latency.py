@@ -10,8 +10,7 @@ import numpy as np
 import torch
 
 from data.datasets import make_loaders
-from adapters.audio_adapter import TinyAudioCNN
-from models.exit_net import ExitNet
+from utils.model_factory import build_audio_exit_net, load_run_model_cfg
 from utils.profiling import measure_latency_ms, conv2d_flops
 
 
@@ -204,12 +203,12 @@ def main():
     if not ckpt_path.exists():
         raise SystemExit(f"Checkpoint not found: {ckpt_path}")
 
-    backbone = TinyAudioCNN(n_mels=n_mels, tap_blocks=tap_blocks)
-    model = ExitNet(
-        backbone,
+    model_cfg = load_run_model_cfg(str(run_dir))
+    model = build_audio_exit_net(
         num_classes=num_classes,
-        tap_dims=backbone.tap_dims,
-        final_dim=backbone.final_dim,
+        n_mels=n_mels,
+        tap_blocks=tap_blocks,
+        model_cfg=model_cfg,
     ).to(device)
 
     state = torch.load(ckpt_path, map_location=device)

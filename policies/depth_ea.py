@@ -1,4 +1,3 @@
-# policies/depth_ea.py
 from __future__ import annotations
 
 from typing import List, Optional, Sequence, Dict, Any
@@ -16,9 +15,15 @@ def depth_ea_decide(
     ea_stable_k: int = 1,
     ea_flip_penalty: float = 0.0,
     # Exit1 high-confidence override
-    ea_exit1_conf_min: Optional[float] = None,     # if None and ea_stable_k>1 -> default 0.95
-    ea_exit1_margin_mult: float = 2.0,             # require margin >= mult * ea_threshold for Exit1 override
-    ea_exit1_margin_min: float = 0.0,              # optional absolute floor on Exit1 margin override
+    ea_exit1_conf_min: Optional[float] = None,   # if None and ea_stable_k>1 -> default 0.95
+    ea_exit1_margin_mult: float = 2.0,           # require margin >= mult * ea_threshold for Exit1 override
+    ea_exit1_margin_min: float = 0.0,            # optional absolute floor on Exit1 margin override
+    # Exit2 strict confirmation override
+    ea_exit2_conf_min: float = 0.99,
+    ea_exit2_margin_min: float = 0.45,
+    ea_exit2_conf_gain_min: float = 0.05,
+    ea_exit2_margin_gain_min: float = 0.03,
+    ea_exit2_require_agree: bool = True,
 ) -> Dict[str, Any]:
     """
     Depth Evidence Accumulation across exits (generic K exits).
@@ -118,14 +123,44 @@ def depth_ea_decide(
         ok_min_exit = torch.full((B,), k >= int(ea_min_exit), dtype=torch.bool, device=dev)
         ok_stable = stable.ge(int(ea_stable_k))
 
+        # normal EA gating
         can_take = undecided & ok_min_exit & ok_margin & ok_stable
 
-        # Exit1 override when stable_k>1 (otherwise exit1 never becomes stable)
+        # Exit1 override when stable_k > 1 (otherwise exit1 never becomes stable)
         if k == 0 and int(ea_stable_k) > 1:
             conf_min = 0.95 if ea_exit1_conf_min is None else float(ea_exit1_conf_min)
             override_margin = max(float(ea_exit1_margin_min), float(ea_exit1_margin_mult) * float(ea_threshold))
             can_take_exit1 = undecided & confs[0].ge(conf_min) & margins[0].ge(override_margin)
             can_take = can_take | can_take_exit1
+
+        # Exit2 strict confirmation override
+        # This is a rare exception that can bypass ea_min_exit=2,
+        # but only when exit2 is clearly stronger than exit1.
+        if k == 1:
+            conf1 = confs[0]
+            margin1 = margins[0]
+            pred1 = preds[0]
+
+            conf2 = confs[1]
+            margin2 = margins[1]
+            pred2 = preds[1]
+
+            conf_gain12 = conf2 - conf1
+            margin_gain12 = margin2 - margin1
+            agree12 = pred1.eq(pred2)
+
+            can_take_exit2 = (
+                undecided
+                & conf2.ge(float(ea_exit2_conf_min))
+                & margin2.ge(float(ea_exit2_margin_min))
+                & conf_gain12.ge(float(ea_exit2_conf_gain_min))
+                & margin_gain12.ge(float(ea_exit2_margin_gain_min))
+            )
+
+            if ea_exit2_require_agree:
+                can_take_exit2 = can_take_exit2 & agree12
+
+            can_take = can_take | can_take_exit2
 
         if can_take.any():
             idx = can_take.nonzero(as_tuple=False).squeeze(1)

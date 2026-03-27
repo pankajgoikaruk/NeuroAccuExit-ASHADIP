@@ -5,8 +5,7 @@ import torch
 from torch.nn.functional import cross_entropy
 
 from data.datasets import make_loaders
-from adapters.audio_adapter import TinyAudioCNN
-from models.exit_net import ExitNet
+from utils.model_factory import build_audio_exit_net, load_run_model_cfg
 
 
 class TempScale(torch.nn.Module):
@@ -90,12 +89,12 @@ if __name__ == "__main__":
     # tap config (K-exit generic)
     tap_blocks = (1, 3) if not args.tap_blocks.strip() else tuple(int(x) for x in args.tap_blocks.split(","))
 
-    backbone = TinyAudioCNN(n_mels=args.n_mels, tap_blocks=tap_blocks)
-    model = ExitNet(
-        backbone,
+    model_cfg = load_run_model_cfg(args.run_dir)
+    model = build_audio_exit_net(
         num_classes=num_classes,
-        tap_dims=backbone.tap_dims,
-        final_dim=backbone.final_dim,
+        n_mels=args.n_mels,
+        tap_blocks=tap_blocks,
+        model_cfg=model_cfg,
     ).to(device)
 
     ckpt_path = os.path.join(args.run_dir, "ckpt", "best.pt")

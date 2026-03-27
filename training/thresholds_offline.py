@@ -9,8 +9,7 @@ from torch.nn.functional import softmax
 from sklearn.metrics import f1_score
 
 from data.datasets import make_loaders
-from adapters.audio_adapter import TinyAudioCNN
-from models.exit_net import ExitNet
+from utils.model_factory import build_audio_exit_net, load_run_model_cfg
 
 try:
     import yaml
@@ -131,12 +130,12 @@ def main():
     n_mels = int((cfg.get("features") or {}).get("n_mels", args.n_mels))
 
     # build model
-    backbone = TinyAudioCNN(n_mels=n_mels, tap_blocks=tap_blocks)
-    model = ExitNet(
-        backbone,
+    model_cfg = load_run_model_cfg(args.run_dir)
+    model = build_audio_exit_net(
         num_classes=num_classes,
-        tap_dims=backbone.tap_dims,
-        final_dim=backbone.final_dim,
+        n_mels=n_mels,
+        tap_blocks=tap_blocks,
+        model_cfg=model_cfg,
     ).to(device)
 
     ckpt = os.path.join(args.run_dir, "ckpt", "best.pt")

@@ -21,8 +21,6 @@ param(
   # Depth-EA selector depth penalty (used only in training.ea_thresholds_offline)
   [double]$LambdaDepth = 0.08,
 
-
-
   # Auto lambda_depth for EA sweep (recommended): if enabled (or LambdaDepth<0),
   # uses 0.02 for K>=5 else 0.08.
   [switch]$AutoLambdaDepth,
@@ -60,7 +58,7 @@ function Invoke-Python([string]$cmd) {
   iex $cmd
   if ($LASTEXITCODE -ne 0) { throw "Python command failed ($LASTEXITCODE): $cmd" }
 }
-c
+
 function Num-ToId([double]$x) {
   return ($x.ToString("0.###") -replace '\.', 'p')  # 1.0->1p0
 }
@@ -75,7 +73,6 @@ $IsDepthEA = $false
 if ($Policy -eq "ea") { $IsDepthEA = $true }
 elseif ($Policy -eq "greedy") { $IsDepthEA = $false }
 else { $IsDepthEA = $VariantLooksEA }  # auto
-
 
 # --------------------- K exits + EA min-exit resolution ---------------------
 $K = ($TapBlocks -split ',').Count + 1
@@ -109,11 +106,11 @@ Write-Host " Policy(param) = $Policy" -ForegroundColor DarkGray
 Write-Host " Depth-EA active = $IsDepthEA" -ForegroundColor DarkGray
 Write-Host " TapBlocks = $TapBlocks  (K = $K)" -ForegroundColor DarkGray
 Write-Host " n_mels = $NMels" -ForegroundColor DarkGray
-if ($IsDepthEA) { 
+if ($IsDepthEA) {
   $ld_note = ""
   if ($LambdaDepthAuto) { $ld_note = " (auto)" }
   Write-Host " LambdaDepth = $LambdaDepthEff$ld_note" -ForegroundColor DarkGray
-  Write-Host " EA min exit (0-index) = $EAMinExitEff" -ForegroundColor DarkGray 
+  Write-Host " EA min exit (0-index) = $EAMinExitEff" -ForegroundColor DarkGray
 }
 
 New-Item -ItemType Directory -Path $RunsRoot -ErrorAction SilentlyContinue | Out-Null
@@ -194,7 +191,7 @@ Invoke-Python ('python -m training.calibrate --run_dir "{0}" --segments_csv "{1}
 # --------------------- 5/11) Select thresholds ---------------------
 if ($IsDepthEA) {
   Write-Host "`n[5/11] Select EA thresholds (Depth-EA)..." -ForegroundColor Yellow
-  Invoke-Python ('python -m training.ea_thresholds_offline --run_dir \"{0}\" --segments_csv \"{1}\" --features_root \"{2}\" --tap_blocks {3} --n_mels {4} --ea_min_exit {5} --lambda_depth {6}' -f `
+  Invoke-Python ('python -m training.ea_thresholds_offline --run_dir "{0}" --segments_csv "{1}" --features_root "{2}" --tap_blocks {3} --n_mels {4} --ea_min_exit {5} --lambda_depth {6}' -f `
     $runPath, $SegCsv, $FeatRoot, $TapBlocks, $NMels, $EAMinExitEff, $LambdaDepthEff)
 } else {
   Write-Host "`n[5/11] Select greedy threshold (tau)..." -ForegroundColor Yellow

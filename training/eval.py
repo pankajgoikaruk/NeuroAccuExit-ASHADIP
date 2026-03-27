@@ -9,8 +9,7 @@ import torch
 from sklearn.metrics import classification_report, confusion_matrix
 
 from data.datasets import make_loaders
-from adapters.audio_adapter import TinyAudioCNN
-from models.exit_net import ExitNet
+from utils.model_factory import build_audio_exit_net, load_run_model_cfg
 
 
 @torch.no_grad()
@@ -21,12 +20,12 @@ def main(run_dir: str, segments_csv: str, features_root: str, tap_blocks: tuple[
     _, _, dl_te, label2id = make_loaders(segments_csv, features_root, batch_size, num_workers)
     num_classes = len(label2id)
 
-    backbone = TinyAudioCNN(n_mels=n_mels, tap_blocks=tap_blocks)
-    model = ExitNet(
-        backbone,
+    model_cfg = load_run_model_cfg(run_dir)
+    model = build_audio_exit_net(
         num_classes=num_classes,
-        tap_dims=backbone.tap_dims,
-        final_dim=backbone.final_dim,
+        n_mels=n_mels,
+        tap_blocks=tap_blocks,
+        model_cfg=model_cfg,
     ).to(device)
 
     ckpt = os.path.join(run_dir, "ckpt", "best.pt")

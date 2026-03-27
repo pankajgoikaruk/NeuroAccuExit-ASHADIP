@@ -16,8 +16,7 @@ from torch.nn.functional import cross_entropy
 from utils.config import parse_args_with_config, ensure_dirs, save_config
 from utils.logging import make_run_dir, save_json
 from data.datasets import make_loaders
-from adapters.audio_adapter import TinyAudioCNN
-from models.exit_net import ExitNet
+from utils.model_factory import build_audio_exit_net
 
 
 def set_global_seed(seed: int):
@@ -284,12 +283,11 @@ def main():
     tap_blocks = tuple(int(x) for x in tap_blocks_cfg)
     K = len(tap_blocks) + 1
 
-    backbone = TinyAudioCNN(n_mels=n_mels, tap_blocks=tap_blocks)
-    model = ExitNet(
-        backbone,
-        num_classes=num_classes,              # required keyword-only
-        tap_dims=backbone.tap_dims,
-        final_dim=backbone.final_dim,
+    model = build_audio_exit_net(
+        num_classes=num_classes,
+        n_mels=n_mels,
+        tap_blocks=tap_blocks,
+        model_cfg=(cfg.get("model") or {}),
     ).to(device)
 
     # ---- Loss weights (pad/trim to K) ----
