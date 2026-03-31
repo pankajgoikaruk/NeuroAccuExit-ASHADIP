@@ -242,6 +242,20 @@ def main():
     # policy stats + FLOPs + calibration (with plots)
     policy = policy_eval(args.run_dir, args.segments_csv, args.features_root, save_plots=not args.no_plots)
 
+    policy_results = load_json_safepath(os.path.join(args.run_dir, "policy_results.json"), {})
+    clip_full = load_json_safepath(os.path.join(args.run_dir, "clip_policy_results_full.json"), {})
+    clip_time = load_json_safepath(os.path.join(args.run_dir, "clip_policy_results_time.json"), {})
+
+    # Prefer explicit saved policy_results.json values when available
+    if policy_results:
+        policy["policy_test_acc"] = policy_results.get("accuracy", policy.get("policy_test_acc"))
+        policy["avg_exit_depth"] = policy_results.get("avg_exit_depth")
+        policy["exit_mix"] = policy_results.get("exit_mix", policy.get("exit_mix"))
+        policy["flip_any_rate"] = policy_results.get("flip_any_rate")
+        policy["avg_flip_count"] = policy_results.get("avg_flip_count")
+        policy["exit_consistency"] = policy_results.get("exit_consistency")
+        policy["n_segments"] = policy_results.get("n_segments", policy_results.get("n_samples"))
+
     # summary
     run_id = os.path.basename(args.run_dir.rstrip("\\/"))
     summary = {
@@ -253,6 +267,9 @@ def main():
         "temperature": calib,
         "thresholds": thres,
         "policy_summary": policy,
+        "policy_results": policy_results,
+        "clip_policy_results_full": clip_full,
+        "clip_policy_results_time": clip_time,
     }
 
     out_json = os.path.join(args.run_dir, args.report_name)

@@ -1,35 +1,35 @@
-# scripts/run_full.ps1
-
 param(
   [string]$DataRoot   = "data\moth_sounds",
-
-  # Cache root
   [string]$CacheRoot  = "data_caches",
-
-  # Optional cache id (if not provided, it is auto-generated from params)
   [string]$CacheId    = "",
-
   [string]$Config     = "configs\audio_moth.yaml",
   [string]$RunsRoot   = "runs",
   [string]$Variant    = "V0",
+  [string]$Policy     = "greedy",
   [string]$Device     = "cpu",
   [double]$SegmentSec = 1.0,
-  [double]$HopSec     = 0.5
+  [double]$HopSec     = 0.5,
+  [int]$NMels         = 64,
+
+  [switch]$RunClipPolicy,
+  [double]$TimeConf   = 0.95,
+  [int]$TimeStableK   = 2,
+  [int]$TimeMinWindows = 2,
+  [int]$EvalFixedKWindows = 3,
+  [double]$TimeMargin = 0.0
 )
 
 $ErrorActionPreference = "Stop"
 $env:PYTHONPATH = (Get-Location).Path
-# Avoid OpenMP duplicate runtime crash on Windows (Intel MKL / matplotlib / numpy combos)
 $env:KMP_DUPLICATE_LIB_OK = "TRUE"
 
 function Invoke-Python([string]$cmd) {
   Write-Host "  $cmd" -ForegroundColor DarkGray
-  iex $cmd
+  Invoke-Expression $cmd
   if ($LASTEXITCODE -ne 0) { throw "Python command failed ($LASTEXITCODE): $cmd" }
 }
 
-function Num-ToId([double]$x) {
-  # 1.0 -> 1p0, 0.5 -> 0p5
+function ConvertTo-Id([double]$x) {
   return ($x.ToString("0.###") -replace '\.', 'p')
 }
 
@@ -37,8 +37,8 @@ function Num-ToId([double]$x) {
 $VariantSafe = ($Variant -replace '[^A-Za-z0-9_-]', '_')
 $variantRunDir = Join-Path $RunsRoot $VariantSafe
 
-New-Item -ItemType Directory -Path $RunsRoot       -ErrorAction SilentlyContinue | Out-Null
-New-Item -ItemType Directory -Path $variantRunDir  -ErrorAction SilentlyContinue | Out-Null
+New-Item -ItemType Directory -Path $RunsRoot      -ErrorAction SilentlyContinue | Out-Null
+New-Item -ItemType Directory -Path $variantRunDir -ErrorAction SilentlyContinue | Out-Null
 
 $variantEsc = [regex]::Escape($VariantSafe)
 $maxN = 0
@@ -48,65 +48,62 @@ Get-ChildItem -Path $variantRunDir -Directory -ErrorAction SilentlyContinue | Fo
     if ($n -gt $maxN) { $maxN = $n }
   }
 }
-$nextN = $maxN + 1
-$runId = "{0}_{1:000}" -f $VariantSafe, $nextN
+$nextN  = $maxN + 1
+$runId  = "{0}_{1:000}" -f $VariantSafe, $nextN
 $runPath = Join-Path $variantRunDir $runId
 if (Test-Path $runPath) { throw "Target run folder already exists: $runPath" }
 
-# --------------------- Cache directory scheme: data_caches/<Variant>/<cache_id>/... ---------------------
-# Auto CacheId if not provided (encode the things that change the cache)
+# --------------------- Cache directory scheme ---------------------
 if ([string]::IsNullOrWhiteSpace($CacheId)) {
-  $segId = Num-ToId $SegmentSec
-  $hopId = Num-ToId $HopSec
-  # Keep it short but informative; extend later if you change feature params
-  $CacheId = "seg$segId" + "_hop$hopId" + "_bp100-3000" + "_mels64"
+  $segId = ConvertTo-Id $SegmentSec
+  $hopId = ConvertTo-Id $HopSec
+  $CacheId = "seg$segId" + "_hop$hopId" + "_bp100-3000" + "_mels$NMels"
 }
 
-$CacheIdSafe = ($CacheId -replace '[^A-Za-z0-9_-]', '_')
+$CacheIdSafe     = ($CacheId -replace '[^A-Za-z0-9_-]', '_')
 $variantCacheDir = Join-Path (Join-Path $CacheRoot $VariantSafe) $CacheIdSafe
 
 New-Item -ItemType Directory -Path $CacheRoot -ErrorAction SilentlyContinue | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $CacheRoot $VariantSafe) -ErrorAction SilentlyContinue | Out-Null
 New-Item -ItemType Directory -Path $variantCacheDir -ErrorAction SilentlyContinue | Out-Null
 
-# Common cache paths
 $SegCsv   = Join-Path $variantCacheDir "segments.csv"
 $FeatRoot = Join-Path $variantCacheDir "features"
 
-# Start wall-clock timer
 $pipelineStart = Get-Date
 
 Write-Host "== ASHADIP: full pipeline run ==" -ForegroundColor Cyan
-Write-Host "  DataRoot   = $DataRoot"        -ForegroundColor DarkGray
-Write-Host "  CacheRoot  = $CacheRoot"       -ForegroundColor DarkGray
-Write-Host "  CacheId    = $CacheIdSafe"     -ForegroundColor DarkGray
-Write-Host "  CacheDir   = $variantCacheDir" -ForegroundColor DarkGray
-Write-Host "  Config     = $Config"          -ForegroundColor DarkGray
-Write-Host "  RunsRoot   = $RunsRoot"        -ForegroundColor DarkGray
-Write-Host "  Variant    = $Variant"         -ForegroundColor DarkGray
-Write-Host "  Device     = $Device"          -ForegroundColor DarkGray
-Write-Host "  SegmentSec = $SegmentSec"      -ForegroundColor DarkGray
-Write-Host "  HopSec     = $HopSec"          -ForegroundColor DarkGray
-Write-Host "  RunDir     = $runPath"         -ForegroundColor DarkGray
+Write-Host "  DataRoot        = $DataRoot"        -ForegroundColor DarkGray
+Write-Host "  CacheRoot       = $CacheRoot"       -ForegroundColor DarkGray
+Write-Host "  CacheId         = $CacheIdSafe"     -ForegroundColor DarkGray
+Write-Host "  CacheDir        = $variantCacheDir" -ForegroundColor DarkGray
+Write-Host "  Config          = $Config"          -ForegroundColor DarkGray
+Write-Host "  RunsRoot        = $RunsRoot"        -ForegroundColor DarkGray
+Write-Host "  Variant         = $Variant"         -ForegroundColor DarkGray
+Write-Host "  Policy          = $Policy"          -ForegroundColor DarkGray
+Write-Host "  Device          = $Device"          -ForegroundColor DarkGray
+Write-Host "  SegmentSec      = $SegmentSec"      -ForegroundColor DarkGray
+Write-Host "  HopSec          = $HopSec"          -ForegroundColor DarkGray
+Write-Host "  NMels           = $NMels"           -ForegroundColor DarkGray
+Write-Host "  RunDir          = $runPath"         -ForegroundColor DarkGray
+Write-Host "  RunClipPolicy   = $RunClipPolicy"   -ForegroundColor DarkGray
 
 $cacheReady = (Test-Path $SegCsv) -and (Test-Path $FeatRoot)
 
 if ($cacheReady) {
   Write-Host "`n[cache] Reusing existing cache: $variantCacheDir" -ForegroundColor Green
-} else {
-  # run step 1 + 2
 }
+else {
+  # --------------------- 1/10) Prep segments ---------------------
+  Write-Host "`n[1/10] Prep segments..." -ForegroundColor Yellow
+  Invoke-Python ('python -m scripts.prep_segments --root "{0}" --cache "{1}" --sr 16000 --segment_sec {2} --hop {3} --silence_dbfs -40 --bandpass 100 3000 --config "{4}"' -f `
+    $DataRoot, $variantCacheDir, $SegmentSec, $HopSec, $Config)
 
-
-# --------------------- 1/10) Prep segments ---------------------
-Write-Host "`n[1/10] Prep segments..." -ForegroundColor Yellow
-Invoke-Python ('python -m scripts.prep_segments --root "{0}" --cache "{1}" --sr 16000 --segment_sec {2} --hop {3} --silence_dbfs -40 --bandpass 100 3000 --config "$Config"' -f `
-  $DataRoot, $variantCacheDir, $SegmentSec, $HopSec)
-
-# --------------------- 2/10) Extract features ---------------------
-Write-Host "`n[2/10] Extract features..." -ForegroundColor Yellow
-Invoke-Python ('python -m scripts.extract_features --cache "{0}" --n_mels 64 --n_fft 1024 --win_ms 25 --hop_ms 10 --cmvn' -f `
-  $variantCacheDir)
+  # --------------------- 2/10) Extract features ---------------------
+  Write-Host "`n[2/10] Extract features..." -ForegroundColor Yellow
+  Invoke-Python ('python -m scripts.extract_features --cache "{0}" --n_mels {1} --n_fft 1024 --win_ms 25 --hop_ms 10 --cmvn' -f `
+    $variantCacheDir, $NMels)
+}
 
 # --------------------- 3/10) Train ExitNet ---------------------
 Write-Host "`n[3/10] Train ExitNet..." -ForegroundColor Yellow
@@ -118,39 +115,57 @@ Write-Host "Using run: $runPath" -ForegroundColor Green
 # Save meta.json for traceability
 $createdAtIso = Get-Date -Format o
 $meta = @{
-  run_id       = $runId
-  variant      = $Variant
-  variant_safe = $VariantSafe
-  created_at   = $createdAtIso
-  runs_root    = $RunsRoot
-  variant_dir  = $variantRunDir
-
-  cache_root   = $CacheRoot
-  cache_id     = $CacheIdSafe
-  cache_dir    = $variantCacheDir
-
-  data_root    = $DataRoot
-  device       = $Device
-  segment_sec  = $SegmentSec
-  hop_sec      = $HopSec
+  run_id        = $runId
+  variant       = $Variant
+  variant_safe  = $VariantSafe
+  created_at    = $createdAtIso
+  runs_root     = $RunsRoot
+  variant_dir   = $variantRunDir
+  cache_root    = $CacheRoot
+  cache_id      = $CacheIdSafe
+  cache_dir     = $variantCacheDir
+  data_root     = $DataRoot
+  device        = $Device
+  policy        = $Policy
+  segment_sec   = $SegmentSec
+  hop_sec       = $HopSec
+  n_mels        = $NMels
+  run_clip_policy = [bool]$RunClipPolicy
+  time_conf     = $TimeConf
+  time_stable_k = $TimeStableK
+  time_min_windows = $TimeMinWindows
+  eval_fixed_k_windows = $EvalFixedKWindows
+  time_margin   = $TimeMargin
 }
 New-Item -ItemType Directory -Path $runPath -ErrorAction SilentlyContinue | Out-Null
-$meta | ConvertTo-Json -Depth 5 | Out-File -FilePath (Join-Path $runPath "meta.json") -Encoding UTF8
+$meta | ConvertTo-Json -Depth 8 | Out-File -FilePath (Join-Path $runPath "meta.json") -Encoding UTF8
 
 # --------------------- 4/10) Calibrate temperatures ---------------------
 Write-Host "`n[4/10] Calibrate temperatures..." -ForegroundColor Yellow
 Invoke-Python ('python -m training.calibrate --run_dir "{0}" --segments_csv "{1}" --features_root "{2}"' -f `
   $runPath, $SegCsv, $FeatRoot)
 
-# --------------------- 5/10) Select threshold (tau) ---------------------
+# --------------------- 5/10) Select threshold (greedy path) ---------------------
 Write-Host "`n[5/10] Select threshold (tau)..." -ForegroundColor Yellow
 Invoke-Python ('python -m training.thresholds_offline --run_dir "{0}" --segments_csv "{1}" --features_root "{2}"' -f `
   $runPath, $SegCsv, $FeatRoot)
 
-# --------------------- 6/10) Policy test ---------------------
-Write-Host "`n[6/10] Policy test..." -ForegroundColor Yellow
+# --------------------- 6/10) Segment policy test ---------------------
+Write-Host "`n[6/10] Segment policy test..." -ForegroundColor Yellow
 Invoke-Python ('python -m scripts.policy_test --run_dir "{0}" --segments_csv "{1}" --features_root "{2}"' -f `
   $runPath, $SegCsv, $FeatRoot)
+
+# --------------------- Guard: current clip tester is greedy-only ---------------------
+if ($RunClipPolicy -and $Policy -ne "greedy") {
+  throw "Current scripts.clip_policy_test.py is greedy-only. Use -Policy greedy, or create an EA-compatible clip_policy_test.py first."
+}
+
+# --------------------- 6b/10) Clip policy test (optional) ---------------------
+if ($RunClipPolicy) {
+  Write-Host "`n[6b/10] Clip policy test..." -ForegroundColor Yellow
+  Invoke-Python ('python -m scripts.clip_policy_test --run_dir "{0}" --segments_csv "{1}" --features_root "{2}" --device "{3}" --time_conf {4} --time_stable_k {5} --time_min_windows {6} --fixed_k_windows {7} --time_margin {8}' -f `
+    $runPath, $SegCsv, $FeatRoot, $Device, $TimeConf, $TimeStableK, $TimeMinWindows, $EvalFixedKWindows, $TimeMargin)
+}
 
 # --------------------- 7/10) Summarise run ---------------------
 Write-Host "`n[7/10] Summarise run..." -ForegroundColor Yellow
@@ -182,11 +197,11 @@ New-Item -ItemType Directory -Path $analysisDir -ErrorAction SilentlyContinue | 
 $runtimeCsv = Join-Path $analysisDir "pipeline_runtime.csv"
 
 if (-not (Test-Path $runtimeCsv)) {
-  "timestamp,variant,segment_sec,hop_sec,device,cache_dir,runs_root,run_id,total_seconds,total_minutes" | Out-File $runtimeCsv -Encoding UTF8
+  "timestamp,variant,policy,segment_sec,hop_sec,device,cache_dir,runs_root,run_id,total_seconds,total_minutes,run_clip_policy" | Out-File $runtimeCsv -Encoding UTF8
 }
 
-$csvLine = "{0},{1},{2},{3},{4},{5},{6},{7},{8},{9}" -f `
-  $timestampIso, $Variant, $SegmentSec, $HopSec, $Device, $variantCacheDir, $RunsRoot, $runId, $totalSeconds, $totalMinutes
+$csvLine = "{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10}" -f `
+  $timestampIso, $Variant, $Policy, $SegmentSec, $HopSec, $Device, $variantCacheDir, $RunsRoot, $runId, $totalSeconds, $totalMinutes, [bool]$RunClipPolicy
 
 Add-Content -Path $runtimeCsv -Value $csvLine
 Write-Host "Pipeline runtime logged to: $runtimeCsv" -ForegroundColor DarkGray
