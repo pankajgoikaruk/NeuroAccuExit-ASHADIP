@@ -1,10 +1,15 @@
+# scripts/analyse_run.py
+
+from __future__ import annotations
+
 import os
 import json
 import argparse
+import inspect
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
-import pandas as pd
 import torch
 import matplotlib.pyplot as plt
 from torch.nn.functional import softmax
@@ -24,6 +29,110 @@ def load_json_safepath(path, default=None):
             return json.load(f)
     except FileNotFoundError:
         return default
+    except Exception:
+        return default
+
+
+def _parse_tap_blocks(value) -> Optional[tuple]:
+    """
+    Accept:
+      - None
+      - "1,2,3,4"
+      - [1,2,3,4]
+      - (1,2,3,4)
+    """
+    if value is None:
+        return None
+
+    if isinstance(value, (list, tuple)):
+        return tuple(int(v) for v in value)
+
+    value = str(value).strip()
+    if value == "":
+        return None
+
+    return tuple(int(v.strip()) for v in value.split(",") if v.strip())
+
+
+def _build_backbone(n_mels: int, tap_blocks=None):
+    """
+    Compatible with both:
+    - old style: TinyAudioCNN(n_mels=64)
+    - new style: TinyAudioCNN(n_mels=64, tap_blocks=(1,2,3,4))
+    """
+    sig = inspect.signature(TinyAudioCNN.__init__)
+    kwargs = {}
+
+    if "n_mels" in sig.parameters:
+        kwargs["n_mels"] = int(n_mels)
+
+    if tap_blocks is not None and "tap_blocks" in sig.parameters:
+        kwargs["tap_blocks"] = tap_blocks
+
+    return TinyAudioCNN(**kwargs)
+
+
+def _infer_tap_blocks_from_run(run_dir: Path) -> Optional[tuple]:
+    """
+    Try to recover tap_blocks from saved artifacts.
+    """
+    candidates = [
+        run_dir / "metrics.json",
+        run_dir / "report.json",
+        run_dir / "temperature.json",
+        run_dir / "thresholds.json",
+        run_dir / "summary.json",
+        run_dir / "meta.json",
+    ]
+
+    for path in candidates:
+        if not path.exists():
+            continue
+
+        obj = load_json_safepath(path, {})
+        if not isinstance(obj, dict):
+            continue
+
+        tb = None
+
+        if isinstance(obj.get("meta"), dict):
+            tb = obj["meta"].get("tap_blocks")
+        if tb is None and isinstance(obj.get("policy_summary"), dict):
+            tb = obj["policy_summary"].get("tap_blocks")
+        if tb is None:
+            tb = obj.get("tap_blocks")
+
+        tb = _parse_tap_blocks(tb)
+        if tb is not None:
+            return tb
+
+    # Optional YAML fallback
+    cfg_path = run_dir / "config_used.yaml"
+    if cfg_path.exists():
+        try:
+            import yaml
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                cfg = yaml.safe_load(f) or {}
+            tb = _parse_tap_blocks((cfg.get("model") or {}).get("tap_blocks"))
+            if tb is not None:
+                return tb
+        except Exception:
+            pass
+
+    return None
+
+
+def _infer_n_mels_from_run(run_dir: Path, default=64) -> int:
+    cfg_path = run_dir / "config_used.yaml"
+    if cfg_path.exists():
+        try:
+            import yaml
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                cfg = yaml.safe_load(f) or {}
+            return int((cfg.get("features") or {}).get("n_mels", default))
+        except Exception:
+            pass
+    return int(default)
 
 
 def plot_training_curves(metrics_path: Path, plots_dir: Path):
@@ -59,17 +168,27 @@ def plot_training_curves(metrics_path: Path, plots_dir: Path):
     plt.close()
     print(f"[analyse_run] Saved {out}")
 
-    # --- Validation accuracy per exit ---
-    # Each val entry has acc = [acc_exit1, acc_exit2, acc_exit3]
+    # --- Validation accuracy per exit (dynamic K) ---
     epochs_val = [e["epoch"] for e in val_hist]
-    acc_exit1 = [e["acc"][0] for e in val_hist]
-    acc_exit2 = [e["acc"][1] for e in val_hist]
-    acc_exit3 = [e["acc"][2] for e in val_hist]
+
+    first_acc = val_hist[0].get("acc", [])
+    if not isinstance(first_acc, list) or len(first_acc) == 0:
+        print("[analyse_run] metrics.json val history has no per-exit acc list, skipping val_acc_exits.png.")
+        return
+
+    num_exits = len(first_acc)
 
     plt.figure()
-    plt.plot(epochs_val, acc_exit1, marker="o", label="exit1")
-    plt.plot(epochs_val, acc_exit2, marker="o", label="exit2")
-    plt.plot(epochs_val, acc_exit3, marker="o", label="exit3")
+    for k in range(num_exits):
+        acc_k = []
+        for entry in val_hist:
+            acc_list = entry.get("acc", [])
+            if k < len(acc_list):
+                acc_k.append(acc_list[k])
+            else:
+                acc_k.append(np.nan)
+        plt.plot(epochs_val, acc_k, marker="o", label=f"exit{k+1}")
+
     plt.xlabel("Epoch")
     plt.ylabel("Validation accuracy")
     plt.title("Validation accuracy per exit vs epoch")
@@ -83,28 +202,32 @@ def plot_training_curves(metrics_path: Path, plots_dir: Path):
 
 
 @torch.no_grad()
-def collect_test_predictions(run_dir: Path,
-                             segments_csv: Path,
-                             features_root: Path,
-                             device: str = None):
+def collect_test_predictions(
+    run_dir: Path,
+    segments_csv: Path,
+    features_root: Path,
+    device: str = None,
+    n_mels: int = 64,
+    tap_blocks=None,
+):
     """
     Reload the trained ExitNet model from ckpt/best.pt and run it on the test set.
 
     Returns:
       y_true       : (N,) numpy array of ground-truth labels
-      y_pred_exits : list of length 3, each (N,) array of predicted labels for that exit
-      y_prob_exits : list of length 3, each (N, C) array of softmax probabilities for that exit
+      y_pred_exits : list of length K, each (N,) array of predicted labels for that exit
+      y_prob_exits : list of length K, each (N, C) array of softmax probabilities for that exit
       label2id     : mapping label string -> int
     """
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # --- Data loaders ---
-    dl_tr, dl_va, dl_te, label2id = make_loaders(
+    _, _, dl_te, label2id = make_loaders(
         str(segments_csv),
         str(features_root),
         batch_size=64,
-        num_workers=4
+        num_workers=4,
     )
     num_classes = len(label2id)
 
@@ -113,43 +236,66 @@ def collect_test_predictions(run_dir: Path,
     if not ckpt_path.exists():
         raise FileNotFoundError(f"Cannot find checkpoint at {ckpt_path}")
 
-    backbone = TinyAudioCNN()
-    model = ExitNet(backbone, tap_dims=(16, 32), final_dim=64, num_classes=num_classes).to(device)
+    backbone = _build_backbone(n_mels=n_mels, tap_blocks=tap_blocks)
+
+    model_kwargs = {
+        "backbone": backbone,
+        "num_classes": num_classes,
+    }
+
+    # Backward compatibility for old backbone versions
+    if not hasattr(backbone, "tap_dims"):
+        model_kwargs["tap_dims"] = (16, 32)
+    if not hasattr(backbone, "final_dim"):
+        model_kwargs["final_dim"] = 64
+
+    model = ExitNet(**model_kwargs).to(device)
     state_dict = torch.load(ckpt_path, map_location=device)
     model.load_state_dict(state_dict)
     model.eval()
 
     # --- Run through test set ---
     y_true_list = []
-    y_pred_exits = [[], [], []]   # one list per exit
-    y_prob_exits = [[], [], []]   # one list per exit
+    y_pred_exits = None
+    y_prob_exits = None
 
     for x, y in dl_te:
         x = x.to(device)
         y_true_list.extend(y.numpy().tolist())
+
         logits_list = model(x)
         probs_list = [softmax(lg, dim=1).cpu().numpy() for lg in logits_list]
 
-        # Append predictions & probs per exit
-        for k in range(3):
+        if y_pred_exits is None:
+            num_exits = len(probs_list)
+            y_pred_exits = [[] for _ in range(num_exits)]
+            y_prob_exits = [[] for _ in range(num_exits)]
+
+        for k in range(len(probs_list)):
             preds = np.argmax(probs_list[k], axis=1)
             y_pred_exits[k].extend(preds.tolist())
             y_prob_exits[k].append(probs_list[k])
 
+    if y_pred_exits is None or y_prob_exits is None:
+        raise RuntimeError("Test loader is empty. No predictions collected.")
+
     y_true = np.array(y_true_list, dtype=np.int64)
-    # Concatenate prob chunks per exit
-    y_prob_exits = [np.concatenate(chunks, axis=0) if len(chunks) > 0 else None
-                    for chunks in y_prob_exits]
+    y_prob_exits = [
+        np.concatenate(chunks, axis=0) if len(chunks) > 0 else None
+        for chunks in y_prob_exits
+    ]
     y_pred_exits = [np.array(preds, dtype=np.int64) for preds in y_pred_exits]
 
     return y_true, y_pred_exits, y_prob_exits, label2id
 
 
-def compute_and_plot_confusion_matrices(y_true,
-                                        y_pred_exits,
-                                        label2id,
-                                        plots_dir: Path,
-                                        out_json: Path):
+def compute_and_plot_confusion_matrices(
+    y_true,
+    y_pred_exits,
+    label2id,
+    plots_dir: Path,
+    out_json: Path,
+):
     """
     Compute confusion matrices (counts + row-normalised) for each exit,
     save them as images and a JSON summary.
@@ -161,7 +307,7 @@ def compute_and_plot_confusion_matrices(y_true,
 
     for exit_idx, y_pred in enumerate(y_pred_exits, start=1):
         cm = confusion_matrix(y_true, y_pred, labels=list(range(len(id2label))))
-        # Row-normalised confusion matrix (each row sums to 1)
+
         with np.errstate(all="ignore"):
             row_sums = cm.sum(axis=1, keepdims=True)
             cm_norm = cm.astype(float) / np.maximum(row_sums, 1e-12)
@@ -169,15 +315,15 @@ def compute_and_plot_confusion_matrices(y_true,
         # Save plot
         plt.figure(figsize=(5, 4))
         plt.imshow(cm_norm, interpolation="nearest")
-        plt.title(f"Confusion matrix – exit{exit_idx}")
+        plt.title(f"Confusion matrix - exit{exit_idx}")
         plt.colorbar()
+
         tick_marks = np.arange(len(labels_sorted))
         plt.xticks(tick_marks, labels_sorted, rotation=45, ha="right")
         plt.yticks(tick_marks, labels_sorted)
         plt.xlabel("Predicted label")
         plt.ylabel("True label")
 
-        # Annotate cells with values
         for i in range(cm_norm.shape[0]):
             for j in range(cm_norm.shape[1]):
                 val = cm_norm[i, j]
@@ -195,51 +341,54 @@ def compute_and_plot_confusion_matrices(y_true,
             "row_normalised": cm_norm.tolist(),
         }
 
-    # Save JSON summary for confusion matrices
     with open(out_json, "w", encoding="utf-8") as f:
         json.dump(cm_info, f, indent=2)
     print(f"[analyse_run] Saved confusion matrices JSON -> {out_json}")
+
     return cm_info
 
 
-def compute_and_plot_roc(y_true,
-                         y_prob_exits,
-                         plots_dir: Path,
-                         out_json: Path):
+def compute_and_plot_roc(
+    y_true,
+    y_prob_exits,
+    plots_dir: Path,
+    out_json: Path,
+):
     """
     Compute ROC curves and AUC per exit for binary classification (num_classes == 2).
-    If num_classes != 2, this function simply returns {} and does nothing.
+    If num_classes != 2, this function returns {} and does nothing.
 
-    We treat class '1' as the "positive" class by convention.
+    We treat class '1' as the positive class by convention.
     """
-    if y_prob_exits[0] is None:
+    if not y_prob_exits or y_prob_exits[0] is None:
         print("[analyse_run] No probabilities for exit1, skipping ROC/AUC.")
         return {}
 
     num_classes = y_prob_exits[0].shape[1]
     if num_classes != 2:
-        print(f"[analyse_run] ROC/AUC currently implemented only for binary tasks, "
-              f"but got num_classes={num_classes}. Skipping ROC/AUC.")
+        print(
+            f"[analyse_run] ROC/AUC currently implemented only for binary tasks, "
+            f"but got num_classes={num_classes}. Skipping ROC/AUC."
+        )
         return {}
 
     roc_info = {}
-    y_true_bin = (y_true == 1).astype(int)  # treat label '1' as positive
+    y_true_bin = (y_true == 1).astype(int)
 
     for exit_idx, probs in enumerate(y_prob_exits, start=1):
         if probs is None:
             continue
-        # positive-class probability
+
         y_score = probs[:, 1]
         fpr, tpr, _ = roc_curve(y_true_bin, y_score)
         roc_auc = auc(fpr, tpr)
 
-        # Plot ROC curve
         plt.figure()
         plt.plot(fpr, tpr, label=f"exit{exit_idx} (AUC={roc_auc:.3f})")
         plt.plot([0, 1], [0, 1], linestyle="--", color="grey", label="random")
         plt.xlabel("False positive rate")
         plt.ylabel("True positive rate")
-        plt.title(f"ROC curve – exit{exit_idx}")
+        plt.title(f"ROC curve - exit{exit_idx}")
         plt.legend()
         plt.grid(True)
         plt.tight_layout()
@@ -254,24 +403,26 @@ def compute_and_plot_roc(y_true,
             "tpr": tpr.tolist(),
         }
 
-    # Save AUC + ROC data to JSON
     with open(out_json, "w", encoding="utf-8") as f:
         json.dump(roc_info, f, indent=2)
     print(f"[analyse_run] Saved ROC/AUC JSON -> {out_json}")
+
     return roc_info
 
 
-def build_analysis_summary(run_dir: Path,
-                           cm_info: dict,
-                           roc_info: dict,
-                           label_names):
+def build_analysis_summary(
+    run_dir: Path,
+    cm_info: dict,
+    roc_info: dict,
+    label_names,
+):
     """
-    Aggregate key metrics into one 'analysis_run.json' file:
+    Aggregate key metrics into one 'analysis_run.json' file.
 
-    - Per-exit classification metrics (precision/recall/F1) from report.json
-    - Policy-level metrics from summary.json (accuracy, exit mix, compute saving, ECE)
-    - Confusion matrix & AUC info (if available)
-    - Label names (id -> human-readable label)
+    - Per-exit classification metrics from report.json
+    - Policy-level metrics from summary.json
+    - Confusion matrix & AUC info
+    - Label names
     """
     report = load_json_safepath(run_dir / "report.json", {})
     summary = load_json_safepath(run_dir / "summary.json", {})
@@ -293,17 +444,35 @@ def build_analysis_summary(run_dir: Path,
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--run_dir", required=True,
-                    help="Path to a single run directory, e.g. runs/20251113_142831")
-    ap.add_argument("--segments_csv", default="data_cache/segments.csv",
-                    help="Path to segments.csv used for this run")
-    ap.add_argument("--features_root", default="data_cache/features",
-                    help="Root directory for .npy features used for this run")
+    ap.add_argument(
+        "--run_dir",
+        required=True,
+        help="Path to a single run directory, e.g. runs/variant/variant_001",
+    )
+    ap.add_argument(
+        "--segments_csv",
+        default="data_cache/segments.csv",
+        help="Path to segments.csv used for this run",
+    )
+    ap.add_argument(
+        "--features_root",
+        default="data_cache/features",
+        help="Root directory for .npy features used for this run",
+    )
+    ap.add_argument("--device", default=None)
+    ap.add_argument("--tap_blocks", type=str, default=None)
+    ap.add_argument("--n_mels", type=int, default=None)
     args = ap.parse_args()
 
     run_dir = Path(args.run_dir)
     plots_dir = run_dir / "plots"
     plots_dir.mkdir(exist_ok=True)
+
+    tap_blocks = _parse_tap_blocks(args.tap_blocks)
+    if tap_blocks is None:
+        tap_blocks = _infer_tap_blocks_from_run(run_dir)
+
+    n_mels = int(args.n_mels) if args.n_mels is not None else _infer_n_mels_from_run(run_dir, default=64)
 
     # 1) Training curves from metrics.json
     metrics_path = run_dir / "metrics.json"
@@ -311,33 +480,35 @@ def main():
 
     # 2) Test-set predictions, confusion matrices, ROC
     y_true, y_pred_exits, y_prob_exits, label2id = collect_test_predictions(
-        run_dir,
-        Path(args.segments_csv),
-        Path(args.features_root),
+        run_dir=run_dir,
+        segments_csv=Path(args.segments_csv),
+        features_root=Path(args.features_root),
+        device=args.device,
+        n_mels=n_mels,
+        tap_blocks=tap_blocks,
     )
 
-    # Build label_names (id -> human-readable label) in index order 0..C-1
     id2label = {v: k for k, v in label2id.items()}
     label_names = [id2label[i] for i in range(len(id2label))]
 
     cm_json_path = run_dir / "confusion_matrices.json"
     cm_info = compute_and_plot_confusion_matrices(
-        y_true,
-        y_pred_exits,
-        label2id,
-        plots_dir,
-        cm_json_path,
+        y_true=y_true,
+        y_pred_exits=y_pred_exits,
+        label2id=label2id,
+        plots_dir=plots_dir,
+        out_json=cm_json_path,
     )
 
     roc_json_path = run_dir / "roc_curves.json"
     roc_info = compute_and_plot_roc(
-        y_true,
-        y_prob_exits,
-        plots_dir,
-        roc_json_path,
+        y_true=y_true,
+        y_prob_exits=y_prob_exits,
+        plots_dir=plots_dir,
+        out_json=roc_json_path,
     )
 
-    # 3) Consolidated analysis JSON (now with label_names)
+    # 3) Consolidated analysis JSON
     build_analysis_summary(run_dir, cm_info, roc_info, label_names)
 
 

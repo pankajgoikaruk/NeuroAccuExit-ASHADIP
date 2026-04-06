@@ -11,6 +11,11 @@ param(
   [double]$HopSec     = 0.5,
   [int]$NMels         = 64,
 
+  # New: generic K-exit control
+  # 3 exits  -> "1,3"
+  # 5 exits  -> "1,2,3,4"
+  [string]$TapBlocks  = "1,2,3,4",
+
   [switch]$RunClipPolicy,
   [double]$TimeConf   = 0.95,
   [int]$TimeStableK   = 2,
@@ -57,7 +62,8 @@ if (Test-Path $runPath) { throw "Target run folder already exists: $runPath" }
 if ([string]::IsNullOrWhiteSpace($CacheId)) {
   $segId = ConvertTo-Id $SegmentSec
   $hopId = ConvertTo-Id $HopSec
-  $CacheId = "seg$segId" + "_hop$hopId" + "_bp100-3000" + "_mels$NMels"
+  $tapId = (($TapBlocks -replace '\s+', '') -replace ',', '-')
+  $CacheId = "seg$segId" + "_hop$hopId" + "_bp100-3000" + "_mels$NMels" + "_tap$tapId"
 }
 
 $CacheIdSafe     = ($CacheId -replace '[^A-Za-z0-9_-]', '_')
@@ -85,6 +91,7 @@ Write-Host "  Device          = $Device"          -ForegroundColor DarkGray
 Write-Host "  SegmentSec      = $SegmentSec"      -ForegroundColor DarkGray
 Write-Host "  HopSec          = $HopSec"          -ForegroundColor DarkGray
 Write-Host "  NMels           = $NMels"           -ForegroundColor DarkGray
+Write-Host "  TapBlocks       = $TapBlocks"       -ForegroundColor DarkGray
 Write-Host "  RunDir          = $runPath"         -ForegroundColor DarkGray
 Write-Host "  RunClipPolicy   = $RunClipPolicy"   -ForegroundColor DarkGray
 
@@ -107,8 +114,8 @@ else {
 
 # --------------------- 3/10) Train ExitNet ---------------------
 Write-Host "`n[3/10] Train ExitNet..." -ForegroundColor Yellow
-Invoke-Python ('python -m training.train --config "{0}" --run_dir "{1}" --cache_dir "{2}" --device "{3}" --segment_sec {4} --hop_sec {5} --variant "{6}"' -f `
-  $Config, $runPath, $variantCacheDir, $Device, $SegmentSec, $HopSec, $Variant)
+Invoke-Python ('python -m training.train --config "{0}" --run_dir "{1}" --cache_dir "{2}" --device "{3}" --segment_sec {4} --hop_sec {5} --variant "{6}" --tap_blocks "{7}"' -f `
+  $Config, $runPath, $variantCacheDir, $Device, $SegmentSec, $HopSec, $Variant, $TapBlocks)
 
 Write-Host "Using run: $runPath" -ForegroundColor Green
 
@@ -130,6 +137,7 @@ $meta = @{
   segment_sec   = $SegmentSec
   hop_sec       = $HopSec
   n_mels        = $NMels
+  tap_blocks    = $TapBlocks
   run_clip_policy = [bool]$RunClipPolicy
   time_conf     = $TimeConf
   time_stable_k = $TimeStableK
@@ -142,18 +150,18 @@ $meta | ConvertTo-Json -Depth 8 | Out-File -FilePath (Join-Path $runPath "meta.j
 
 # --------------------- 4/10) Calibrate temperatures ---------------------
 Write-Host "`n[4/10] Calibrate temperatures..." -ForegroundColor Yellow
-Invoke-Python ('python -m training.calibrate --run_dir "{0}" --segments_csv "{1}" --features_root "{2}"' -f `
-  $runPath, $SegCsv, $FeatRoot)
+Invoke-Python ('python -m training.calibrate --run_dir "{0}" --segments_csv "{1}" --features_root "{2}" --tap_blocks "{3}" --n_mels {4}' -f `
+  $runPath, $SegCsv, $FeatRoot, $TapBlocks, $NMels)
 
 # --------------------- 5/10) Select threshold (greedy path) ---------------------
 Write-Host "`n[5/10] Select threshold (tau)..." -ForegroundColor Yellow
-Invoke-Python ('python -m training.thresholds_offline --run_dir "{0}" --segments_csv "{1}" --features_root "{2}"' -f `
-  $runPath, $SegCsv, $FeatRoot)
+Invoke-Python ('python -m training.thresholds_offline --run_dir "{0}" --segments_csv "{1}" --features_root "{2}" --tap_blocks "{3}" --n_mels {4}' -f `
+  $runPath, $SegCsv, $FeatRoot, $TapBlocks, $NMels)
 
 # --------------------- 6/10) Segment policy test ---------------------
 Write-Host "`n[6/10] Segment policy test..." -ForegroundColor Yellow
-Invoke-Python ('python -m scripts.policy_test --run_dir "{0}" --segments_csv "{1}" --features_root "{2}"' -f `
-  $runPath, $SegCsv, $FeatRoot)
+Invoke-Python ('python -m scripts.policy_test --run_dir "{0}" --segments_csv "{1}" --features_root "{2}" --tap_blocks "{3}" --n_mels {4}' -f `
+  $runPath, $SegCsv, $FeatRoot, $TapBlocks, $NMels)
 
 # --------------------- Guard: current clip tester is greedy-only ---------------------
 if ($RunClipPolicy -and $Policy -ne "greedy") {
@@ -163,8 +171,8 @@ if ($RunClipPolicy -and $Policy -ne "greedy") {
 # --------------------- 6b/10) Clip policy test (optional) ---------------------
 if ($RunClipPolicy) {
   Write-Host "`n[6b/10] Clip policy test..." -ForegroundColor Yellow
-  Invoke-Python ('python -m scripts.clip_policy_test --run_dir "{0}" --segments_csv "{1}" --features_root "{2}" --device "{3}" --time_conf {4} --time_stable_k {5} --time_min_windows {6} --fixed_k_windows {7} --time_margin {8}' -f `
-    $runPath, $SegCsv, $FeatRoot, $Device, $TimeConf, $TimeStableK, $TimeMinWindows, $EvalFixedKWindows, $TimeMargin)
+  Invoke-Python ('python -m scripts.clip_policy_test --run_dir "{0}" --segments_csv "{1}" --features_root "{2}" --device "{3}" --tap_blocks "{4}" --n_mels {5} --time_conf {6} --time_stable_k {7} --time_min_windows {8} --fixed_k_windows {9} --time_margin {10}' -f `
+    $runPath, $SegCsv, $FeatRoot, $Device, $TapBlocks, $NMels, $TimeConf, $TimeStableK, $TimeMinWindows, $EvalFixedKWindows, $TimeMargin)
 }
 
 # --------------------- 7/10) Summarise run ---------------------
@@ -197,11 +205,11 @@ New-Item -ItemType Directory -Path $analysisDir -ErrorAction SilentlyContinue | 
 $runtimeCsv = Join-Path $analysisDir "pipeline_runtime.csv"
 
 if (-not (Test-Path $runtimeCsv)) {
-  "timestamp,variant,policy,segment_sec,hop_sec,device,cache_dir,runs_root,run_id,total_seconds,total_minutes,run_clip_policy" | Out-File $runtimeCsv -Encoding UTF8
+  "timestamp,variant,policy,segment_sec,hop_sec,device,cache_dir,runs_root,run_id,total_seconds,total_minutes,run_clip_policy,tap_blocks" | Out-File $runtimeCsv -Encoding UTF8
 }
 
-$csvLine = "{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10}" -f `
-  $timestampIso, $Variant, $Policy, $SegmentSec, $HopSec, $Device, $variantCacheDir, $RunsRoot, $runId, $totalSeconds, $totalMinutes, [bool]$RunClipPolicy
+$csvLine = "{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10},{11}" -f `
+  $timestampIso, $Variant, $Policy, $SegmentSec, $HopSec, $Device, $variantCacheDir, $RunsRoot, $runId, $totalSeconds, $totalMinutes, [bool]$RunClipPolicy, $TapBlocks
 
 Add-Content -Path $runtimeCsv -Value $csvLine
 Write-Host "Pipeline runtime logged to: $runtimeCsv" -ForegroundColor DarkGray

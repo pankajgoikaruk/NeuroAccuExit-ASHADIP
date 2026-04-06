@@ -12,12 +12,24 @@ param(
   [string]$FeaturesRoot = "data_cache\features",
 
   # runs root used to resolve short RunDir values (like "EA_003")
-  [string]$RunsRoot     = "runs"
+  [string]$RunsRoot     = "runs",
+
+  # New generic K-exit controls
+  [string]$TapBlocks    = "",
+  [int]$NMels           = 64
 )
 
 $ErrorActionPreference = "Stop"
 $env:PYTHONPATH = (Get-Location).Path
 $env:KMP_DUPLICATE_LIB_OK = "TRUE"
+
+function Invoke-Python([string]$cmd) {
+  Write-Host "  $cmd" -ForegroundColor DarkGray
+  Invoke-Expression $cmd
+  if ($LASTEXITCODE -ne 0) {
+    throw "Python command failed ($LASTEXITCODE): $cmd"
+  }
+}
 
 Write-Host "== ASHADIP: generate reports & tables ==" -ForegroundColor Cyan
 Write-Host "  RunDir       = $RunDir"
@@ -26,14 +38,11 @@ Write-Host "  DeviceFilter = $DeviceFilter"
 Write-Host "  SegmentsCsv  = $SegmentsCsv"
 Write-Host "  FeaturesRoot = $FeaturesRoot"
 Write-Host "  RunsRoot     = $RunsRoot"
+Write-Host "  TapBlocks    = $TapBlocks"
+Write-Host "  NMels        = $NMels"
 Write-Host ""
 
 # --------------------- Resolve RunDir robustly ---------------------
-# Support:
-#   1) RunDir is an existing path
-#   2) RunDir is a short run id like "EA_003" -> runs\<VariantSafe>\EA_003
-#   3) Try auto-find: runs\*\EA_003  (helps if Variant arg is wrong)
-#   4) Legacy fallback: runs\<RunDir> (likely rejected by strict meta requirement)
 $VariantSafe = ($Variant -replace '[^A-Za-z0-9_-]', '_')
 
 function Resolve-RunPath([string]$InputRunDir) {
@@ -98,6 +107,28 @@ if (-not $VariantEffective -or "$VariantEffective".Trim().Length -eq 0) {
 
 Write-Host "Canonical (from meta.json): Variant=$VariantEffective, RunId=$RunIdEffective" -ForegroundColor Green
 
+# --------------------- Resolve tap blocks / n_mels ---------------------
+if ([string]::IsNullOrWhiteSpace($TapBlocks)) {
+  if ($meta.PSObject.Properties.Name -contains "tap_blocks") {
+    $TapBlocks = [string]$meta.tap_blocks
+  }
+}
+
+if (($NMels -eq 64) -and ($meta.PSObject.Properties.Name -contains "n_mels")) {
+  try {
+    $NMels = [int]$meta.n_mels
+  } catch {
+    # keep default
+  }
+}
+
+if ([string]::IsNullOrWhiteSpace($TapBlocks)) {
+  $TapBlocks = "1,3"
+}
+
+Write-Host "Effective TapBlocks = $TapBlocks" -ForegroundColor DarkGray
+Write-Host "Effective NMels     = $NMels" -ForegroundColor DarkGray
+
 # --------------------- Auto-resolve cache paths from meta.json ---------------------
 $defaultSeg  = "data_cache\segments.csv"
 $defaultFeat = "data_cache\features"
@@ -106,12 +137,10 @@ $metaCacheDir = $meta.cache_dir
 if ($metaCacheDir -and "$metaCacheDir".Trim().Length -gt 0) {
   $metaCacheDirPath = $metaCacheDir
 
-  # If meta.cache_dir is relative, make it relative to project root (cwd)
   if (-not [System.IO.Path]::IsPathRooted($metaCacheDirPath)) {
     $metaCacheDirPath = Join-Path (Get-Location).Path $metaCacheDirPath
   }
 
-  # Override only if user didn't explicitly pass custom values (still default)
   if (($SegmentsCsv -eq $defaultSeg) -or [string]::IsNullOrWhiteSpace($SegmentsCsv)) {
     $SegmentsCsv = Join-Path $metaCacheDirPath "segments.csv"
   }
@@ -126,101 +155,99 @@ if ($metaCacheDir -and "$metaCacheDir".Trim().Length -gt 0) {
   Write-Host "[warn] meta.json has no cache_dir. Using provided SegmentsCsv/FeaturesRoot as-is." -ForegroundColor DarkYellow
 }
 
-# Validate cache paths exist (fail early)
 if (-not (Test-Path $SegmentsCsv)) { throw "segments.csv not found: $SegmentsCsv" }
 if (-not (Test-Path $FeaturesRoot)) { throw "features root not found: $FeaturesRoot" }
 
-# Ensure analysis folders exist (global + per-run)
+# Ensure analysis folders exist
 New-Item -ItemType Directory -Path "analysis" -ErrorAction SilentlyContinue | Out-Null
 New-Item -ItemType Directory -Path "analysis\tables" -ErrorAction SilentlyContinue | Out-Null
 
-# Per-run analysis dir to avoid overwriting tables
+# Per-run analysis dir
 $VariantEffectiveSafe = ($VariantEffective -replace '[^A-Za-z0-9_-]', '_')
 $runAnalysisDir = Join-Path (Join-Path "analysis\runs" $VariantEffectiveSafe) $RunIdEffective
 New-Item -ItemType Directory -Path $runAnalysisDir -ErrorAction SilentlyContinue | Out-Null
 
 # ---------------------------------------------------------------------------
-# [1/5] Ensure report.json exists (test-set classification per exit)
+# [1/6] Ensure report.json exists
 # ---------------------------------------------------------------------------
-Write-Host "[1/5] Evaluating test set (report.json)..." -ForegroundColor Yellow
-
-python -m training.eval `
-  --run_dir "$runPath" `
-  --segments_csv "$SegmentsCsv" `
-  --features_root "$FeaturesRoot"
-
+Write-Host "[1/6] Evaluating test set (report.json)..." -ForegroundColor Yellow
+Invoke-Python ('python -m training.eval --run_dir "{0}" --segments_csv "{1}" --features_root "{2}" --tap_blocks "{3}" --n_mels {4}' -f `
+  $runPath, $SegmentsCsv, $FeaturesRoot, $TapBlocks, $NMels)
 Write-Host "  -> training.eval finished." -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-# [2/5] Summarise run (summary.json + calibration plots)
+# [2/6] Summarise run
 # ---------------------------------------------------------------------------
-Write-Host "`n[2/5] Summarising run (summary.json, calibration plots)..." -ForegroundColor Yellow
-
-python -m scripts.summarize_run `
-  --run_dir "$runPath" `
-  --segments_csv "$SegmentsCsv" `
-  --features_root "$FeaturesRoot" `
-  --no_log
-
+Write-Host "`n[2/6] Summarising run (summary.json, calibration plots)..." -ForegroundColor Yellow
+Invoke-Python ('python -m scripts.summarize_run --run_dir "{0}" --segments_csv "{1}" --features_root "{2}" --tap_blocks "{3}" --n_mels {4} --no_log' -f `
+  $runPath, $SegmentsCsv, $FeaturesRoot, $TapBlocks, $NMels)
 Write-Host "  -> summarize_run finished." -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-# [3/5] Global variants summary CSV (analysis/all_runs_summary.csv)
+# [3/6] Analyse run
 # ---------------------------------------------------------------------------
-Write-Host "`n[3/5] Updating global variants summary (analysis/all_runs_summary.csv)..." -ForegroundColor Yellow
+Write-Host "`n[3/6] Analysing run (analysis_run.json, confusion matrices, ROC)..." -ForegroundColor Yellow
+Invoke-Python ('python -m scripts.analyse_run --run_dir "{0}" --segments_csv "{1}" --features_root "{2}" --tap_blocks "{3}" --n_mels {4}' -f `
+  $runPath, $SegmentsCsv, $FeaturesRoot, $TapBlocks, $NMels)
+Write-Host "  -> analyse_run finished." -ForegroundColor Green
 
-python -m scripts.compare_variants --root .
-
+# ---------------------------------------------------------------------------
+# [4/6] Global variants summary CSV
+# ---------------------------------------------------------------------------
+Write-Host "`n[4/6] Updating global variants summary (analysis/all_runs_summary.csv)..." -ForegroundColor Yellow
+Invoke-Python 'python -m scripts.compare_variants --root .'
 Write-Host "  -> compare_variants finished." -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-# [4/5] Per-run classification LaTeX table (no overwrites)
-#     analysis/runs/<Variant>/<RunId>/classification_table.*
+# [5/6] Per-run classification LaTeX table
 # ---------------------------------------------------------------------------
-Write-Host "`n[4/5] Generating classification table for this run..." -ForegroundColor Yellow
+Write-Host "`n[5/6] Generating classification table for this run..." -ForegroundColor Yellow
 
 $analysisJson = Join-Path $runPath "analysis_run.json"
 if (-not (Test-Path $analysisJson)) {
-  throw "analysis_run.json not found at $analysisJson. Did analyse_run.py run?"
+  throw "analysis_run.json not found at $analysisJson even after analyse_run.py."
 }
 
 $outClsTex = Join-Path $runAnalysisDir "classification_table.tex"
 $runLabel  = $RunIdEffective
 
-python -m scripts.analysis_to_latex `
-  --analysis_json "$analysisJson" `
-  --out_tex "$outClsTex" `
-  --run_label "$runLabel"
-
+Invoke-Python ('python -m scripts.analysis_to_latex --analysis_json "{0}" --out_tex "{1}" --run_label "{2}"' -f `
+  $analysisJson, $outClsTex, $runLabel)
 Write-Host "  -> Wrote per-run classification table: $outClsTex" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-# [5/5] Cross-variant summary + on-device performance tables (global)
+# [6/6] Cross-variant summary + on-device performance tables
 # ---------------------------------------------------------------------------
-Write-Host "`n[5/5] Generating cross-variant & on-device LaTeX tables..." -ForegroundColor Yellow
+Write-Host "`n[6/6] Generating cross-variant & on-device LaTeX tables..." -ForegroundColor Yellow
 
 $allRunsCsv = "analysis\all_runs_summary.csv"
 if (Test-Path $allRunsCsv) {
   $variantsTex = "analysis\tables\variants_avg_summary_table.tex"
-  python -m scripts.variants_to_latex `
-    --summary_csv "$allRunsCsv" `
-    --out_tex "$variantsTex"
+  Invoke-Python ('python -m scripts.variants_to_latex --summary_csv "{0}" --out_tex "{1}"' -f `
+    $allRunsCsv, $variantsTex)
   Write-Host "  -> Wrote variants summary table: $variantsTex" -ForegroundColor Green
 }
 else {
   Write-Host "  (skip) analysis\all_runs_summary.csv not found; run compare_variants.py first." -ForegroundColor DarkYellow
 }
 
-$onDevCsv = "analysis\on_device_summary.csv"
-if (Test-Path $onDevCsv) {
+$onDevCsvK = "analysis\on_device_summary_kexit.csv"
+$onDevCsv  = "analysis\on_device_summary.csv"
+
+if (Test-Path $onDevCsvK) {
   $onDevTex = "analysis\tables\on_device_performance_table.tex"
-  python -m scripts.ondevice_to_latex `
-    --summary_csv "$onDevCsv" `
-    --out_tex "$onDevTex"
+  Invoke-Python ('python -m scripts.ondevice_to_latex --summary_csv "{0}" --out_tex "{1}"' -f `
+    $onDevCsvK, $onDevTex)
+  Write-Host "  -> Wrote on-device performance table from K-exit CSV: $onDevTex" -ForegroundColor Green
+}
+elseif (Test-Path $onDevCsv) {
+  $onDevTex = "analysis\tables\on_device_performance_table.tex"
+  Invoke-Python ('python -m scripts.ondevice_to_latex --summary_csv "{0}" --out_tex "{1}"' -f `
+    $onDevCsv, $onDevTex)
   Write-Host "  -> Wrote on-device performance table: $onDevTex" -ForegroundColor Green
 }
 else {
-  Write-Host "  (skip) analysis\on_device_summary.csv not found; run profile_latency.py / run_full.ps1 first." -ForegroundColor DarkYellow
+  Write-Host "  (skip) analysis\on_device_summary*.csv not found; run profile_latency.py / run_full.ps1 first." -ForegroundColor DarkYellow
 }
 
 Write-Host "`n== Done. Reports updated for $VariantEffective / $RunIdEffective ==" -ForegroundColor Cyan

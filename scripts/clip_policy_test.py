@@ -1,8 +1,14 @@
+# scripts/clip_policy_test.py
+
+from __future__ import annotations
+
 import os
 import json
 import argparse
+import inspect
 from pathlib import Path
 from statistics import mean
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -20,6 +26,123 @@ def _load_json(path: str):
 def _save_json(path: str, obj):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(obj, f, indent=2)
+
+
+def _parse_tap_blocks(value) -> Optional[tuple]:
+    """
+    Accept:
+      - None
+      - "1,2,3,4"
+      - [1,2,3,4]
+      - (1,2,3,4)
+    """
+    if value is None:
+        return None
+
+    if isinstance(value, (list, tuple)):
+        return tuple(int(v) for v in value)
+
+    value = str(value).strip()
+    if value == "":
+        return None
+
+    return tuple(int(v.strip()) for v in value.split(",") if v.strip())
+
+
+def _pad_or_trim(seq, target_len, pad_value=None):
+    vals = [float(x) for x in seq]
+    if len(vals) >= target_len:
+        return vals[:target_len]
+
+    if pad_value is None:
+        pad_value = vals[-1] if len(vals) > 0 else 1.0
+
+    vals = vals + [float(pad_value)] * (target_len - len(vals))
+    return vals
+
+
+def _infer_tap_blocks_from_run(run_dir: str) -> Optional[tuple]:
+    """
+    Try to recover tap_blocks from training artifacts.
+    Priority:
+      1) metrics.json -> meta.tap_blocks
+      2) temperature.json -> tap_blocks
+    """
+    metrics_path = os.path.join(run_dir, "metrics.json")
+    if os.path.exists(metrics_path):
+        try:
+            obj = _load_json(metrics_path)
+            meta = obj.get("meta", {})
+            tb = meta.get("tap_blocks")
+            tb = _parse_tap_blocks(tb)
+            if tb is not None:
+                return tb
+        except Exception:
+            pass
+
+    temp_path = os.path.join(run_dir, "temperature.json")
+    if os.path.exists(temp_path):
+        try:
+            obj = _load_json(temp_path)
+            tb = obj.get("tap_blocks")
+            tb = _parse_tap_blocks(tb)
+            if tb is not None:
+                return tb
+        except Exception:
+            pass
+
+    return None
+
+
+def _build_backbone(n_mels: int, tap_blocks=None):
+    """
+    Compatible with both:
+    - old style: TinyAudioCNN(n_mels=64)
+    - new style: TinyAudioCNN(n_mels=64, tap_blocks=(1,2,3,4))
+    """
+    sig = inspect.signature(TinyAudioCNN.__init__)
+    kwargs = {}
+
+    if "n_mels" in sig.parameters:
+        kwargs["n_mels"] = int(n_mels)
+
+    if tap_blocks is not None and "tap_blocks" in sig.parameters:
+        kwargs["tap_blocks"] = tap_blocks
+
+    return TinyAudioCNN(**kwargs)
+
+
+def _build_model(run_dir: str, num_classes: int, device: str, n_mels: int, tap_blocks=None):
+    backbone = _build_backbone(n_mels=n_mels, tap_blocks=tap_blocks)
+
+    model_kwargs = {
+        "backbone": backbone,
+        "num_classes": int(num_classes),
+    }
+
+    # Backward compatibility for old backbone versions
+    if not hasattr(backbone, "tap_dims"):
+        model_kwargs["tap_dims"] = (16, 32)
+    if not hasattr(backbone, "final_dim"):
+        model_kwargs["final_dim"] = 64
+
+    model = ExitNet(**model_kwargs).to(device)
+
+    ckpt = os.path.join(run_dir, "ckpt", "best.pt")
+    if not os.path.exists(ckpt):
+        raise FileNotFoundError(f"Model checkpoint not found: {ckpt}")
+
+    model.load_state_dict(torch.load(ckpt, map_location=device))
+    model.eval()
+
+    effective_tap_blocks = tap_blocks
+    if effective_tap_blocks is None and hasattr(backbone, "tap_blocks"):
+        try:
+            effective_tap_blocks = tuple(int(v) for v in backbone.tap_blocks)
+        except Exception:
+            effective_tap_blocks = None
+
+    return model, effective_tap_blocks
 
 
 def _load_feature(features_root: Path, feat_relpath: str, device: str) -> torch.Tensor:
@@ -44,17 +167,6 @@ def _group_name_from_used(used: int) -> str:
     if used <= 4:
         return "stop_3_4"
     return "stop_5_plus"
-
-
-def _build_model(run_dir: str, num_classes: int, device: str):
-    # 3-exit public branch model
-    model = ExitNet(TinyAudioCNN(), (16, 32), 64, num_classes).to(device)
-    ckpt = os.path.join(run_dir, "ckpt", "best.pt")
-    if not os.path.exists(ckpt):
-        raise FileNotFoundError(f"Model checkpoint not found: {ckpt}")
-    model.load_state_dict(torch.load(ckpt, map_location=device))
-    model.eval()
-    return model
 
 
 def _load_temps_and_tau(run_dir: str):
@@ -152,6 +264,12 @@ def main():
     ap.add_argument("--time_min_windows", type=int, default=2)
     ap.add_argument("--fixed_k_windows", type=int, default=3)
     ap.add_argument("--time_margin", type=float, default=0.0)
+
+    # New generic K-exit args
+    ap.add_argument("--tap_blocks", type=str, default=None,
+                    help='Example: "1,3" for 3 exits or "1,2,3,4" for 5 exits.')
+    ap.add_argument("--n_mels", type=int, default=64)
+
     args = ap.parse_args()
 
     device = args.device
@@ -175,11 +293,24 @@ def main():
     labels = sorted(df["label"].astype(str).unique().tolist())
     label2id = {l: i for i, l in enumerate(labels)}
 
-    model = _build_model(args.run_dir, len(labels), device)
+    tap_blocks = _parse_tap_blocks(args.tap_blocks)
+    if tap_blocks is None:
+        tap_blocks = _infer_tap_blocks_from_run(args.run_dir)
+
+    model, effective_tap_blocks = _build_model(
+        run_dir=args.run_dir,
+        num_classes=len(labels),
+        device=device,
+        n_mels=args.n_mels,
+        tap_blocks=tap_blocks,
+    )
+
     features_root = Path(args.features_root)
     temps, tau = _load_temps_and_tau(args.run_dir)
+    temps = _pad_or_trim(temps, model.num_exits)
 
     n_clips = 0
+    num_exits = model.num_exits
 
     # Full baseline accumulators
     full_correct_clip = 0
@@ -187,7 +318,7 @@ def main():
     full_n_seg = 0
     full_compute_per_clip = []
     full_used_windows_per_clip = []
-    full_exit_counts = {f"e{i+1}": 0 for i in range(3)}
+    full_exit_counts = {f"e{i+1}": 0 for i in range(num_exits)}
     full_flip_total = 0
     full_consistent_total = 0
     full_cm = [[0 for _ in labels] for _ in labels]
@@ -198,7 +329,7 @@ def main():
     time_n_seg = 0
     time_compute_per_clip = []
     time_used_windows_per_clip = []
-    time_exit_counts = {f"e{i+1}": 0 for i in range(3)}
+    time_exit_counts = {f"e{i+1}": 0 for i in range(num_exits)}
     time_flip_total = 0
     time_consistent_total = 0
     time_cm = [[0 for _ in labels] for _ in labels]
@@ -367,9 +498,9 @@ def main():
 
     common_meta = {
         "policy": "greedy",
-        "K": 3,
-        "tap_blocks": [1, 2],
-        "n_mels": None,
+        "K": int(num_exits),
+        "tap_blocks": list(effective_tap_blocks) if effective_tap_blocks is not None else None,
+        "n_mels": int(args.n_mels),
         "num_classes": len(labels),
         "window_distribution": hist_payload,
         "window_distribution_json_mode": "windows_used_hist.json",
