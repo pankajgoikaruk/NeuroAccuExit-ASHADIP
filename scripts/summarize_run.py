@@ -16,8 +16,7 @@ import torch
 from torch.nn.functional import softmax
 
 from data.datasets import make_loaders
-from adapters.audio_adapter import TinyAudioCNN
-from models.exit_net import ExitNet
+from utils.model_factory import build_audio_exit_net, load_run_model_cfg
 from utils.profiling import estimate_flops_tiny_audiocnn
 
 import matplotlib.pyplot as plt
@@ -66,24 +65,6 @@ def _pad_or_trim(seq, target_len, pad_value=None):
     return vals
 
 
-def _build_backbone(n_mels: int, tap_blocks=None):
-    """
-    Compatible with both:
-    - old style: TinyAudioCNN(n_mels=64)
-    - new style: TinyAudioCNN(n_mels=64, tap_blocks=(1,2,3,4))
-    """
-    sig = inspect.signature(TinyAudioCNN.__init__)
-    kwargs = {}
-
-    if "n_mels" in sig.parameters:
-        kwargs["n_mels"] = int(n_mels)
-
-    if tap_blocks is not None and "tap_blocks" in sig.parameters:
-        kwargs["tap_blocks"] = tap_blocks
-
-    return TinyAudioCNN(**kwargs)
-
-
 def _infer_tap_blocks_from_run(run_dir: str) -> Optional[tuple]:
     """
     Recover tap blocks from saved artifacts if available.
@@ -106,7 +87,6 @@ def _infer_tap_blocks_from_run(run_dir: str) -> Optional[tuple]:
             if not isinstance(obj, dict):
                 continue
 
-            # metrics.json -> meta.tap_blocks
             tb = None
             if isinstance(obj.get("meta"), dict):
                 tb = obj["meta"].get("tap_blocks")
@@ -163,7 +143,6 @@ def ece_score(conf, corr, n_bins=15):
 def plot_hist_and_reliability(run_dir, key, conf, corr, n_bins=15):
     os.makedirs(os.path.join(run_dir, "plots"), exist_ok=True)
 
-    # Histogram
     plt.figure()
     plt.hist(conf, bins=30, range=(0, 1))
     plt.xlabel("Confidence")
@@ -173,7 +152,6 @@ def plot_hist_and_reliability(run_dir, key, conf, corr, n_bins=15):
     plt.savefig(p_hist, bbox_inches="tight")
     plt.close()
 
-    # Reliability
     ece, bins = ece_score(conf, corr, n_bins=n_bins)
     accs, confs = [], []
     for b in bins:
@@ -320,7 +298,6 @@ def _safe_estimate_flops(n_mels, frames, num_classes, tap_blocks, num_exits):
 
 @torch.no_grad()
 def policy_eval(run_dir, segments_csv, features_root, save_plots=True, n_mels_override=None, tap_blocks_override=None):
-    # thresholds & temps
     th = load_json_safepath(os.path.join(run_dir, "thresholds.json"), {"tau": 0.95}) or {"tau": 0.95}
     tau = float(th.get("tau", 0.95))
 
@@ -331,8 +308,15 @@ def policy_eval(run_dir, segments_csv, features_root, save_plots=True, n_mels_ov
     temps = temp_obj.get("temperatures", [1.0, 1.0, 1.0])
     temps = [max(float(t), 1e-3) for t in temps]
 
-    # infer tap blocks / n_mels
-    tap_blocks = tap_blocks_override or _parse_tap_blocks(th.get("tap_blocks")) or _parse_tap_blocks(temp_obj.get("tap_blocks")) or _infer_tap_blocks_from_run(run_dir)
+    run_model_cfg = load_run_model_cfg(run_dir)
+
+    tap_blocks = (
+        tap_blocks_override
+        or _parse_tap_blocks(th.get("tap_blocks"))
+        or _parse_tap_blocks(temp_obj.get("tap_blocks"))
+        or _parse_tap_blocks((run_model_cfg or {}).get("tap_blocks"))
+        or _infer_tap_blocks_from_run(run_dir)
+    )
 
     n_mels_cfg = None
     try:
@@ -349,28 +333,22 @@ def policy_eval(run_dir, segments_csv, features_root, save_plots=True, n_mels_ov
 
     n_mels = int(n_mels_override if n_mels_override is not None else (n_mels_cfg if n_mels_cfg is not None else 64))
 
-    # data & model
     device = "cuda" if torch.cuda.is_available() else "cpu"
     _, _, dl_te, label2id = make_loaders(segments_csv, features_root, batch_size=64, num_workers=2)
     num_classes = len(label2id)
 
-    backbone = _build_backbone(n_mels=n_mels, tap_blocks=tap_blocks)
-    model_kwargs = {
-        "backbone": backbone,
-        "num_classes": num_classes,
-    }
-    if not hasattr(backbone, "tap_dims"):
-        model_kwargs["tap_dims"] = (16, 32)
-    if not hasattr(backbone, "final_dim"):
-        model_kwargs["final_dim"] = 64
+    model = build_audio_exit_net(
+        num_classes=num_classes,
+        n_mels=n_mels,
+        tap_blocks=tap_blocks,
+        model_cfg=run_model_cfg,
+    ).to(device).eval()
 
-    model = ExitNet(**model_kwargs).to(device).eval()
     model.load_state_dict(torch.load(os.path.join(run_dir, "ckpt", "best.pt"), map_location=device))
 
     num_exits = model.num_exits
     temps = _pad_or_trim(temps, num_exits, pad_value=1.0)
 
-    # Evaluate greedy early-exit on TEST
     n = 0
     correct = 0
     exits = []
@@ -407,7 +385,6 @@ def policy_eval(run_dir, segments_csv, features_root, save_plots=True, n_mels_ov
     policy_acc = correct / max(n, 1)
     avg_exit_depth = float(np.mean(exits)) if exits else None
 
-    # feature shape for FLOPs
     seg = pd.read_csv(segments_csv)
     test_row = seg[seg["split"] == "test"].iloc[0]
     feat_path = os.path.join(features_root, str(test_row["feat_relpath"]).replace("\\", "/"))
@@ -436,14 +413,12 @@ def policy_eval(run_dir, segments_csv, features_root, save_plots=True, n_mels_ov
             expected_mflops = None
             compute_saving_pct = None
 
-    # ECE & plots for policy decisions
     policy_calib = {"ece": None, "bins": None, "hist_path": None, "reliability_path": None, "scatter_path": None}
     if save_plots:
         policy_calib = plot_hist_and_reliability(run_dir, "policy_test", np.array(confs), np.array(corrs), n_bins=15)
         policy_scatter = plot_conf_vs_correct(run_dir, "policy_test", np.array(confs), np.array(corrs))
         policy_calib["scatter_path"] = policy_scatter
 
-    # Per-exit calibration on TEST
     _, _, dl_te2, _ = make_loaders(segments_csv, features_root, batch_size=128, num_workers=2)
     per_exit = collect_exit_logits_on_split(model, dl_te2, device)
     per_exit_calib = {}
@@ -475,14 +450,11 @@ def policy_eval(run_dir, segments_csv, features_root, save_plots=True, n_mels_ov
         "cuda_available": torch.cuda.is_available(),
         "policy_calibration": policy_calib,
         "per_exit_calibration": per_exit_calib,
+        "exit_hint": (run_model_cfg or {}).get("exit_hint", {}),
     }
 
 
 def _append_experiments_row_safely(experiments_csv: str, row: dict):
-    """
-    If an old experiments.csv already exists with a 3-exit-specific header,
-    write to a sibling *_kexit.csv instead of corrupting the old schema.
-    """
     os.makedirs(os.path.dirname(experiments_csv), exist_ok=True)
 
     desired_header = list(row.keys())
@@ -530,12 +502,8 @@ def main():
     ap.add_argument("--report_name", default="summary.json")
     ap.add_argument("--experiments_csv", default="runs/experiments.csv")
     ap.add_argument("--no_plots", action="store_true")
-
-    # Optional explicit overrides for K-exit runs
     ap.add_argument("--tap_blocks", type=str, default=None)
     ap.add_argument("--n_mels", type=int, default=None)
-
-    # Skip appending to experiments.csv when re-generating reports
     ap.add_argument(
         "--no_log",
         action="store_true",
@@ -544,13 +512,11 @@ def main():
 
     args = ap.parse_args()
 
-    # base artifacts
     metrics = load_json_safepath(os.path.join(args.run_dir, "metrics.json"), {})
     report = load_json_safepath(os.path.join(args.run_dir, "report.json"), {})
     calib = load_json_safepath(os.path.join(args.run_dir, "temperature.json"), {})
     thres = load_json_safepath(os.path.join(args.run_dir, "thresholds.json"), {})
 
-    # policy stats + FLOPs + calibration
     policy = policy_eval(
         args.run_dir,
         args.segments_csv,
@@ -564,7 +530,6 @@ def main():
     clip_full = load_json_safepath(os.path.join(args.run_dir, "clip_policy_results_full.json"), {})
     clip_time = load_json_safepath(os.path.join(args.run_dir, "clip_policy_results_time.json"), {})
 
-    # Prefer explicit saved policy_results.json when available
     if policy_results:
         policy["policy_test_acc"] = policy_results.get("accuracy", policy.get("policy_test_acc"))
         policy["avg_exit_depth"] = policy_results.get("avg_exit_depth", policy.get("avg_exit_depth"))
@@ -574,7 +539,6 @@ def main():
         policy["exit_consistency"] = policy_results.get("exit_consistency")
         policy["n_segments"] = policy_results.get("n_segments", policy_results.get("n_samples"))
 
-    # summary
     run_id = os.path.basename(args.run_dir.rstrip("\\/"))
     summary = {
         "run_id": run_id,
@@ -595,7 +559,6 @@ def main():
         json.dump(summary, f, indent=2)
     print("Saved", out_json)
 
-    # experiments.csv append
     if args.no_log:
         print("[summarize_run] --no_log set: skipping append to", args.experiments_csv)
         return

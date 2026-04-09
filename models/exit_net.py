@@ -6,11 +6,12 @@ from typing import List, Optional, Sequence
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class ExitNet(nn.Module):
     """
-    Generic K-exit / C-class wrapper.
+    Generic K-exit / C-class wrapper with optional local exit-to-exit hint passing.
 
     Expected backbone contract:
         backbone(x) -> (final_feat, taps)
@@ -25,8 +26,12 @@ class ExitNet(nn.Module):
     Notes:
     - K = len(taps) + 1
     - Supports both:
-        * old hard-coded style by explicitly passing tap_dims/final_dim
-        * new generic style by reading backbone.tap_dims / backbone.final_dim
+        * explicit tap_dims/final_dim
+        * reading backbone.tap_dims / backbone.final_dim
+    - Optional hint path:
+        * after exit i, build a small hint from that exit output
+        * exit i+1 consumes only the previous hint
+        * final head consumes the last hint
     """
 
     def __init__(
@@ -35,6 +40,10 @@ class ExitNet(nn.Module):
         tap_dims: Optional[Sequence[int]] = None,
         final_dim: Optional[int] = None,
         num_classes: int = 2,
+        hint_dim: int = 0,
+        hint_source: str = "probs",
+        hint_detach: bool = True,
+        hint_use_stats: bool = True,
     ):
         super().__init__()
 
@@ -44,7 +53,6 @@ class ExitNet(nn.Module):
         if self.num_classes < 2:
             raise ValueError(f"num_classes must be >= 2, got {self.num_classes}")
 
-        # Prefer dynamic metadata from backbone if available
         if tap_dims is None:
             if hasattr(backbone, "tap_dims"):
                 tap_dims = getattr(backbone, "tap_dims")
@@ -71,13 +79,48 @@ class ExitNet(nn.Module):
         if self.final_dim <= 0:
             raise ValueError(f"final_dim must be positive, got {self.final_dim}")
 
-        # Early-exit heads
-        self.exit_heads = nn.ModuleList(
-            [nn.Linear(dim, self.num_classes) for dim in self.tap_dims]
-        )
+        # Hint config
+        self.hint_dim = int(hint_dim)
+        self.hint_source = str(hint_source).lower().strip()
+        self.hint_detach = bool(hint_detach)
+        self.hint_use_stats = bool(hint_use_stats)
+        self.use_exit_hints = self.hint_dim > 0
 
-        # Final head
-        self.final_head = nn.Linear(self.final_dim, self.num_classes)
+        if self.hint_source not in {"probs", "logits"}:
+            raise ValueError(
+                f"hint_source must be 'probs' or 'logits', got {self.hint_source}"
+            )
+
+        # base summary: num_classes values
+        # optional stats: confidence, margin, entropy = +3
+        self.hint_summary_dim = self.num_classes + (3 if self.hint_use_stats else 0)
+
+        # Early-exit heads
+        # exit1 uses tap1 only
+        # exit2 uses tap2 + hint1
+        # ...
+        self.exit_heads = nn.ModuleList()
+        for i, dim in enumerate(self.tap_dims):
+            in_dim = int(dim) + (self.hint_dim if self.use_exit_hints and i > 0 else 0)
+            self.exit_heads.append(nn.Linear(in_dim, self.num_classes))
+
+        # Final head consumes final_feat + last hint
+        final_in_dim = self.final_dim + (self.hint_dim if self.use_exit_hints else 0)
+        self.final_head = nn.Linear(final_in_dim, self.num_classes)
+
+        # Hint projections: one projector after each early exit
+        if self.use_exit_hints:
+            self.hint_projections = nn.ModuleList(
+                [
+                    nn.Sequential(
+                        nn.Linear(self.hint_summary_dim, self.hint_dim),
+                        nn.ReLU(),
+                    )
+                    for _ in range(len(self.tap_dims))
+                ]
+            )
+        else:
+            self.hint_projections = nn.ModuleList()
 
         # Optional backward-compatible aliases
         for i, head in enumerate(self.exit_heads, start=1):
@@ -87,6 +130,35 @@ class ExitNet(nn.Module):
     @property
     def num_exits(self) -> int:
         return len(self.exit_heads) + 1
+
+    def _make_hint(self, logits: torch.Tensor, proj: nn.Module) -> torch.Tensor:
+        src = logits.detach() if self.hint_detach else logits
+
+        if self.hint_source == "probs":
+            base = F.softmax(src, dim=1)
+        else:
+            base = src
+
+        if self.hint_use_stats:
+            probs = F.softmax(src, dim=1)
+
+            conf = probs.max(dim=1, keepdim=True).values
+
+            top2 = probs.topk(k=min(2, probs.size(1)), dim=1).values
+            if top2.size(1) == 1:
+                margin = top2[:, :1]
+            else:
+                margin = top2[:, :1] - top2[:, 1:2]
+
+            entropy = -(probs * torch.log(probs.clamp_min(1e-8))).sum(
+                dim=1, keepdim=True
+            )
+
+            summary = torch.cat([base, conf, margin, entropy], dim=1)
+        else:
+            summary = base
+
+        return proj(summary)
 
     def forward(self, x: torch.Tensor) -> List[torch.Tensor]:
         final_feat, taps = self.backbone(x)
@@ -103,9 +175,22 @@ class ExitNet(nn.Module):
             )
 
         logits: List[torch.Tensor] = []
+        prev_hint: Optional[torch.Tensor] = None
 
-        for head, tap in zip(self.exit_heads, taps):
-            logits.append(head(tap))
+        for i, (head, tap) in enumerate(zip(self.exit_heads, taps)):
+            head_in = tap
+            if self.use_exit_hints and prev_hint is not None:
+                head_in = torch.cat([head_in, prev_hint], dim=1)
 
-        logits.append(self.final_head(final_feat))
+            lg = head(head_in)
+            logits.append(lg)
+
+            if self.use_exit_hints:
+                prev_hint = self._make_hint(lg, self.hint_projections[i])
+
+        final_in = final_feat
+        if self.use_exit_hints and prev_hint is not None:
+            final_in = torch.cat([final_in, prev_hint], dim=1)
+
+        logits.append(self.final_head(final_in))
         return logits

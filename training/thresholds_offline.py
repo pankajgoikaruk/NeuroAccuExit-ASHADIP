@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import json
 import argparse
-import inspect
 from typing import Optional
 
 import torch
@@ -13,13 +12,8 @@ from torch.nn.functional import softmax
 from sklearn.metrics import f1_score
 
 from data.datasets import make_loaders
-from adapters.audio_adapter import TinyAudioCNN
-from models.exit_net import ExitNet
-
-try:
-    import yaml
-except ImportError:
-    yaml = None
+from utils.config import load_config
+from utils.model_factory import build_audio_exit_net, load_run_model_cfg
 
 
 def _parse_tap_blocks(value) -> Optional[tuple]:
@@ -55,33 +49,12 @@ def _pad_or_trim(seq, target_len, pad_value=None):
     return vals
 
 
-def _build_backbone(n_mels: int, tap_blocks=None):
-    """
-    Compatible with both:
-    - old style: TinyAudioCNN(n_mels=64)
-    - new style: TinyAudioCNN(n_mels=64, tap_blocks=(1,2,3,4))
-    """
-    sig = inspect.signature(TinyAudioCNN.__init__)
-    kwargs = {}
-
-    if "n_mels" in sig.parameters:
-        kwargs["n_mels"] = int(n_mels)
-
-    if tap_blocks is not None and "tap_blocks" in sig.parameters:
-        kwargs["tap_blocks"] = tap_blocks
-
-    return TinyAudioCNN(**kwargs)
-
-
-def load_config_used(run_dir):
-    """Optional: read config_used.yaml if available."""
+def _load_run_cfg(run_dir: str):
     cfg_path = os.path.join(run_dir, "config_used.yaml")
-    if not (yaml and os.path.exists(cfg_path)):
+    if not os.path.exists(cfg_path):
         return {}
-
     try:
-        with open(cfg_path, "r", encoding="utf-8") as f:
-            return yaml.safe_load(f) or {}
+        return load_config(cfg_path) or {}
     except Exception:
         return {}
 
@@ -175,7 +148,7 @@ def main():
         help="minimum temperature to avoid divide-by-zero",
     )
 
-    # New generic K-exit args
+    # Generic K-exit args
     ap.add_argument(
         "--tap_blocks",
         type=str,
@@ -200,34 +173,40 @@ def main():
         num_workers=args.num_workers,
     )
 
-    # 2) Build model (prefer config_used.yaml if present)
-    cfg = load_config_used(args.run_dir)
+    # 2) Load run config
+    run_cfg = _load_run_cfg(args.run_dir)
+    run_model_cfg = load_run_model_cfg(args.run_dir)
+    run_features_cfg = run_cfg.get("features") or {}
 
-    cfg_features = cfg.get("features") or {}
-    cfg_model = cfg.get("model") or {}
-
-    n_mels = int(args.n_mels if args.n_mels is not None else cfg_features.get("n_mels", 64))
-    num_classes = int(args.num_classes if args.num_classes is not None else cfg_model.get("num_classes", len(label2id)))
+    # Prefer CLI, else saved run config, else defaults
+    n_mels = int(
+        args.n_mels
+        if args.n_mels is not None
+        else run_features_cfg.get("n_mels", 64)
+    )
 
     tap_blocks = (
         _parse_tap_blocks(args.tap_blocks)
-        or _parse_tap_blocks(cfg_model.get("tap_blocks"))
+        or _parse_tap_blocks((run_model_cfg or {}).get("tap_blocks"))
+        or (1, 3)
     )
 
-    backbone = _build_backbone(n_mels=n_mels, tap_blocks=tap_blocks)
+    # Keep C-class generic
+    num_classes_data = len(label2id)
+    num_classes_cli = int(args.num_classes) if args.num_classes is not None else num_classes_data
+    if num_classes_cli != num_classes_data:
+        print(
+            f"[WARN] thresholds_offline num_classes={num_classes_cli} but dataset has "
+            f"{num_classes_data}. Using dataset value."
+        )
+    num_classes = num_classes_data
 
-    model_kwargs = {
-        "backbone": backbone,
-        "num_classes": num_classes,
-    }
-
-    # Backward compatibility if backbone has no metadata
-    if not hasattr(backbone, "tap_dims"):
-        model_kwargs["tap_dims"] = (16, 32)
-    if not hasattr(backbone, "final_dim"):
-        model_kwargs["final_dim"] = 64
-
-    model = ExitNet(**model_kwargs).to(device)
+    model = build_audio_exit_net(
+        num_classes=num_classes,
+        n_mels=n_mels,
+        tap_blocks=tap_blocks,
+        model_cfg=run_model_cfg,
+    ).to(device)
 
     ckpt = os.path.join(args.run_dir, "ckpt", "best.pt")
     model.load_state_dict(torch.load(ckpt, map_location=device))
@@ -286,6 +265,7 @@ def main():
     payload["num_exits"] = int(len(logits_val))
     payload["num_classes"] = int(num_classes)
     payload["tap_blocks"] = list(tap_blocks) if tap_blocks is not None else None
+    payload["exit_hint"] = (run_model_cfg or {}).get("exit_hint", {})
 
     with open(outpath, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)

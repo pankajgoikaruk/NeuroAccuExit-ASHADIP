@@ -1,11 +1,8 @@
-# scripts/analyse_run.py
-
 from __future__ import annotations
 
 import os
 import json
 import argparse
-import inspect
 from pathlib import Path
 from typing import Optional
 
@@ -16,8 +13,7 @@ from torch.nn.functional import softmax
 from sklearn.metrics import confusion_matrix, roc_curve, auc
 
 from data.datasets import make_loaders
-from adapters.audio_adapter import TinyAudioCNN
-from models.exit_net import ExitNet
+from utils.model_factory import build_audio_exit_net, load_run_model_cfg
 
 
 def load_json_safepath(path, default=None):
@@ -52,24 +48,6 @@ def _parse_tap_blocks(value) -> Optional[tuple]:
         return None
 
     return tuple(int(v.strip()) for v in value.split(",") if v.strip())
-
-
-def _build_backbone(n_mels: int, tap_blocks=None):
-    """
-    Compatible with both:
-    - old style: TinyAudioCNN(n_mels=64)
-    - new style: TinyAudioCNN(n_mels=64, tap_blocks=(1,2,3,4))
-    """
-    sig = inspect.signature(TinyAudioCNN.__init__)
-    kwargs = {}
-
-    if "n_mels" in sig.parameters:
-        kwargs["n_mels"] = int(n_mels)
-
-    if tap_blocks is not None and "tap_blocks" in sig.parameters:
-        kwargs["tap_blocks"] = tap_blocks
-
-    return TinyAudioCNN(**kwargs)
 
 
 def _infer_tap_blocks_from_run(run_dir: Path) -> Optional[tuple]:
@@ -236,20 +214,22 @@ def collect_test_predictions(
     if not ckpt_path.exists():
         raise FileNotFoundError(f"Cannot find checkpoint at {ckpt_path}")
 
-    backbone = _build_backbone(n_mels=n_mels, tap_blocks=tap_blocks)
+    model_cfg = load_run_model_cfg(str(run_dir))
 
-    model_kwargs = {
-        "backbone": backbone,
-        "num_classes": num_classes,
-    }
+    if tap_blocks is None:
+        tap_blocks = _parse_tap_blocks((model_cfg or {}).get("tap_blocks"))
+    if tap_blocks is None:
+        tap_blocks = _infer_tap_blocks_from_run(run_dir)
+    if tap_blocks is None:
+        tap_blocks = (1, 3)
 
-    # Backward compatibility for old backbone versions
-    if not hasattr(backbone, "tap_dims"):
-        model_kwargs["tap_dims"] = (16, 32)
-    if not hasattr(backbone, "final_dim"):
-        model_kwargs["final_dim"] = 64
+    model = build_audio_exit_net(
+        num_classes=num_classes,
+        n_mels=n_mels,
+        tap_blocks=tap_blocks,
+        model_cfg=model_cfg,
+    ).to(device)
 
-    model = ExitNet(**model_kwargs).to(device)
     state_dict = torch.load(ckpt_path, map_location=device)
     model.load_state_dict(state_dict)
     model.eval()

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import inspect
 import json
 import os
 
@@ -11,8 +10,8 @@ import torch
 from sklearn.metrics import classification_report, confusion_matrix
 
 from data.datasets import make_loaders
-from adapters.audio_adapter import TinyAudioCNN
-from models.exit_net import ExitNet
+from utils.config import load_config
+from utils.model_factory import build_audio_exit_net, load_run_model_cfg
 
 
 def _parse_tap_blocks(value):
@@ -36,22 +35,14 @@ def _parse_tap_blocks(value):
     return tuple(int(v.strip()) for v in value.split(",") if v.strip())
 
 
-def _build_backbone(n_mels: int, tap_blocks=None):
-    """
-    Build TinyAudioCNN in a way that is compatible with both:
-    - old v0.1.6 backbone: TinyAudioCNN(n_mels=64)
-    - new generic backbone: TinyAudioCNN(n_mels=64, tap_blocks=(1,2,3,4))
-    """
-    sig = inspect.signature(TinyAudioCNN.__init__)
-    kwargs = {}
-
-    if "n_mels" in sig.parameters:
-        kwargs["n_mels"] = int(n_mels)
-
-    if tap_blocks is not None and "tap_blocks" in sig.parameters:
-        kwargs["tap_blocks"] = tap_blocks
-
-    return TinyAudioCNN(**kwargs)
+def _load_run_cfg(run_dir: str):
+    cfg_path = os.path.join(run_dir, "config_used.yaml")
+    if not os.path.exists(cfg_path):
+        return {}
+    try:
+        return load_config(cfg_path) or {}
+    except Exception:
+        return {}
 
 
 @torch.no_grad()
@@ -60,7 +51,7 @@ def main(
     segments_csv,
     features_root,
     num_classes=2,
-    n_mels=64,
+    n_mels=None,
     tap_blocks=None,
     batch_size=64,
     num_workers=4,
@@ -73,24 +64,42 @@ def main(
         segments_csv, features_root, batch_size, num_workers
     )
 
+    run_cfg = _load_run_cfg(run_dir)
+    run_model_cfg = load_run_model_cfg(run_dir)
+
+    # Prefer CLI, else run config, else backward-compatible default
     tap_blocks = _parse_tap_blocks(tap_blocks)
-    backbone = _build_backbone(n_mels=n_mels, tap_blocks=tap_blocks)
+    if tap_blocks is None:
+        tap_blocks = _parse_tap_blocks((run_model_cfg or {}).get("tap_blocks"))
+    if tap_blocks is None:
+        tap_blocks = (1, 3)
 
-    # Compatible with both old and new backbone code
-    model_kwargs = {
-        "backbone": backbone,
-        "num_classes": int(num_classes),
-    }
+    # Prefer CLI, else run config, else 64
+    if n_mels is None:
+        n_mels = int(((run_cfg.get("features") or {}).get("n_mels", 64)))
+    else:
+        n_mels = int(n_mels)
 
-    if not hasattr(backbone, "tap_dims"):
-        model_kwargs["tap_dims"] = (16, 32)
-    if not hasattr(backbone, "final_dim"):
-        model_kwargs["final_dim"] = 64
+    # Keep C-class generic: prefer dataset class count
+    num_classes_data = len(label2id)
+    num_classes_cfg = int(num_classes)
+    if num_classes_cfg != num_classes_data:
+        print(
+            f"[WARN] eval num_classes={num_classes_cfg} but dataset has "
+            f"{num_classes_data}. Using dataset value."
+        )
+    num_classes = num_classes_data
 
-    model = ExitNet(**model_kwargs).to(device)
+    model = build_audio_exit_net(
+        num_classes=num_classes,
+        n_mels=n_mels,
+        tap_blocks=tap_blocks,
+        model_cfg=run_model_cfg,
+    ).to(device)
 
     ckpt_path = os.path.join(run_dir, "ckpt", "best.pt")
-    model.load_state_dict(torch.load(ckpt_path, map_location=device))
+    state = torch.load(ckpt_path, map_location=device)
+    model.load_state_dict(state)
     model.eval()
 
     y_true = []
@@ -137,10 +146,12 @@ def main(
         "num_exits": num_exits,
         "num_classes": int(num_classes),
         "tap_blocks": list(tap_blocks) if tap_blocks is not None else None,
+        "n_mels": int(n_mels),
         "label2id": label2id,
         "id2label": id2label,
         "reports": reports,
         "confusion_matrices": confusion_matrices,
+        "exit_hint": (run_model_cfg or {}).get("exit_hint", {}),
     }
 
     out_path = os.path.join(run_dir, "report.json")
@@ -160,7 +171,7 @@ if __name__ == "__main__":
     ap.add_argument("--segments_csv", default="data_cache/segments.csv")
     ap.add_argument("--features_root", default="data_cache/features")
     ap.add_argument("--num_classes", type=int, default=2)
-    ap.add_argument("--n_mels", type=int, default=64)
+    ap.add_argument("--n_mels", type=int, default=None)
     ap.add_argument(
         "--tap_blocks",
         type=str,

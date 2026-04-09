@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import inspect
 import json
 import os
 from typing import Optional
@@ -12,8 +11,7 @@ import torch
 from torch.nn.functional import cross_entropy
 
 from data.datasets import make_loaders
-from adapters.audio_adapter import TinyAudioCNN
-from models.exit_net import ExitNet
+from utils.model_factory import build_audio_exit_net, load_run_model_cfg
 
 
 class TempScale(torch.nn.Module):
@@ -46,24 +44,6 @@ def _parse_tap_blocks(value) -> Optional[tuple]:
         return None
 
     return tuple(int(v.strip()) for v in value.split(",") if v.strip())
-
-
-def _build_backbone(n_mels: int, tap_blocks=None):
-    """
-    Compatible with both:
-    - old style: TinyAudioCNN(n_mels=64)
-    - new style: TinyAudioCNN(n_mels=64, tap_blocks=(1,2,3,4))
-    """
-    sig = inspect.signature(TinyAudioCNN.__init__)
-    kwargs = {}
-
-    if "n_mels" in sig.parameters:
-        kwargs["n_mels"] = int(n_mels)
-
-    if tap_blocks is not None and "tap_blocks" in sig.parameters:
-        kwargs["tap_blocks"] = tap_blocks
-
-    return TinyAudioCNN(**kwargs)
 
 
 @torch.no_grad()
@@ -155,24 +135,31 @@ if __name__ == "__main__":
         num_workers=args.num_workers,
     )
 
-    num_classes = int(args.num_classes) if args.num_classes is not None else len(label2id)
+    # Keep C-class generic
+    num_classes_data = len(label2id)
+    num_classes_cli = int(args.num_classes) if args.num_classes is not None else num_classes_data
+    if num_classes_cli != num_classes_data:
+        print(
+            f"[WARN] calibrate num_classes={num_classes_cli} but dataset has "
+            f"{num_classes_data}. Using dataset value."
+        )
+    num_classes = num_classes_data
+
+    # Prefer CLI tap_blocks, else run config, else backward-compatible default
     tap_blocks = _parse_tap_blocks(args.tap_blocks)
+    run_model_cfg = load_run_model_cfg(args.run_dir)
 
-    # Build model
-    backbone = _build_backbone(n_mels=args.n_mels, tap_blocks=tap_blocks)
+    if tap_blocks is None:
+        tap_blocks = _parse_tap_blocks((run_model_cfg or {}).get("tap_blocks"))
+    if tap_blocks is None:
+        tap_blocks = (1, 3)
 
-    model_kwargs = {
-        "backbone": backbone,
-        "num_classes": num_classes,
-    }
-
-    # Backward compatibility if backbone has no metadata
-    if not hasattr(backbone, "tap_dims"):
-        model_kwargs["tap_dims"] = (16, 32)
-    if not hasattr(backbone, "final_dim"):
-        model_kwargs["final_dim"] = 64
-
-    model = ExitNet(**model_kwargs).to(device)
+    model = build_audio_exit_net(
+        num_classes=num_classes,
+        n_mels=args.n_mels,
+        tap_blocks=tap_blocks,
+        model_cfg=run_model_cfg,
+    ).to(device)
 
     ckpt_path = os.path.join(args.run_dir, "ckpt", "best.pt")
     model.load_state_dict(torch.load(ckpt_path, map_location=device))
@@ -202,6 +189,7 @@ if __name__ == "__main__":
         "num_exits": len(logits),
         "tap_blocks": list(tap_blocks) if tap_blocks is not None else None,
         "num_classes": num_classes,
+        "exit_hint": (run_model_cfg or {}).get("exit_hint", {}),
     }
 
     out_path = os.path.join(args.run_dir, "temperature.json")

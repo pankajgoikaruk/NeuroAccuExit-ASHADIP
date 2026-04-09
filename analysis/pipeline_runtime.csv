@@ -63,3 +63,8 @@
 2026-04-05T18:39:51.2385088+01:00,kexit_dev,greedy,1,0.5,cpu,data_caches\kexit_dev\seg1_hop0p5_bp100-3000_mels64_tap1-3,runs,kexit_dev_001,181.52,3.03,True
 2026-04-06T14:21:37.9937693+01:00,kexit_dev,greedy,1,0.5,cpu,data_caches\kexit_dev\seg1_hop0p5_bp100-3000_mels64_tap1-3,runs,kexit_dev_001,193.32,3.22,True
 2026-04-06T14:27:34.5847265+01:00,kexit_dev,greedy,1,0.5,cpu,data_caches\kexit_dev\seg1_hop0p5_bp100-3000_mels64_tap1-2-3-4,runs,kexit_dev_002,218.98,3.65,True
+2026-04-07T18:59:30.9468749+01:00,kexit_greedy_no_hint,greedy,1,0.5,cpu,data_caches\kexit_greedy_no_hint\seg1_hop0p5_bp100-3000_mels64_tap1-2-3-4,runs,kexit_greedy_no_hint_001,219.89,3.66,True
+2026-04-07T19:26:00.8922201+01:00,kexit_greedy_no_hint,greedy,1,0.5,cpu,data_caches\kexit_greedy_no_hint\seg1_hop0p5_bp100-3000_mels64_tap1-2-3-4,runs,kexit_greedy_no_hint_001,190.73,3.18,True
+2026-04-07T19:58:53.4749309+01:00,kexit_greedy_no_hint,greedy,1,0.5,cpu,data_caches\kexit_greedy_no_hint\seg1_hop0p5_bp100-3000_mels64_tap1-2-3-4,runs,kexit_greedy_no_hint_001,190.35,3.17,True
+2026-04-07T21:35:18.2606680+01:00,kexit_greedy_no_hint,greedy,1,0.5,cpu,data_caches\kexit_greedy_no_hint\seg1_hop0p5_bp100-3000_mels64_tap1-2-3-4,runs,kexit_greedy_no_hint_002,190.42,3.17,True
+2026-04-07T21:41:26.6916212+01:00,kexit_greedy_hint,greedy,1,0.5,cpu,data_caches\kexit_greedy_hint\seg1_hop0p5_bp100-3000_mels64_tap1-2-3-4,runs,kexit_greedy_hint_001,195.35,3.26,True

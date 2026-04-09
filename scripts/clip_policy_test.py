@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import json
 import argparse
-import inspect
 from pathlib import Path
 from statistics import mean
 from typing import Optional
@@ -14,8 +13,8 @@ import numpy as np
 import pandas as pd
 import torch
 
-from adapters.audio_adapter import TinyAudioCNN
-from models.exit_net import ExitNet
+from utils.config import load_config
+from utils.model_factory import build_audio_exit_net, load_run_model_cfg
 
 
 def _load_json(path: str):
@@ -61,13 +60,29 @@ def _pad_or_trim(seq, target_len, pad_value=None):
     return vals
 
 
+def _load_run_cfg(run_dir: str):
+    cfg_path = os.path.join(run_dir, "config_used.yaml")
+    if not os.path.exists(cfg_path):
+        return {}
+    try:
+        return load_config(cfg_path) or {}
+    except Exception:
+        return {}
+
+
 def _infer_tap_blocks_from_run(run_dir: str) -> Optional[tuple]:
     """
     Try to recover tap_blocks from training artifacts.
     Priority:
-      1) metrics.json -> meta.tap_blocks
-      2) temperature.json -> tap_blocks
+      1) config_used.yaml -> model.tap_blocks
+      2) metrics.json -> meta.tap_blocks
+      3) temperature.json -> tap_blocks
     """
+    run_model_cfg = load_run_model_cfg(run_dir)
+    tb = _parse_tap_blocks((run_model_cfg or {}).get("tap_blocks"))
+    if tb is not None:
+        return tb
+
     metrics_path = os.path.join(run_dir, "metrics.json")
     if os.path.exists(metrics_path):
         try:
@@ -94,39 +109,22 @@ def _infer_tap_blocks_from_run(run_dir: str) -> Optional[tuple]:
     return None
 
 
-def _build_backbone(n_mels: int, tap_blocks=None):
-    """
-    Compatible with both:
-    - old style: TinyAudioCNN(n_mels=64)
-    - new style: TinyAudioCNN(n_mels=64, tap_blocks=(1,2,3,4))
-    """
-    sig = inspect.signature(TinyAudioCNN.__init__)
-    kwargs = {}
-
-    if "n_mels" in sig.parameters:
-        kwargs["n_mels"] = int(n_mels)
-
-    if tap_blocks is not None and "tap_blocks" in sig.parameters:
-        kwargs["tap_blocks"] = tap_blocks
-
-    return TinyAudioCNN(**kwargs)
-
-
 def _build_model(run_dir: str, num_classes: int, device: str, n_mels: int, tap_blocks=None):
-    backbone = _build_backbone(n_mels=n_mels, tap_blocks=tap_blocks)
+    run_model_cfg = load_run_model_cfg(run_dir)
 
-    model_kwargs = {
-        "backbone": backbone,
-        "num_classes": int(num_classes),
-    }
+    if tap_blocks is None:
+        tap_blocks = _parse_tap_blocks((run_model_cfg or {}).get("tap_blocks"))
+    if tap_blocks is None:
+        tap_blocks = _infer_tap_blocks_from_run(run_dir)
+    if tap_blocks is None:
+        tap_blocks = (1, 3)
 
-    # Backward compatibility for old backbone versions
-    if not hasattr(backbone, "tap_dims"):
-        model_kwargs["tap_dims"] = (16, 32)
-    if not hasattr(backbone, "final_dim"):
-        model_kwargs["final_dim"] = 64
-
-    model = ExitNet(**model_kwargs).to(device)
+    model = build_audio_exit_net(
+        num_classes=int(num_classes),
+        n_mels=int(n_mels),
+        tap_blocks=tap_blocks,
+        model_cfg=run_model_cfg,
+    ).to(device)
 
     ckpt = os.path.join(run_dir, "ckpt", "best.pt")
     if not os.path.exists(ckpt):
@@ -135,14 +133,7 @@ def _build_model(run_dir: str, num_classes: int, device: str, n_mels: int, tap_b
     model.load_state_dict(torch.load(ckpt, map_location=device))
     model.eval()
 
-    effective_tap_blocks = tap_blocks
-    if effective_tap_blocks is None and hasattr(backbone, "tap_blocks"):
-        try:
-            effective_tap_blocks = tuple(int(v) for v in backbone.tap_blocks)
-        except Exception:
-            effective_tap_blocks = None
-
-    return model, effective_tap_blocks
+    return model, tap_blocks, run_model_cfg
 
 
 def _load_feature(features_root: Path, feat_relpath: str, device: str) -> torch.Tensor:
@@ -265,10 +256,10 @@ def main():
     ap.add_argument("--fixed_k_windows", type=int, default=3)
     ap.add_argument("--time_margin", type=float, default=0.0)
 
-    # New generic K-exit args
+    # Generic K-exit args
     ap.add_argument("--tap_blocks", type=str, default=None,
                     help='Example: "1,3" for 3 exits or "1,2,3,4" for 5 exits.')
-    ap.add_argument("--n_mels", type=int, default=64)
+    ap.add_argument("--n_mels", type=int, default=None)
 
     args = ap.parse_args()
 
@@ -293,15 +284,23 @@ def main():
     labels = sorted(df["label"].astype(str).unique().tolist())
     label2id = {l: i for i, l in enumerate(labels)}
 
+    run_cfg = _load_run_cfg(args.run_dir)
+    run_features_cfg = run_cfg.get("features") or {}
+
     tap_blocks = _parse_tap_blocks(args.tap_blocks)
     if tap_blocks is None:
         tap_blocks = _infer_tap_blocks_from_run(args.run_dir)
 
-    model, effective_tap_blocks = _build_model(
+    if args.n_mels is None:
+        n_mels = int(run_features_cfg.get("n_mels", 64))
+    else:
+        n_mels = int(args.n_mels)
+
+    model, effective_tap_blocks, run_model_cfg = _build_model(
         run_dir=args.run_dir,
         num_classes=len(labels),
         device=device,
-        n_mels=args.n_mels,
+        n_mels=n_mels,
         tap_blocks=tap_blocks,
     )
 
@@ -500,7 +499,7 @@ def main():
         "policy": "greedy",
         "K": int(num_exits),
         "tap_blocks": list(effective_tap_blocks) if effective_tap_blocks is not None else None,
-        "n_mels": int(args.n_mels),
+        "n_mels": int(n_mels),
         "num_classes": len(labels),
         "window_distribution": hist_payload,
         "window_distribution_json_mode": "windows_used_hist.json",
@@ -518,6 +517,7 @@ def main():
         "temperatures_used": temps,
         "tau": tau,
         "labels": labels,
+        "exit_hint": (run_model_cfg or {}).get("exit_hint", {}),
     }
 
     full_result = {

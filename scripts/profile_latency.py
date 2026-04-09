@@ -4,126 +4,16 @@ from __future__ import annotations
 
 import os
 import json
-import csv
 import argparse
-import inspect
 from pathlib import Path
-from typing import Optional
+import csv
 
 import numpy as np
 import torch
 
 from data.datasets import make_loaders
-from adapters.audio_adapter import TinyAudioCNN
-from models.exit_net import ExitNet
-from utils.profiling import measure_latency_ms, estimate_flops_tiny_audiocnn
-
-
-def load_json_safepath(path, default=None):
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return default
-    except Exception:
-        return default
-
-
-def _parse_tap_blocks(value) -> Optional[tuple]:
-    """
-    Accept:
-      - None
-      - "1,2,3,4"
-      - [1,2,3,4]
-      - (1,2,3,4)
-    """
-    if value is None:
-        return None
-
-    if isinstance(value, (list, tuple)):
-        return tuple(int(v) for v in value)
-
-    value = str(value).strip()
-    if value == "":
-        return None
-
-    return tuple(int(v.strip()) for v in value.split(",") if v.strip())
-
-
-def _build_backbone(n_mels: int, tap_blocks=None):
-    """
-    Compatible with both:
-    - old style: TinyAudioCNN(n_mels=64)
-    - new style: TinyAudioCNN(n_mels=64, tap_blocks=(1,2,3,4))
-    """
-    sig = inspect.signature(TinyAudioCNN.__init__)
-    kwargs = {}
-
-    if "n_mels" in sig.parameters:
-        kwargs["n_mels"] = int(n_mels)
-
-    if tap_blocks is not None and "tap_blocks" in sig.parameters:
-        kwargs["tap_blocks"] = tap_blocks
-
-    return TinyAudioCNN(**kwargs)
-
-
-def _infer_tap_blocks_from_run(run_dir: Path) -> Optional[tuple]:
-    candidates = [
-        run_dir / "metrics.json",
-        run_dir / "report.json",
-        run_dir / "temperature.json",
-        run_dir / "thresholds.json",
-        run_dir / "summary.json",
-        run_dir / "meta.json",
-    ]
-
-    for path in candidates:
-        if not path.exists():
-            continue
-
-        obj = load_json_safepath(path, {})
-        if not isinstance(obj, dict):
-            continue
-
-        tb = None
-        if isinstance(obj.get("meta"), dict):
-            tb = obj["meta"].get("tap_blocks")
-        if tb is None and isinstance(obj.get("policy_summary"), dict):
-            tb = obj["policy_summary"].get("tap_blocks")
-        if tb is None:
-            tb = obj.get("tap_blocks")
-
-        tb = _parse_tap_blocks(tb)
-        if tb is not None:
-            return tb
-
-    cfg_path = run_dir / "config_used.yaml"
-    if cfg_path.exists():
-        try:
-            import yaml
-            with open(cfg_path, "r", encoding="utf-8") as f:
-                cfg = yaml.safe_load(f) or {}
-            tb = _parse_tap_blocks((cfg.get("model") or {}).get("tap_blocks"))
-            if tb is not None:
-                return tb
-        except Exception:
-            pass
-
-    return None
-
-
-def _infer_n_mels_from_run(run_dir: Path, default=64) -> int:
-    cfg_path = run_dir / "config_used.yaml"
-    if cfg_path.exists():
-        try:
-            import yaml
-            with open(cfg_path, "r", encoding="utf-8") as f:
-                cfg = yaml.safe_load(f) or {}
-            return int((cfg.get("features") or {}).get("n_mels", default))
-        except Exception:
-            pass
-    return int(default)
+from utils.model_factory import build_audio_exit_net, load_run_model_cfg
+from utils.profiling import measure_latency_ms
 
 
 def load_first_test_batch(segments_csv, features_root, batch_size=16, num_workers=2):
@@ -159,110 +49,148 @@ def infer_feature_shape(segments_csv, features_root):
     return int(n_mels), int(frames)
 
 
-def _safe_estimate_flops(n_mels, frames, num_classes, tap_blocks, num_exits):
+def _conv2d_flops_hw(
+    H: int,
+    W: int,
+    in_ch: int,
+    out_ch: int,
+    k: int = 3,
+    stride: int = 1,
+    padding: int = 1,
+):
     """
-    Best-effort FLOPs estimation.
-    If estimate_flops_tiny_audiocnn is still 3-exit-specific, do not crash.
+    Return:
+      flops, H_out, W_out
+
+    FLOPs counted as multiply+add = 2 ops.
     """
-    try:
-        sig = inspect.signature(estimate_flops_tiny_audiocnn)
-        kwargs = {
-            "n_mels": int(n_mels),
-            "frames": int(frames),
-            "num_classes": int(num_classes),
-        }
-        if "tap_blocks" in sig.parameters and tap_blocks is not None:
-            kwargs["tap_blocks"] = tap_blocks
-
-        fl = estimate_flops_tiny_audiocnn(**kwargs)
-
-        if not isinstance(fl, dict):
-            return {
-                "flops_raw": fl,
-                "warning": "estimate_flops_tiny_audiocnn did not return a dict.",
-            }
-
-        needed = [f"exit{i+1}" for i in range(num_exits)]
-        if not all(k in fl for k in needed):
-            return {
-                "flops_raw": fl,
-                "warning": "FLOPs helper does not expose all exits for current K.",
-            }
-
-        return {
-            "flops_raw": fl,
-            "warning": None,
-        }
-
-    except Exception as e:
-        return {
-            "flops_raw": None,
-            "warning": f"FLOPs estimation failed: {type(e).__name__}: {e}",
-        }
+    H_out = (H + 2 * padding - k) // stride + 1
+    W_out = (W + 2 * padding - k) // stride + 1
+    flops = 2 * H_out * W_out * out_ch * in_ch * k * k
+    return flops, H_out, W_out
 
 
-def _append_on_device_row_safely(csv_path: Path, row: dict):
+def estimate_flops_tiny_audiocnn_tapblocks(n_mels: int, frames: int, num_classes: int, tap_blocks):
     """
-    If an old on_device_summary.csv already exists with a 3-exit schema,
-    write to a sibling *_kexit.csv instead of corrupting the old schema.
+    K-exit FLOPs estimator consistent with adapters/audio_adapter.py:
+
+    block1: Conv(1->16,k3,p1) + MaxPool(2x2)
+    block2: Conv(16->24,k3,p1) + MaxPool(2x2)
+    block3: Conv(24->32,k3,p1)
+    block4: Conv(32->48,k3,p1)
+    block5: Conv(48->64,k3,p1) + AdaptiveAvgPool(1,1)
+
+    Exits:
+      for each tap block in sorted(tap_blocks) (allowed 1..4):
+        head_dim = channels at that block
+      final exit: after block5 head_dim=64
+
+    Returns dict:
+      {"exit1":..., ..., "exitK":...}
+    cumulative FLOPs up to that exit (including its linear head).
     """
-    csv_path.parent.mkdir(exist_ok=True)
+    tap_blocks = sorted(set(int(b) for b in tap_blocks))
+    if any(b < 1 or b > 4 for b in tap_blocks):
+        raise ValueError(f"tap_blocks must be in [1..4]. Got: {tap_blocks}")
 
-    desired_header = list(row.keys())
+    ch = [16, 24, 32, 48, 64]
+    H, W = int(n_mels), int(frames)
 
-    if not csv_path.exists():
-        with open(csv_path, "w", newline="", encoding="utf-8") as f:
-            w = csv.DictWriter(f, fieldnames=desired_header)
+    flops = {}
+    total = 0
+
+    # block1 conv
+    f1, h1, w1 = _conv2d_flops_hw(H, W, in_ch=1, out_ch=ch[0], k=3, stride=1, padding=1)
+    total += f1
+    H1, W1 = h1 // 2, w1 // 2  # maxpool
+
+    exit_idx = 1
+    if 1 in tap_blocks:
+        flops[f"exit{exit_idx}"] = total + 2 * (ch[0] * num_classes)
+        exit_idx += 1
+
+    # block2 conv
+    f2, h2, w2 = _conv2d_flops_hw(H1, W1, in_ch=ch[0], out_ch=ch[1], k=3, stride=1, padding=1)
+    total += f2
+    H2, W2 = h2 // 2, w2 // 2  # maxpool
+
+    if 2 in tap_blocks:
+        flops[f"exit{exit_idx}"] = total + 2 * (ch[1] * num_classes)
+        exit_idx += 1
+
+    # block3 conv
+    f3, h3, w3 = _conv2d_flops_hw(H2, W2, in_ch=ch[1], out_ch=ch[2], k=3, stride=1, padding=1)
+    total += f3
+    if 3 in tap_blocks:
+        flops[f"exit{exit_idx}"] = total + 2 * (ch[2] * num_classes)
+        exit_idx += 1
+
+    # block4 conv
+    f4, h4, w4 = _conv2d_flops_hw(h3, w3, in_ch=ch[2], out_ch=ch[3], k=3, stride=1, padding=1)
+    total += f4
+    if 4 in tap_blocks:
+        flops[f"exit{exit_idx}"] = total + 2 * (ch[3] * num_classes)
+        exit_idx += 1
+
+    # block5 conv (final)
+    f5, h5, w5 = _conv2d_flops_hw(h4, w4, in_ch=ch[3], out_ch=ch[4], k=3, stride=1, padding=1)
+    total += f5
+
+    # final head 64 -> C
+    flops[f"exit{exit_idx}"] = total + 2 * (ch[4] * num_classes)
+    return flops
+
+
+def append_csv_union(path: Path, row: dict):
+    """
+    Append a row to CSV and automatically extend header if new columns appear.
+    This prevents breaking when K changes (e.g., exit4/exit5 added later).
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    if not path.exists():
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=list(row.keys()))
             w.writeheader()
             w.writerow(row)
-        print(f"[profile_latency] Appended row to {csv_path}")
         return
 
-    try:
-        with open(csv_path, "r", newline="", encoding="utf-8") as f:
-            reader = csv.reader(f)
-            existing_header = next(reader)
-    except Exception:
-        existing_header = None
+    with open(path, "r", newline="", encoding="utf-8") as f:
+        r = csv.DictReader(f)
+        old_fields = list(r.fieldnames or [])
+        old_rows = list(r)
 
-    if existing_header == desired_header:
-        with open(csv_path, "a", newline="", encoding="utf-8") as f:
-            w = csv.DictWriter(f, fieldnames=desired_header)
-            w.writerow(row)
-        print(f"[profile_latency] Appended row to {csv_path}")
+    new_fields = list(dict.fromkeys(old_fields + list(row.keys())))
+
+    if new_fields == old_fields:
+        filtered = {k: row.get(k, "") for k in old_fields}
+        with open(path, "a", newline="", encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=old_fields)
+            w.writerow(filtered)
         return
 
-    alt_csv = csv_path.with_name(csv_path.stem + "_kexit" + csv_path.suffix)
-    write_header = not alt_csv.exists()
-
-    with open(alt_csv, "a", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=desired_header)
-        if write_header:
-            w.writeheader()
-        w.writerow(row)
-
-    print(f"[profile_latency] Existing CSV schema differs; appended row to {alt_csv} instead of {csv_path}")
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=new_fields)
+        w.writeheader()
+        for rr in old_rows:
+            w.writerow({k: rr.get(k, "") for k in new_fields})
+        w.writerow({k: row.get(k, "") for k in new_fields})
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--run_dir", required=True,
-                    help="Path to a single run directory, e.g. runs/variant/variant_001")
+    ap.add_argument("--run_dir", required=True, help="Path to a single run directory, e.g. runs/variant/variant_001")
     ap.add_argument("--segments_csv", default="data_cache/segments.csv")
     ap.add_argument("--features_root", default="data_cache/features")
-    ap.add_argument("--variant", default="V0",
-                    help="Variant name label to store (e.g., V0, V1, V2).")
-    ap.add_argument("--device", default="auto",
-                    help="cpu | cuda | auto (default: auto picks cuda if available)")
-    ap.add_argument("--batch_size", type=int, default=16,
-                    help="Batch size used for latency measurement.")
+    ap.add_argument("--variant", default="V0", help="Variant name label to store (e.g., V0, V1, V2).")
+    ap.add_argument("--device", default="auto", help="cpu | cuda | auto (default: auto picks cuda if available)")
+    ap.add_argument("--batch_size", type=int, default=16, help="Batch size used for latency measurement.")
     ap.add_argument("--n_warm", type=int, default=5)
     ap.add_argument("--n_iter", type=int, default=20)
 
-    # New generic K-exit args
-    ap.add_argument("--tap_blocks", type=str, default=None,
-                    help='Example: "1,3" for 3 exits or "1,2,3,4" for 5 exits.')
-    ap.add_argument("--n_mels", type=int, default=None)
+    # K-exit args
+    ap.add_argument("--tap_blocks", default="1,3", help="Comma list like 1,2,3,4. Default 1,3 (=3 exits).")
+    ap.add_argument("--n_mels", type=int, default=0, help="If 0, infer from features.")
 
     args = ap.parse_args()
 
@@ -270,19 +198,14 @@ def main():
     if not run_dir.exists():
         raise SystemExit(f"run_dir not found: {run_dir}")
 
-    # Resolve device
     if args.device == "auto":
         device = "cuda" if torch.cuda.is_available() else "cpu"
     else:
         device = args.device
 
-    tap_blocks = _parse_tap_blocks(args.tap_blocks)
-    if tap_blocks is None:
-        tap_blocks = _infer_tap_blocks_from_run(run_dir)
+    tap_blocks = tuple(int(x) for x in str(args.tap_blocks).split(",") if str(x).strip())
 
-    n_mels_model = int(args.n_mels) if args.n_mels is not None else _infer_n_mels_from_run(run_dir, default=64)
-
-    # --- Load first test batch ---
+    # Load first test batch
     x, y, label2id = load_first_test_batch(
         args.segments_csv,
         args.features_root,
@@ -292,38 +215,28 @@ def main():
     batch_size = x.size(0)
     num_classes = len(label2id)
 
-    # --- Build and load model ---
+    # infer (n_mels, frames) for FLOPs
+    n_mels_inf, frames = infer_feature_shape(args.segments_csv, args.features_root)
+    n_mels = int(args.n_mels) if int(args.n_mels) > 0 else int(n_mels_inf)
+
+    # Build and load model
     ckpt_path = run_dir / "ckpt" / "best.pt"
     if not ckpt_path.exists():
         raise SystemExit(f"Checkpoint not found: {ckpt_path}")
 
-    backbone = _build_backbone(n_mels=n_mels_model, tap_blocks=tap_blocks)
+    model_cfg = load_run_model_cfg(str(run_dir))
+    model = build_audio_exit_net(
+        num_classes=num_classes,
+        n_mels=n_mels,
+        tap_blocks=tap_blocks,
+        model_cfg=model_cfg,
+    ).to(device)
 
-    model_kwargs = {
-        "backbone": backbone,
-        "num_classes": num_classes,
-    }
-
-    # Backward compatibility for old backbone versions
-    if not hasattr(backbone, "tap_dims"):
-        model_kwargs["tap_dims"] = (16, 32)
-    if not hasattr(backbone, "final_dim"):
-        model_kwargs["final_dim"] = 64
-
-    model = ExitNet(**model_kwargs).to(device)
     state = torch.load(ckpt_path, map_location=device)
     model.load_state_dict(state)
-    model.eval()
+    K = model.num_exits
 
-    num_exits = model.num_exits
-    effective_tap_blocks = tap_blocks
-    if effective_tap_blocks is None and hasattr(backbone, "tap_blocks"):
-        try:
-            effective_tap_blocks = tuple(int(v) for v in backbone.tap_blocks)
-        except Exception:
-            effective_tap_blocks = None
-
-    # --- Measure latency for full forward (all exits produced) ---
+    # Measure latency for full forward (all exits computed)
     latency_full_ms = measure_latency_ms(
         model,
         x,
@@ -332,37 +245,25 @@ def main():
         device=device,
     )
 
-    # --- Estimate FLOPs per exit to approximate per-exit latency ---
-    feat_n_mels, frames = infer_feature_shape(args.segments_csv, args.features_root)
-    flops_info = _safe_estimate_flops(
-        n_mels=feat_n_mels,
+    # Estimate FLOPs per exit (K-generic) to approximate per-exit latency
+    flops = estimate_flops_tiny_audiocnn_tapblocks(
+        n_mels=n_mels,
         frames=frames,
         num_classes=num_classes,
-        tap_blocks=effective_tap_blocks,
-        num_exits=num_exits,
+        tap_blocks=tap_blocks,
     )
 
-    flops = flops_info.get("flops_raw")
-    flops_warning = flops_info.get("warning")
+    fl_full = float(flops[f"exit{K}"])
+    lat_ms = {}
+    for i in range(1, K + 1):
+        fi = float(flops[f"exit{i}"])
+        lat_ms[f"exit{i}"] = float(latency_full_ms) * (fi / max(fl_full, 1e-12))
 
-    latency_ms = {}
-    full_forward_ms = float(latency_full_ms)
-
-    if isinstance(flops, dict) and f"exit{num_exits}" in flops:
-        fl_full = float(flops[f"exit{num_exits}"])
-        for k in range(1, num_exits + 1):
-            fk = float(flops[f"exit{k}"])
-            latency_ms[f"exit{k}"] = full_forward_ms * (fk / max(fl_full, 1e-12))
-    else:
-        # Fall back to storing only final/full latency as a guaranteed value
-        latency_ms[f"exit{num_exits}"] = full_forward_ms
-
-    # --- Load summary.json (for MFLOPs + compute saving) if available ---
+    # Load summary.json (for MFLOPs + compute saving) if available
     summary_path = run_dir / "summary.json"
     expected_mflops = None
     full_mflops = None
     compute_saving_pct = None
-
     if summary_path.exists():
         with open(summary_path, "r", encoding="utf-8") as f:
             summary = json.load(f)
@@ -371,32 +272,29 @@ def main():
         full_mflops = policy.get("full_mflops", None)
         compute_saving_pct = policy.get("compute_saving_pct", None)
 
-    # --- Build profiling dict ---
     profiling = {
         "variant": args.variant,
         "run_id": run_dir.name,
         "device": device,
         "batch_size": int(batch_size),
-        "num_exits": int(num_exits),
-        "tap_blocks": list(effective_tap_blocks) if effective_tap_blocks is not None else None,
-        "n_mels": int(feat_n_mels),
+        "K": int(K),
+        "tap_blocks": [int(x) for x in tap_blocks],
+        "n_mels": int(n_mels),
         "frames": int(frames),
-        "full_forward_latency_ms": full_forward_ms,
-        "latency_ms": latency_ms,
+        "latency_ms": lat_ms,
         "flops": flops,
-        "flops_warning": flops_warning,
         "expected_mflops": expected_mflops,
         "full_mflops": full_mflops,
         "compute_saving_pct": compute_saving_pct,
+        "exit_hint": (model_cfg or {}).get("exit_hint", {}),
     }
 
-    # Save per-run profiling.json
     out_json = run_dir / "profiling.json"
     with open(out_json, "w", encoding="utf-8") as f:
         json.dump(profiling, f, indent=2)
     print(f"[profile_latency] Saved {out_json}")
 
-    # --- Append row to analysis/on_device_summary.csv ---
+    # Append to analysis/on_device_summary.csv
     analysis_dir = Path("analysis")
     analysis_dir.mkdir(exist_ok=True)
     csv_path = analysis_dir / "on_device_summary.csv"
@@ -406,20 +304,20 @@ def main():
         "run_id": profiling["run_id"],
         "device": profiling["device"],
         "batch_size": profiling["batch_size"],
-        "num_exits": profiling["num_exits"],
-        "tap_blocks_json": json.dumps(profiling["tap_blocks"]),
+        "K": profiling["K"],
+        "tap_blocks": ",".join(str(x) for x in tap_blocks),
         "n_mels": profiling["n_mels"],
         "frames": profiling["frames"],
-        "full_forward_latency_ms": profiling["full_forward_latency_ms"],
-        "latency_ms_json": json.dumps(profiling["latency_ms"]),
-        "flops_json": json.dumps(profiling["flops"]),
-        "expected_mflops": profiling["expected_mflops"],
-        "full_mflops": profiling["full_mflops"],
-        "compute_saving_pct": profiling["compute_saving_pct"],
-        "flops_warning": profiling["flops_warning"],
+        "expected_mflops": expected_mflops if expected_mflops is not None else "",
+        "full_mflops": full_mflops if full_mflops is not None else "",
+        "compute_saving_pct": compute_saving_pct if compute_saving_pct is not None else "",
     }
+    for i in range(1, K + 1):
+        row[f"lat_exit{i}_ms"] = profiling["latency_ms"][f"exit{i}"]
+        row[f"exit{i}_flops"] = float(profiling["flops"][f"exit{i}"])
 
-    _append_on_device_row_safely(csv_path, row)
+    append_csv_union(csv_path, row)
+    print(f"[profile_latency] Appended/updated row in {csv_path}")
 
 
 if __name__ == "__main__":

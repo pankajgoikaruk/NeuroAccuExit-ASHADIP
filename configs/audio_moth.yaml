@@ -35,6 +35,12 @@ train:
 model:
   num_classes: 2
   exits: 3
+  exit_hint:
+    enable: true
+    dim: 8
+    source: probs
+    detach: true
+    use_stats: true
 
 calibration:
   temperature_scaling: true

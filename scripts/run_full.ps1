@@ -1,3 +1,5 @@
+# scripts/run_full.ps1
+
 param(
   [string]$DataRoot   = "data\moth_sounds",
   [string]$CacheRoot  = "data_caches",
@@ -177,18 +179,18 @@ if ($RunClipPolicy) {
 
 # --------------------- 7/10) Summarise run ---------------------
 Write-Host "`n[7/10] Summarise run..." -ForegroundColor Yellow
-Invoke-Python ('python -m scripts.summarize_run --run_dir "{0}" --segments_csv "{1}" --features_root "{2}"' -f `
-  $runPath, $SegCsv, $FeatRoot)
+Invoke-Python ('python -m scripts.summarize_run --run_dir "{0}" --segments_csv "{1}" --features_root "{2}" --tap_blocks "{3}" --n_mels {4}' -f `
+  $runPath, $SegCsv, $FeatRoot, $TapBlocks, $NMels)
 
 # --------------------- 8/10) Analyse run ---------------------
 Write-Host "`n[8/10] Analyse run..." -ForegroundColor Yellow
-Invoke-Python ('python -m scripts.analyse_run --run_dir "{0}" --segments_csv "{1}" --features_root "{2}"' -f `
-  $runPath, $SegCsv, $FeatRoot)
+Invoke-Python ('python -m scripts.analyse_run --run_dir "{0}" --segments_csv "{1}" --features_root "{2}" --tap_blocks "{3}" --n_mels {4}' -f `
+  $runPath, $SegCsv, $FeatRoot, $TapBlocks, $NMels)
 
 # --------------------- 9/10) Profile latency ---------------------
 Write-Host "`n[9/10] Profile latency..." -ForegroundColor Yellow
-Invoke-Python ('python -m scripts.profile_latency --run_dir "{0}" --segments_csv "{1}" --features_root "{2}" --variant "{3}" --device "{4}"' -f `
-  $runPath, $SegCsv, $FeatRoot, $Variant, $Device)
+Invoke-Python ('python -m scripts.profile_latency --run_dir "{0}" --segments_csv "{1}" --features_root "{2}" --variant "{3}" --device "{4}" --tap_blocks "{5}" --n_mels {6}' -f `
+  $runPath, $SegCsv, $FeatRoot, $Variant, $Device, $TapBlocks, $NMels)
 
 # --------------------- Timing & logging ---------------------
 $pipelineEnd   = Get-Date

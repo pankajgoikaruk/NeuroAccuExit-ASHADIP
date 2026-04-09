@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import inspect
 import json
 import os
 from statistics import mean
@@ -13,8 +12,8 @@ import torch
 from torch.nn.functional import softmax
 
 from data.datasets import make_loaders
-from adapters.audio_adapter import TinyAudioCNN
-from models.exit_net import ExitNet
+from utils.config import load_config
+from utils.model_factory import build_audio_exit_net, load_run_model_cfg
 
 
 def _parse_tap_blocks(value) -> Optional[tuple]:
@@ -38,24 +37,6 @@ def _parse_tap_blocks(value) -> Optional[tuple]:
     return tuple(int(v.strip()) for v in value.split(",") if v.strip())
 
 
-def _build_backbone(n_mels: int, tap_blocks=None):
-    """
-    Compatible with both:
-    - old style: TinyAudioCNN(n_mels=64)
-    - new style: TinyAudioCNN(n_mels=64, tap_blocks=(1,2,3,4))
-    """
-    sig = inspect.signature(TinyAudioCNN.__init__)
-    kwargs = {}
-
-    if "n_mels" in sig.parameters:
-        kwargs["n_mels"] = int(n_mels)
-
-    if tap_blocks is not None and "tap_blocks" in sig.parameters:
-        kwargs["tap_blocks"] = tap_blocks
-
-    return TinyAudioCNN(**kwargs)
-
-
 def _pad_or_trim(seq, target_len, pad_value=None):
     vals = [float(x) for x in seq]
     if len(vals) >= target_len:
@@ -68,13 +49,23 @@ def _pad_or_trim(seq, target_len, pad_value=None):
     return vals
 
 
+def _load_run_cfg(run_dir: str):
+    cfg_path = os.path.join(run_dir, "config_used.yaml")
+    if not os.path.exists(cfg_path):
+        return {}
+    try:
+        return load_config(cfg_path) or {}
+    except Exception:
+        return {}
+
+
 def main(
     run_dir,
     segments_csv,
     features_root,
     policy="greedy",
     num_workers=2,
-    n_mels=64,
+    n_mels=None,
     tap_blocks=None,
     num_classes=None,
     batch_size=64,
@@ -88,12 +79,11 @@ def main(
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    tap_blocks = _parse_tap_blocks(tap_blocks)
-
     # Load greedy threshold
     thresholds_path = os.path.join(run_dir, "thresholds.json")
     with open(thresholds_path, "r", encoding="utf-8") as f:
-        tau = float(json.load(f)["tau"])
+        tau_obj = json.load(f)
+    tau = float(tau_obj["tau"])
 
     # Load temperatures
     temperature_path = os.path.join(run_dir, "temperature.json")
@@ -111,24 +101,38 @@ def main(
         num_workers=num_workers,
     )
 
-    if num_classes is None:
-        num_classes = len(label2id)
+    # Load run config
+    run_cfg = _load_run_cfg(run_dir)
+    run_model_cfg = load_run_model_cfg(run_dir)
+    run_features_cfg = run_cfg.get("features") or {}
 
-    # Build model
-    backbone = _build_backbone(n_mels=n_mels, tap_blocks=tap_blocks)
+    # Prefer CLI, else saved run config, else defaults
+    tap_blocks = (
+        _parse_tap_blocks(tap_blocks)
+        or _parse_tap_blocks((run_model_cfg or {}).get("tap_blocks"))
+        or (1, 3)
+    )
 
-    model_kwargs = {
-        "backbone": backbone,
-        "num_classes": int(num_classes),
-    }
+    if n_mels is None:
+        n_mels = int(run_features_cfg.get("n_mels", 64))
+    else:
+        n_mels = int(n_mels)
 
-    # Backward compatibility if backbone has no metadata
-    if not hasattr(backbone, "tap_dims"):
-        model_kwargs["tap_dims"] = (16, 32)
-    if not hasattr(backbone, "final_dim"):
-        model_kwargs["final_dim"] = 64
+    # Keep C-class generic
+    num_classes_data = len(label2id)
+    if num_classes is not None and int(num_classes) != num_classes_data:
+        print(
+            f"[WARN] policy_test num_classes={int(num_classes)} but dataset has "
+            f"{num_classes_data}. Using dataset value."
+        )
+    num_classes = num_classes_data
 
-    model = ExitNet(**model_kwargs).to(device)
+    model = build_audio_exit_net(
+        num_classes=num_classes,
+        n_mels=n_mels,
+        tap_blocks=tap_blocks,
+        model_cfg=run_model_cfg,
+    ).to(device)
 
     ckpt_path = os.path.join(run_dir, "ckpt", "best.pt")
     model.load_state_dict(torch.load(ckpt_path, map_location=device))
@@ -208,12 +212,14 @@ def main(
         "num_exits": num_exits,
         "num_classes": int(num_classes),
         "tap_blocks": list(tap_blocks) if tap_blocks is not None else None,
+        "n_mels": int(n_mels),
         "exit_mix": exit_mix,
         "tau": float(tau),
         "temperatures_used": temps,
         "flip_any_rate": flip_any_rate,
         "avg_flip_count": avg_flip_count,
         "exit_consistency": exit_consistency,
+        "exit_hint": (run_model_cfg or {}).get("exit_hint", {}),
     }
 
     out_path = os.path.join(run_dir, "policy_results.json")
@@ -239,7 +245,7 @@ if __name__ == "__main__":
     ap.add_argument("--policy", default="greedy")
     ap.add_argument("--num_workers", type=int, default=2)
     ap.add_argument("--batch_size", type=int, default=64)
-    ap.add_argument("--n_mels", type=int, default=64)
+    ap.add_argument("--n_mels", type=int, default=None)
     ap.add_argument(
         "--tap_blocks",
         type=str,

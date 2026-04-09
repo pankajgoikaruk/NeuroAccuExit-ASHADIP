@@ -16,8 +16,7 @@ from torch.nn.functional import cross_entropy
 from utils.config import parse_args_with_config, ensure_dirs, save_config
 from utils.logging import make_run_dir, save_json
 from data.datasets import make_loaders
-from adapters.audio_adapter import TinyAudioCNN
-from models.exit_net import ExitNet
+from utils.model_factory import build_audio_exit_net
 
 
 def set_global_seed(seed: int):
@@ -154,7 +153,7 @@ def _parse_extra_args():
     p.add_argument("--variant", type=str, default=None,
                    help="Optional: record variant name in effective config.")
 
-    # New: generic K-exit control
+    # Generic K-exit control
     p.add_argument("--tap_blocks", type=str, default=None,
                    help='Comma-separated tap blocks. Example: "1,3" or "1,2,3,4".')
 
@@ -243,10 +242,23 @@ def main():
 
     # Model
     n_mels = int((cfg.get("features") or {}).get("n_mels", 64))
-    num_classes = int((cfg.get("model") or {}).get("num_classes", 2))
 
-    backbone = TinyAudioCNN(n_mels=n_mels, tap_blocks=tap_blocks)
-    model = ExitNet(backbone=backbone, num_classes=num_classes).to(device)
+    # Keep C-class generic: prefer dataset class count
+    num_classes_data = len(label2id)
+    num_classes_cfg = int((cfg.get("model") or {}).get("num_classes", num_classes_data))
+    if num_classes_cfg != num_classes_data:
+        print(
+            f"[WARN] config num_classes={num_classes_cfg} but dataset has "
+            f"{num_classes_data}. Using dataset value."
+        )
+    num_classes = num_classes_data
+
+    model = build_audio_exit_net(
+        num_classes=num_classes,
+        n_mels=n_mels,
+        tap_blocks=tap_blocks,
+        model_cfg=(cfg.get("model") or {}),
+    ).to(device)
 
     num_exits = model.num_exits
     loss_w = _pad_or_trim(loss_w, num_exits)
@@ -257,10 +269,11 @@ def main():
         "meta": {
             "num_exits": num_exits,
             "tap_blocks": list(tap_blocks),
-            "tap_dims": list(backbone.tap_dims),
-            "final_dim": int(backbone.final_dim),
+            "tap_dims": list(model.tap_dims) if hasattr(model, "tap_dims") else [],
+            "final_dim": int(model.final_dim) if hasattr(model, "final_dim") else -1,
             "num_classes": num_classes,
             "loss_weights_used": loss_w,
+            "exit_hint": (cfg.get("model") or {}).get("exit_hint", {}),
         },
         "train": [],
         "val": [],
