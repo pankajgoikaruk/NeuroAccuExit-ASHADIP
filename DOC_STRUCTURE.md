@@ -1,11 +1,13 @@
-# ASHADIP / NeuroAccuExit – Documentation Structure for `kexit-dev`
+# ASHADIP / NeuroAccuExit – Documentation Structure for `kexit-hint`
 
-This document defines the recommended documentation structure for the **`kexit-dev` branch**, which refactors the historical `v0.1.6` code line into a **generic K-exit / C-class** audio early-exit pipeline.
+This document defines the recommended documentation structure for the **`kexit-hint` branch**, which generalizes the historical `v0.1.6` code line into a **generic K-exit / C-class** audio early-exit pipeline and includes an optional **5-exit sequential hint-passing** path.
 
 The key distinction is:
 
 - **`v0.1.6` tag** = frozen historical **3-exit greedy baseline**
-- **`kexit-dev` branch** = reusable **K-exit / C-class** refactor validated on both **3 exits** and **5 exits**
+- **`kexit-hint` branch** = reusable **K-exit / C-class** refactor validated on both **3 exits** and **5 exits**, with an additional **5-exit sequential hint-passing experiment**
+- **`kexit_greedy_no_hint`** = current best greedy 5-exit reference on this branch
+- **`kexit_greedy_hint`** = experimental 5-exit sequential hint-passing run on this branch
 
 This document should be used for the updated mini-book / Overleaf write-up of the refactored branch, not for the frozen historical baseline.
 
@@ -13,7 +15,7 @@ This document should be used for the updated mini-book / Overleaf write-up of th
 
 ## Chapter 1 – Introduction and Motivation
 
-**Goal:** Explain why the `kexit-dev` refactor was created and what it changes.
+**Goal:** Explain why the `kexit-hint` branch was created and what it changes.
 
 ### Content to include
 
@@ -24,10 +26,12 @@ This document should be used for the updated mini-book / Overleaf write-up of th
   - the original code line was hardcoded for 3 exits
   - later research required comparing 3-exit and 5-exit settings fairly
   - a reusable K-exit implementation was needed to support future early-exit variants without rewriting the full stack
+  - later work also required testing whether **sequential exit-to-exit hint passing** could improve the 5-exit path
 - **High-level idea**
   - raw audio → segmentation → log-mel features → dynamic K-exit TinyAudioCNN + ExitNet → calibration → greedy threshold selection → segment and clip policy evaluation
 - **Main contribution of the branch**
   - successful refactor from a fixed 3-exit path to a generic **K-exit / C-class** path
+  - optional integration of a lightweight **sequential hint-passing** mechanism
 
 ---
 
@@ -50,403 +54,282 @@ This document should be used for the updated mini-book / Overleaf write-up of th
    - define dynamic `TinyAudioCNN` with configurable `tap_blocks`
 6. `models/exit_net.py`
    - define generic `ExitNet` with one head per tap plus one final head
-7. `training/train.py`
+   - optionally attach **sequential exit-to-exit hints**
+7. `utils/model_factory.py`
+   - build the correct non-hint or hint-enabled model from `config_used.yaml`
+8. `training/train.py`
    - train dynamic K-exit model and save `ckpt/best.pt`
-8. `training/calibrate.py`
+9. `training/calibrate.py`
    - fit per-exit temperatures and save `temperature.json`
-9. `training/thresholds_offline.py`
+10. `training/thresholds_offline.py`
    - select greedy `tau`
    - save `thresholds.json`
-10. `scripts/policy_test.py`
+11. `scripts/policy_test.py`
    - segment-level greedy policy evaluation
-11. `scripts/clip_policy_test.py`
+12. `scripts/clip_policy_test.py`
    - clip-wise full baseline and Depth×Time evaluation
-12. `scripts/summarize_run.py`
+13. `scripts/summarize_run.py`
    - consolidate artifacts into `summary.json`
-13. `scripts/analyse_run.py`
+14. `scripts/analyse_run.py`
    - confusion matrices, ROC, plots, analysis summary
-14. `scripts/profile_latency.py`
-   - latency profiling and on-device summary
-15. `scripts/run_reports.ps1`
-   - report regeneration and LaTeX outputs
-16. `scripts/compare_variants.py`, `scripts/variants_to_latex.py`, `scripts/ondevice_to_latex.py`, `scripts/analysis_to_latex.py`
-   - variant comparison and LaTeX table generation
-
-### Configuration and run orchestration
-
-- `configs/audio_moth.yaml`
-- `scripts/run_full.ps1`
-- `scripts/run_reports.ps1`
+15. `scripts/profile_latency.py`
+   - on-device latency and FLOPs profiling
+16. `scripts/run_reports.ps1`
+   - regenerate per-run and cross-run reports / LaTeX tables
 
 ---
 
-## Chapter 3 – Data and Preprocessing
+## Chapter 3 – Model Architecture
 
-**Goal:** Document raw data layout, preprocessing, segmentation, and split logic.
+**Goal:** Explain the generic K-exit structure and the optional hint mechanism.
 
-### Main points
+### 3.1 Dynamic backbone taps
 
-- raw input folders:
-  - `data/male/*.wav`
-  - `data/female/*.wav`
-- audio preprocessing:
-  - resampling to 16 kHz
-  - mono conversion
-  - band-pass filtering
-  - silence removal
-- segmentation:
-  - default window = 1.0 s
-  - default hop = 0.5 s
-- manifest fields in `segments.csv`:
-  - `wav_relpath`
-  - `label`
-  - `start`
-  - `duration`
-  - `split`
-  - `feat_relpath`
+- `TinyAudioCNN` exposes configurable `tap_blocks`
+- validated settings:
+  - `tap_blocks=(1,3)` → 3 exits
+  - `tap_blocks=(1,2,3,4)` → 5 exits
+
+### 3.2 Generic ExitNet
+
+- one classifier head per tap
+- one final classifier head
+- total exits = `len(tap_blocks) + 1`
+
+### 3.3 Optional sequential hint passing
+
+- each later exit can consume a small hint derived from the previous exit
+- hint source can be probabilities or logits
+- optional confidence / margin / entropy summary statistics can be included
+- hint passing is controlled from `model.exit_hint` in `configs/audio_moth.yaml`
+
+### 3.4 Important interpretation
+
+- the branch supports hint passing as an **optional architectural mechanism**
+- current results show it is **behaviorally meaningful**, but **not yet the best final greedy model**
+
+---
+
+## Chapter 4 – Training, Calibration, and Thresholding
+
+**Goal:** Explain the training and greedy stopping workflow.
+
+### Include
+
+- weighted multi-exit training
+- temperature scaling per exit
+- greedy threshold selection (`tau`)
+- dynamic reconstruction of hint and no-hint models from `config_used.yaml`
+- consistent run metadata and reporting paths
 
 ### Important implementation note
 
-Feature caches should now remain separated by tap configuration when using the main runner, so 3-exit and 5-exit runs are not accidentally mixed.
+The refactor updated the run/report scripts so that:
+
+- tap configuration is recorded in metadata
+- hint and no-hint models are reconstructed consistently from `config_used.yaml`
+- reporting regenerates safely for both 3-exit and 5-exit runs
+- schema conflicts in old CSV logs fall back to `_kexit.csv` outputs instead of corrupting older files
 
 ---
 
-## Chapter 4 – Features and Representation
+## Chapter 5 – Evaluation Protocol
 
-**Goal:** Explain how audio becomes model-ready features.
+**Goal:** Describe the three evaluation levels used in this branch.
 
-### Main points
+### 5.1 Per-exit test evaluation
 
-- log-mel spectrogram representation
-- parameters:
-  - `n_mels`
-  - `n_fft`
-  - `win_ms`
-  - `hop_ms`
-  - optional CMVN
-- `scripts/extract_features.py`
-  - creates unique per-segment feature files
-- `data/datasets.py`
-  - loads `(1, M, T)` tensors
-  - builds train / val / test loaders
+Report:
 
----
+- exit1 accuracy
+- exit2 accuracy
+- exit3 accuracy
+- exit4 accuracy
+- exit5 accuracy
 
-## Chapter 5 – Model Architecture
+### 5.2 Segment-level greedy policy
 
-**Goal:** Describe the dynamic K-exit TinyAudioCNN + ExitNet used in `kexit-dev`.
+Report:
 
-### Backbone
+- policy accuracy
+- avg exit depth
+- exit mix
+- flip-any rate
+- avg flip count
+- exit consistency
 
-- `TinyAudioCNN`
-- 5 convolutional blocks in the refactored branch
-- configurable early-exit tap points via `tap_blocks`
-- final representation after the last block
+### 5.3 Clip-level evaluation
 
-### ExitNet
+Two modes:
 
-- builds one classifier per tap feature
-- adds one final classifier at the deepest layer
-- total exits = `len(tap_blocks) + 1`
+- **full-clip baseline**
+- **Depth×Time early stopping**
 
-### Validated configurations
+Report:
 
-#### 3-exit configuration
-
-- `tap_blocks=(1,3)`
-- exits:
-  - `exit1` from block 1
-  - `exit2` from block 3 tap
-  - `exit3` final
-
-#### 5-exit configuration
-
-- `tap_blocks=(1,2,3,4)`
-- exits:
-  - `exit1`
-  - `exit2`
-  - `exit3`
-  - `exit4`
-  - `exit5` final
-
-### Interpretation
-
-- shallow exits are cheaper but weaker
-- deeper exits are more accurate but more expensive
-- 5-exit adds stronger late decision points, especially exit4 and exit5
+- clip accuracy
+- processed/used-window segment accuracy
+- avg windows used
+- windows saved (%)
+- avg compute units
+- avg depth per used window
+- compute saved (%)
+- flip-rate
+- exit consistency
 
 ---
 
-## Chapter 6 – Training, Calibration, and Threshold Selection
+## Chapter 6 – Validated Run Settings
 
-**Goal:** Explain model fitting and greedy policy calibration under the dynamic K-exit path.
+**Goal:** Record the main validated experiments in a reusable way.
 
-### 6.1 Training
-
-- train multi-exit model with per-exit losses
-- validation accuracy used for checkpoint selection
-- save `metrics.json` and `ckpt/best.pt`
-- dynamic loops used instead of hardcoded `range(3)`
-
-### 6.2 Temperature calibration
-
-- fit one scalar temperature per exit on validation data
-- save `temperature.json`
-- validated outputs:
-  - 3 temperatures for the 3-exit run
-  - 5 temperatures for the 5-exit run
-
-### 6.3 Greedy threshold selection
-
-- sweep candidate `tau` values on validation set
-- choose threshold using macro-F1 then accuracy
-- save `thresholds.json`
-
-### Validated thresholds
-
-- 3-exit run: `tau = 0.95`
-- 5-exit run: `tau = 0.92`
-
----
-
-## Chapter 7 – Evaluation, Metrics, and Reporting
-
-**Goal:** Document the evaluation outputs used in tables and graphs.
-
-### 7.1 Segment policy test (`scripts/policy_test.py`)
-
-Outputs:
-
-- `policy_results.json`
-- printed metrics:
-  - `Policy test accuracy`
-  - `Avg exit depth`
-  - `Exit mix`
-  - `Flip-any rate`
-  - `Avg flip count`
-  - `Exit consistency`
-
-### 7.2 Clip policy test (`scripts/clip_policy_test.py`)
-
-This script performs clip-wise window ordering and optional window skipping.
-
-#### Full-clip baseline
-
-Reports:
-
-- `clip_accuracy`
-- `segment_accuracy_over_processed_windows`
-- fixed-position diagnostics
-- `avg_compute_units_sum_depth_over_used_windows`
-- `avg_depth_per_used_window`
-- `exit_mix_over_used_windows`
-
-Saved file:
-
-- `clip_policy_results_full.json`
-
-#### Depth×Time
-
-Reports:
-
-- `clip_accuracy`
-- `segment_accuracy_over_used_windows`
-- `avg_windows_used`
-- `windows_saved_pct`
-- `avg_compute_units_sum_depth_over_used_windows`
-- `avg_depth_per_used_window`
-- `compute_saved_pct`
-- `flip_rate_over_used_windows`
-- `exit_consistency_taken_vs_final_over_used_windows`
-- `exit_mix_over_used_windows`
-
-Saved files:
-
-- `clip_policy_results_time.json`
-- `clip_policy_results.json`
-- `windows_used_hist.json`
-
-### 7.3 Summary, analysis, and profiling
-
-- `scripts/summarize_run.py`
-  - `summary.json`
-- `scripts/analyse_run.py`
-  - confusion matrices, ROC curves, `analysis_run.json`
-- `scripts/profile_latency.py`
-  - `profiling.json`
-  - dynamic latency and FLOPs summaries
-
-### 7.4 Dynamic reporting support
-
-The refactor also updated:
-
-- `compare_variants.py`
-- `variants_to_latex.py`
-- `ondevice_to_latex.py`
-- `analysis_to_latex.py`
-
-so reporting now supports both 3-exit and 5-exit rows.
-
----
-
-## Chapter 8 – Validated Results and Comparative Findings
-
-**Goal:** Present the actual findings from the 3-exit vs 5-exit comparison.
-
-### 8.1 Segment-level greedy results
-
-#### 3-exit (`tap_blocks=(1,3)`)
-
-- policy accuracy: **0.9754**
-- avg exit depth: **1.982**
-- exit mix:
-  - e1 = 0.3631
-  - e2 = 0.2923
-  - e3 = 0.3446
-- flip-any rate: **0.1785**
-- exit consistency: **1.0000**
-
-#### 5-exit (`tap_blocks=(1,2,3,4)`)
-
-- policy accuracy: **0.9846**
-- avg exit depth: **2.449**
-- exit mix:
-  - e1 = 0.3815
-  - e2 = 0.1323
-  - e3 = 0.2308
-  - e4 = 0.1662
-  - e5 = 0.0892
-- flip-any rate: **0.2215**
-- exit consistency: **0.9969**
-
-### Main takeaway
-
-The 5-exit model improves segment-level policy accuracy, but becomes deeper and slightly less stable.
-
-### 8.2 Per-exit test accuracy
-
-#### 3-exit
-
-- exit1 = **0.8338**
-- exit2 = **0.9385**
-- exit3 = **0.9754**
-
-#### 5-exit
-
-- exit1 = **0.8400**
-- exit2 = **0.8400**
-- exit3 = **0.9600**
-- exit4 = **0.9846**
-- exit5 = **0.9877**
-
-### Main takeaway
-
-The strongest advantage of 5-exit comes from the additional deeper exits, not from uniformly improving all intermediate exits.
-
-### 8.3 Depth×Time comparison
-
-#### 3-exit
-
-- clip accuracy: **1.0000**
-- used-window segment accuracy: **0.9778**
-- avg windows used: **2.045 / 14.773**
-- windows saved: **86.15%**
-- avg compute units: **5.364**
-- compute saved: **81.68%**
-
-#### 5-exit
-
-- clip accuracy: **1.0000**
-- used-window segment accuracy: **0.9778**
-- avg windows used: **2.045 / 14.773**
-- windows saved: **86.15%**
-- avg compute units: **7.045**
-- compute saved: **80.53%**
-
-### Main takeaway
-
-Under the current greedy Depth×Time rule, the 5-exit model does **not** improve clip-level efficiency. It matches clip accuracy and windows used, but uses more compute per used window.
-
-### 8.4 Retuning findings for the 5-exit time policy
-
-Tested settings:
-
-- `time_conf=0.97, time_stable_k=2, time_margin=0.00`
-- `time_conf=0.95, time_stable_k=3, time_margin=0.00`
-- `time_conf=0.97, time_stable_k=3, time_margin=0.00`
-- `time_conf=0.97, time_stable_k=3, time_margin=0.05`
-
-#### Observed outcome
-
-- increasing `time_conf` from 0.95 to 0.97 had **no practical effect** in the tested runs
-- adding `time_margin=0.05` also had **no practical effect**
-- increasing `time_stable_k` from 2 to 3:
-  - increased avg windows used from **2.045** to **3.000**
-  - reduced windows saved from **86.15%** to **79.69%**
-  - reduced compute saved from **80.53%** to **73.12%**
-  - only slightly reduced flip-rate
-
-#### Current best 5-exit Depth×Time setting
-
-- `time_conf=0.95`
-- `time_stable_k=2`
-- `time_min_windows=2`
-- `time_margin=0.00`
-
----
-
-## Chapter 9 – Reproducibility and Run Management
-
-**Goal:** Describe how to rerun and compare experiments safely.
-
-### Main runner
-
-- `scripts/run_full.ps1`
-
-Important flags now include:
-
-- `-Variant`
-- `-Policy`
-- `-SegmentSec`
-- `-HopSec`
-- `-NMels`
-- `-TapBlocks`
-- `-RunClipPolicy`
-- `-TimeConf`
-- `-TimeStableK`
-- `-TimeMinWindows`
-- `-EvalFixedKWindows`
-- `-TimeMargin`
-
-### Typical 3-exit command
+### 6.1 3-exit reference on this branch
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\run_full.ps1 `
-  -Variant "kexit_dev" `
+  -Variant "kexit_3exit_ref" `
   -Policy "greedy" `
   -Device "cpu" `
   -TapBlocks "1,3" `
   -RunClipPolicy
 ```
 
-### Typical 5-exit command
+### 6.2 5-exit greedy no-hint
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\run_full.ps1 `
-  -Variant "kexit_dev" `
+  -Variant "kexit_greedy_no_hint" `
   -Policy "greedy" `
   -Device "cpu" `
   -TapBlocks "1,2,3,4" `
-  -RunClipPolicy
+  -RunClipPolicy `
+  -TimeConf 0.95 `
+  -TimeStableK 2 `
+  -TimeMinWindows 2 `
+  -EvalFixedKWindows 3 `
+  -TimeMargin 0.0
 ```
 
-### Important run-management note
+### 6.3 5-exit greedy hint passing
 
-The refactor updated the run/report scripts so that:
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\run_full.ps1 `
+  -Variant "kexit_greedy_hint" `
+  -Policy "greedy" `
+  -Device "cpu" `
+  -TapBlocks "1,2,3,4" `
+  -RunClipPolicy `
+  -TimeConf 0.95 `
+  -TimeStableK 2 `
+  -TimeMinWindows 2 `
+  -EvalFixedKWindows 3 `
+  -TimeMargin 0.0
+```
 
-- tap configuration is recorded in metadata
-- reporting regenerates safely for both 3-exit and 5-exit runs
-- schema conflicts in old CSV logs fall back to `_kexit.csv` outputs instead of corrupting older files
+---
+
+## Chapter 7 – Main Results
+
+**Goal:** Present the validated 5-exit no-hint vs 5-exit hint comparison clearly.
+
+### 7.1 Per-exit test accuracy
+
+| Metric | Greedy No Hint | Greedy Hint Passing | Better |
+|---|---:|---:|---|
+| Exit1 accuracy | 0.8400 | 0.8215 | No hint |
+| Exit2 accuracy | 0.8400 | 0.8677 | Hint |
+| Exit3 accuracy | 0.9600 | 0.9292 | No hint |
+| Exit4 accuracy | 0.9846 | 0.9723 | No hint |
+| Exit5 accuracy | 0.9877 | 0.9692 | No hint |
+
+### 7.2 Segment-level greedy policy
+
+| Metric | Greedy No Hint | Greedy Hint Passing | Better |
+|---|---:|---:|---|
+| Policy accuracy | 0.9846 | 0.9723 | No hint |
+| Avg exit depth | 2.449 | 3.105 | No hint |
+| Flip-any rate | 0.2215 | 0.2246 | No hint |
+| Avg flip count | 0.2954 | 0.2954 | Tie |
+| Exit consistency | 0.9969 | 0.9969 | Tie |
+
+### 7.3 Full-clip baseline
+
+| Setting | Clip acc | Processed-win acc | First-3 diag | Avg compute units | Avg depth per used window |
+|---|---:|---:|---:|---:|---:|
+| 5-exit no hint | 1.0000 | 0.9846 | 0.9692 | 36.182 | 2.449 |
+| 5-exit hint | 1.0000 | 0.9723 | 0.9385 | 45.864 | 3.105 |
+
+### 7.4 Depth×Time
+
+| Metric | Greedy No Hint | Greedy Hint Passing | Better |
+|---|---:|---:|---|
+| Clip accuracy | 1.0000 | 1.0000 | Tie |
+| Used-window segment accuracy | 0.9778 | 0.9375 | No hint |
+| Avg windows used | 2.045 | 2.182 | No hint |
+| Windows saved (%) | 86.15 | 85.23 | No hint |
+| Avg compute units | 7.045 | 8.909 | No hint |
+| Avg depth per used window | 3.444 | 4.083 | No hint |
+| Compute saved (%) | 80.53 | 80.57 | Tie |
+| Flip-rate | 0.4222 | 0.5208 | No hint |
+| Exit consistency | 1.0000 | 1.0000 | Tie |
+
+---
+
+## Chapter 8 – Interpretation
+
+**Goal:** State clearly what the comparison means.
+
+### Main conclusions
+
+1. The refactor is successful.
+   - the same pipeline now runs both 3-exit and 5-exit settings
+   - hint and no-hint reconstruction both work end-to-end
+
+2. The current best 5-exit greedy system is the **no-hint** version.
+   - better segment-policy accuracy
+   - lower average exit depth
+   - better Depth×Time used-window accuracy
+   - fewer windows used
+   - lower flip-rate
+
+3. The hint mechanism is still behaviorally meaningful.
+   - segment-policy `exit2` usage increased from **0.1323** to **0.3877**
+   - per-exit `exit2` test accuracy improved from **0.8400** to **0.8677**
+
+4. Hint passing is not yet the better final method.
+   - it became deeper and more expensive
+   - it did not beat the no-hint greedy baseline overall
+
+5. The strongest current advantage of 5 exits still comes from deeper exits.
+   - `exit4 = 0.9846`
+   - `exit5 = 0.9877`
+
+### Recommended reviewer-safe interpretation
+
+> We do not claim that the current greedy hint version is the best final model. We keep it because it tests a real architectural idea: whether passing information from one exit to the next can improve intermediate decision quality and make earlier exits more useful. Our results show that hint passing clearly changes exit behavior and improves exit2, but it does not yet improve the overall greedy accuracy-efficiency trade-off.
+
+---
+
+## Chapter 9 – Current Scope
+
+**Goal:** State clearly what is included and excluded.
+
+### Included in this branch
+
+- greedy segment policy
+- greedy clip-wise Depth×Time policy
+- dynamic K-exit architecture
+- 3-exit and 5-exit validation
+- optional sequential exit-to-exit hint passing
+- dynamic profiling and reporting
+- binary classification
+
+### Not yet solved
+
+- EA policy tuning for the K-exit branch
+- a hint-passing configuration that clearly beats the no-hint greedy baseline
+- multiclass experiments
+- a 5-exit time policy that clearly beats the 3-exit baseline in clip-level efficiency
 
 ---
 
@@ -454,28 +337,21 @@ The refactor updated the run/report scripts so that:
 
 **Goal:** State clearly what this branch does and does not yet solve.
 
-### Current scope
-
-- binary classification only
-- greedy segment policy
-- greedy clip-wise Depth×Time policy
-- validated 3-exit and 5-exit settings
-- generic K-exit / C-class implementation
-
-### What is not yet solved
-
-- a 5-exit time policy that clearly beats the 3-exit baseline in clip-level efficiency
-- EA policy integration and retuning in this branch
-- hint-passing results in this branch
-- multiclass experiments
-
 ### Why this branch matters
 
 This branch establishes:
 
 - a reusable implementation foundation for future early-exit work
 - a fair 3-exit vs 5-exit comparison framework
+- a concrete no-hint vs hint comparison for the greedy 5-exit setting
 - a clean bridge from the historical `v0.1.6` baseline to later K-exit, EA, and hint-based variants
+
+### Best current recommendation
+
+- **historical baseline:** `v0.1.6`
+- **best current greedy 5-exit reference:** `kexit_greedy_no_hint`
+- **experimental architectural branch:** `kexit_greedy_hint`
+- **main development/documentation branch:** `kexit-hint`
 
 ---
 
@@ -486,7 +362,9 @@ Use this file as the master structure for the updated branch-level documentation
 Keep the distinction clear:
 
 - `v0.1.6` = historical frozen 3-exit greedy baseline
-- `kexit-dev` = generic K-exit refactor validated on both 3 and 5 exits
+- `kexit-hint` = current generic K-exit branch built on top of the earlier refactor work
+- `kexit_greedy_no_hint` = current best greedy 5-exit reference
+- `kexit_greedy_hint` = experimental 5-exit sequential hint-passing run
 
 When the implementation changes, update both:
 
