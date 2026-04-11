@@ -1,0 +1,13 @@
+# Paper / Thesis Ready Text — `kexit-greedy` No-Hint Baseline
+
+## Short paper-style paragraph
+
+In the no-hint greedy setting, increasing the architecture from **3 exits** to **5 exits** improved segment-level policy accuracy from **97.54%** to **98.46%**, confirming that the additional deeper exits enhance local decision quality. However, this gain did not translate into better clip-level efficiency under **Depth×Time** stopping: both variants achieved **100% clip accuracy**, used the same average number of windows (**2.045 / 14.773**), and saved the same proportion of windows (**86.15%**), while the 5-exit model incurred higher average compute cost (**5.364 → 7.045** average compute units per used window). Thus, without sequential hint passing, the additional exits improved representational quality but did not improve time-aware efficiency.
+
+## Expanded thesis-style paragraph
+
+The comparison between the 3-exit and 5-exit greedy no-hint configurations reveals an important trade-off. The 5-exit model achieves better segment-level decision quality, as shown by the increase in greedy policy accuracy from **0.9754** to **0.9846**, and by the strong performance of the late exits (`exit4 = 0.9846`, `exit5 = 0.9877`). However, this improvement comes with a higher average exit depth and slightly weaker internal stability. More importantly, the stronger late exits do not improve clip-level time-aware efficiency under the present greedy stopping rule. Both variants achieve perfect clip accuracy on the current test set and use the same average number of windows in the Depth×Time setting, yet the 5-exit model consumes more compute. This indicates that the additional exits are currently beneficial mainly as stronger deep decision stages rather than as more efficient early decision stages. Consequently, the 3-exit model should be viewed as the stronger efficiency baseline, whereas the 5-exit model should be viewed as the stronger decision-quality baseline. This result directly motivates sequential hint passing, whose purpose is to make the additional exits improve earlier decisions instead of simply adding computational cost.
+
+## Reviewer-safe answer
+
+If a reviewer asks, **"If greedy no-hint already works better for efficiency, why use sequential hint passing?"**, the answer is: the 5-exit no-hint baseline already shows that extra exits improve segment decision quality, but they do not yet improve clip-time efficiency by themselves. Sequential hint passing is therefore introduced to make those extra exits more useful, so that the added depth improves earlier decisions rather than only increasing compute.
