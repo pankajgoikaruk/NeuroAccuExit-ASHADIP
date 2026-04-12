@@ -115,22 +115,46 @@ Core code path updated for dynamic K-exit support:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\run_full.ps1 `
+  -DataRoot "data\moth_sounds" `
+  -CacheRoot "data_caches" `
+  -Config "configs\audio_moth.yaml" `
+  -RunsRoot "runs" `
   -Variant "3exit_greedy" `
   -Policy "greedy" `
   -Device "cpu" `
+  -SegmentSec 1.0 `
+  -HopSec 0.5 `
+  -NMels 64 `
   -TapBlocks "1,3" `
-  -RunClipPolicy
+  -RunClipPolicy `
+  -TimeConf 0.95 `
+  -TimeStableK 2 `
+  -TimeMinWindows 2 `
+  -EvalFixedKWindows 3 `
+  -TimeMargin 0.0
 ```
 
 ### 5-exit greedy no-hint run
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\run_full.ps1 `
+  -DataRoot "data\moth_sounds" `
+  -CacheRoot "data_caches" `
+  -Config "configs\audio_moth.yaml" `
+  -RunsRoot "runs" `
   -Variant "5exit_greedy" `
   -Policy "greedy" `
   -Device "cpu" `
+  -SegmentSec 1.0 `
+  -HopSec 0.5 `
+  -NMels 64 `
   -TapBlocks "1,2,3,4" `
-  -RunClipPolicy
+  -RunClipPolicy `
+  -TimeConf 0.95 `
+  -TimeStableK 2 `
+  -TimeMinWindows 2 `
+  -EvalFixedKWindows 3 `
+  -TimeMargin 0.0
 ```
 
 ---
