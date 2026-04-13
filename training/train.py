@@ -56,7 +56,11 @@ def _parse_tap_blocks(value) -> Optional[tuple]:
     return tuple(int(v.strip()) for v in value.split(",") if v.strip())
 
 
-def _pad_or_trim(seq: Sequence[float], target_len: int, pad_value: Optional[float] = None) -> List[float]:
+def _pad_or_trim(
+    seq: Sequence[float],
+    target_len: int,
+    pad_value: Optional[float] = None,
+) -> List[float]:
     """
     Pad/trim numeric sequence to target_len.
     If pad_value is None, pad with the last element (or 1.0 if empty).
@@ -70,6 +74,81 @@ def _pad_or_trim(seq: Sequence[float], target_len: int, pad_value: Optional[floa
 
     vals = vals + [float(pad_value)] * (target_len - len(vals))
     return vals
+
+
+def _default_loss_weights_for_num_exits(num_exits: int) -> List[float]:
+    """
+    Dynamic default loss schedules.
+
+    Recommended defaults:
+      - 3 exits: [0.3, 0.3, 1.0]
+      - 5 exits: [0.3, 0.3, 0.6, 0.8, 1.0]
+
+    Fallback:
+      - all early exits = 0.3
+      - final exit = 1.0
+    """
+    if num_exits == 3:
+        return [0.3, 0.3, 1.0]
+    if num_exits == 5:
+        return [0.3, 0.3, 0.6, 0.8, 1.0]
+
+    if num_exits <= 1:
+        return [1.0]
+
+    return [0.3] * (num_exits - 1) + [1.0]
+
+
+def _resolve_loss_weights(cfg: dict, num_exits: int) -> List[float]:
+    """
+    Resolve the effective loss weights for the built model.
+
+    Behavior:
+      1. If train.loss_weights is missing or empty -> use dynamic defaults.
+      2. If train.loss_weights exists but length != num_exits -> pad/trim and warn.
+      3. Always return a list with length == num_exits.
+    """
+    tr = cfg.setdefault("train", {})
+    raw = tr.get("loss_weights", None)
+
+    if raw is None or (isinstance(raw, (list, tuple)) and len(raw) == 0):
+        loss_w = _default_loss_weights_for_num_exits(num_exits)
+        print(
+            f"[INFO] train.loss_weights missing/empty -> using dynamic defaults "
+            f"for {num_exits} exits: {loss_w}"
+        )
+        return loss_w
+
+    loss_w = [float(x) for x in raw]
+    if len(loss_w) != num_exits:
+        print(
+            f"[WARN] train.loss_weights has length {len(loss_w)} but model has "
+            f"{num_exits} exits. Auto-adjusting."
+        )
+        loss_w = _pad_or_trim(loss_w, num_exits)
+
+    return loss_w
+
+
+def _parse_optional_bool(value):
+    """
+    Parse optional boolean from CLI.
+    Accepts: true/false, 1/0, yes/no, on/off
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+
+    s = str(value).strip().lower()
+    if s in {"1", "true", "yes", "y", "on"}:
+        return True
+    if s in {"0", "false", "no", "n", "off"}:
+        return False
+
+    raise argparse.ArgumentTypeError(
+        f"Invalid boolean value: {value}. Use true/false."
+    )
 
 
 def train_one_epoch(model, dl, opt, device, loss_w):
@@ -140,22 +219,54 @@ def _parse_extra_args():
     """
     p = argparse.ArgumentParser(add_help=False)
 
-    p.add_argument("--run_dir", type=str, default=None,
-                   help="Explicit run directory to write outputs.")
-    p.add_argument("--device", type=str, default=None,
-                   help="Force device: cpu | cuda (default: auto).")
-    p.add_argument("--cache_dir", type=str, default=None,
-                   help="Override cache directory containing segments.csv + features/.")
-    p.add_argument("--segment_sec", type=float, default=None,
-                   help="Optional: record segment_sec in effective config.")
-    p.add_argument("--hop_sec", type=float, default=None,
-                   help="Optional: record hop_sec in effective config.")
-    p.add_argument("--variant", type=str, default=None,
-                   help="Optional: record variant name in effective config.")
-
-    # Generic K-exit control
-    p.add_argument("--tap_blocks", type=str, default=None,
-                   help='Comma-separated tap blocks. Example: "1,3" or "1,2,3,4".')
+    p.add_argument(
+        "--run_dir",
+        type=str,
+        default=None,
+        help="Explicit run directory to write outputs.",
+    )
+    p.add_argument(
+        "--device",
+        type=str,
+        default=None,
+        help="Force device: cpu | cuda (default: auto).",
+    )
+    p.add_argument(
+        "--cache_dir",
+        type=str,
+        default=None,
+        help="Override cache directory containing segments.csv + features/.",
+    )
+    p.add_argument(
+        "--segment_sec",
+        type=float,
+        default=None,
+        help="Optional: record segment_sec in effective config.",
+    )
+    p.add_argument(
+        "--hop_sec",
+        type=float,
+        default=None,
+        help="Optional: record hop_sec in effective config.",
+    )
+    p.add_argument(
+        "--variant",
+        type=str,
+        default=None,
+        help="Optional: record variant name in effective config.",
+    )
+    p.add_argument(
+        "--tap_blocks",
+        type=str,
+        default=None,
+        help='Comma-separated tap blocks. Example: "1,3" or "1,2,3,4".',
+    )
+    p.add_argument(
+        "--exit_hint_enable",
+        type=_parse_optional_bool,
+        default=None,
+        help="Override model.exit_hint.enable from CLI (true/false).",
+    )
 
     args, remaining = p.parse_known_args()
     sys.argv = [sys.argv[0]] + remaining
@@ -169,13 +280,13 @@ def main():
     seed = int(cfg.get("seed", 42))
     set_global_seed(seed)
 
-    # Device
+    # ---------------- Device ----------------
     if extra.device is not None:
         device = extra.device
     else:
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # Paths
+    # ---------------- Paths ----------------
     paths = (cfg.get("paths") or {})
     runs_root = paths.get("runs_root", "runs")
     cache_root = paths.get("cache_root", "data_cache")
@@ -185,7 +296,7 @@ def main():
 
     ensure_dirs(runs_root)
 
-    # Run dir
+    # ---------------- Run dir ----------------
     if extra.run_dir:
         run_dir = extra.run_dir
         ensure_dirs(run_dir)
@@ -195,7 +306,7 @@ def main():
     ckpt_dir = os.path.join(run_dir, "ckpt")
     ensure_dirs(ckpt_dir)
 
-    # Save effective config
+    # ---------------- Runtime config (do not save yet) ----------------
     cfg.setdefault("paths", {})
     cfg["paths"]["runs_root"] = runs_root
     cfg["paths"]["cache_root"] = cache_root
@@ -212,19 +323,24 @@ def main():
         if extra.hop_sec is not None:
             cfg["audio"]["segment_hop"] = float(extra.hop_sec)
 
-    # Read tap blocks from CLI first, then config, else default to backward-compatible 3-exit
+    # ---------------- Model config overrides ----------------
+    cfg.setdefault("model", {})
+    cfg["model"].setdefault("exit_hint", {})
+
+    if extra.exit_hint_enable is not None:
+        cfg["model"]["exit_hint"]["enable"] = bool(extra.exit_hint_enable)
+
+    # Tap blocks: CLI > config > backward-compatible default
     model_cfg = (cfg.get("model") or {})
     tap_blocks = (
         _parse_tap_blocks(extra.tap_blocks)
         or _parse_tap_blocks(model_cfg.get("tap_blocks"))
         or (1, 3)
     )
-    cfg.setdefault("model", {})
+
     cfg["model"]["tap_blocks"] = list(tap_blocks)
 
-    save_config(cfg, os.path.join(run_dir, "config_used.yaml"))
-
-    # Data
+    # ---------------- Data ----------------
     seg_csv = os.path.join(cache_root, "segments.csv")
     feat_root = os.path.join(cache_root, "features")
 
@@ -233,17 +349,15 @@ def main():
     nw = int(tr.get("num_workers", 4))
     lr = float(tr.get("lr", 1e-3))
     wd = float(tr.get("weight_decay", 0.0))
-    loss_w = tr.get("loss_weights", [0.3, 0.3, 1.0])
     epochs = int(tr.get("epochs", 40))
 
     dl_tr, dl_va, dl_te, label2id = make_loaders(
         seg_csv, feat_root, bs, nw, seed=seed
     )
 
-    # Model
+    # ---------------- Model ----------------
     n_mels = int((cfg.get("features") or {}).get("n_mels", 64))
 
-    # Keep C-class generic: prefer dataset class count
     num_classes_data = len(label2id)
     num_classes_cfg = int((cfg.get("model") or {}).get("num_classes", num_classes_data))
     if num_classes_cfg != num_classes_data:
@@ -252,6 +366,7 @@ def main():
             f"{num_classes_data}. Using dataset value."
         )
     num_classes = num_classes_data
+    cfg["model"]["num_classes"] = int(num_classes)
 
     model = build_audio_exit_net(
         num_classes=num_classes,
@@ -260,9 +375,25 @@ def main():
         model_cfg=(cfg.get("model") or {}),
     ).to(device)
 
-    num_exits = model.num_exits
-    loss_w = _pad_or_trim(loss_w, num_exits)
+    # Effective exit count comes from the built model
+    num_exits = int(model.num_exits)
+    cfg["model"]["exits"] = num_exits
 
+    # Resolve dynamic loss weights AFTER model is built
+    loss_w = _resolve_loss_weights(cfg, num_exits)
+    cfg.setdefault("train", {})
+    cfg["train"]["loss_weights"] = [float(x) for x in loss_w]
+
+    # Save the effective config only now
+    save_config(cfg, os.path.join(run_dir, "config_used.yaml"))
+
+    print(
+        f"[INFO] effective model config -> tap_blocks={list(tap_blocks)}, "
+        f"num_exits={num_exits}, loss_weights={loss_w}, "
+        f"exit_hint_enable={cfg.get('model', {}).get('exit_hint', {}).get('enable', False)}"
+    )
+
+    # ---------------- Optimizer ----------------
     opt = Adam(model.parameters(), lr=lr, weight_decay=wd)
 
     metrics = {
@@ -281,19 +412,24 @@ def main():
 
     best = -1.0
 
+    # ---------------- Training loop ----------------
     for ep in range(epochs):
         tr_loss, tr_acc = train_one_epoch(model, dl_tr, opt, device, loss_w)
         va_acc = evaluate(model, dl_va, device)
 
-        metrics["train"].append({
-            "epoch": ep + 1,
-            "loss": tr_loss,
-            "acc": tr_acc,
-        })
-        metrics["val"].append({
-            "epoch": ep + 1,
-            "acc": va_acc,
-        })
+        metrics["train"].append(
+            {
+                "epoch": ep + 1,
+                "loss": tr_loss,
+                "acc": tr_acc,
+            }
+        )
+        metrics["val"].append(
+            {
+                "epoch": ep + 1,
+                "acc": va_acc,
+            }
+        )
 
         print(f"Epoch {ep + 1}: loss={tr_loss:.4f}, acc@exits={va_acc}")
 

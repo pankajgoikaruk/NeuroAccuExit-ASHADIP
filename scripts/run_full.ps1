@@ -13,9 +13,9 @@ param(
   [double]$HopSec     = 0.5,
   [int]$NMels         = 64,
 
-  # New: generic K-exit control
-  # 3 exits  -> "1,3"
-  # 5 exits  -> "1,2,3,4"
+  # Generic K-exit control
+  # 3 exits -> "1,3"
+  # 5 exits -> "1,2,3,4"
   [string]$TapBlocks  = "1,2,3,4",
 
   [switch]$RunClipPolicy,
@@ -23,7 +23,14 @@ param(
   [int]$TimeStableK   = 2,
   [int]$TimeMinWindows = 2,
   [int]$EvalFixedKWindows = 3,
-  [double]$TimeMargin = 0.0
+  [double]$TimeMargin = 0.0,
+
+  # New: CLI override for hint passing.
+  # Use:
+  #   -ExitHint "true"   -> force hint enabled
+  #   -ExitHint "false"  -> force hint disabled
+  #   omit / leave empty -> use YAML default
+  [string]$ExitHint = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -33,11 +40,22 @@ $env:KMP_DUPLICATE_LIB_OK = "TRUE"
 function Invoke-Python([string]$cmd) {
   Write-Host "  $cmd" -ForegroundColor DarkGray
   Invoke-Expression $cmd
-  if ($LASTEXITCODE -ne 0) { throw "Python command failed ($LASTEXITCODE): $cmd" }
+  if ($LASTEXITCODE -ne 0) {
+    throw "Python command failed ($LASTEXITCODE): $cmd"
+  }
 }
 
 function ConvertTo-Id([double]$x) {
   return ($x.ToString("0.###") -replace '\.', 'p')
+}
+
+# --------------------- Validate / normalize ExitHint ---------------------
+if ($ExitHint -ne "") {
+  $eh = $ExitHint.Trim().ToLower()
+  if ($eh -notin @("true", "false")) {
+    throw "ExitHint must be either 'true' or 'false'."
+  }
+  $ExitHint = $eh
 }
 
 # --------------------- Run directory scheme: runs/<Variant>/<Variant>_### ---------------------
@@ -94,6 +112,11 @@ Write-Host "  SegmentSec      = $SegmentSec"      -ForegroundColor DarkGray
 Write-Host "  HopSec          = $HopSec"          -ForegroundColor DarkGray
 Write-Host "  NMels           = $NMels"           -ForegroundColor DarkGray
 Write-Host "  TapBlocks       = $TapBlocks"       -ForegroundColor DarkGray
+if ($ExitHint -ne "") {
+  Write-Host "  ExitHint        = $ExitHint (CLI override)" -ForegroundColor DarkGray
+} else {
+  Write-Host "  ExitHint        = YAML default" -ForegroundColor DarkGray
+}
 Write-Host "  RunDir          = $runPath"         -ForegroundColor DarkGray
 Write-Host "  RunClipPolicy   = $RunClipPolicy"   -ForegroundColor DarkGray
 
@@ -114,38 +137,45 @@ else {
     $variantCacheDir, $NMels)
 }
 
+# --------------------- Optional CLI arg for training.train ---------------------
+$TrainHintArg = ""
+if ($ExitHint -ne "") {
+  $TrainHintArg = " --exit_hint_enable $ExitHint"
+}
+
 # --------------------- 3/10) Train ExitNet ---------------------
 Write-Host "`n[3/10] Train ExitNet..." -ForegroundColor Yellow
-Invoke-Python ('python -m training.train --config "{0}" --run_dir "{1}" --cache_dir "{2}" --device "{3}" --segment_sec {4} --hop_sec {5} --variant "{6}" --tap_blocks "{7}"' -f `
-  $Config, $runPath, $variantCacheDir, $Device, $SegmentSec, $HopSec, $Variant, $TapBlocks)
+Invoke-Python ('python -m training.train --config "{0}" --run_dir "{1}" --cache_dir "{2}" --device "{3}" --segment_sec {4} --hop_sec {5} --variant "{6}" --tap_blocks "{7}"{8}' -f `
+  $Config, $runPath, $variantCacheDir, $Device, $SegmentSec, $HopSec, $Variant, $TapBlocks, $TrainHintArg)
 
 Write-Host "Using run: $runPath" -ForegroundColor Green
 
 # Save meta.json for traceability
 $createdAtIso = Get-Date -Format o
 $meta = @{
-  run_id        = $runId
-  variant       = $Variant
-  variant_safe  = $VariantSafe
-  created_at    = $createdAtIso
-  runs_root     = $RunsRoot
-  variant_dir   = $variantRunDir
-  cache_root    = $CacheRoot
-  cache_id      = $CacheIdSafe
-  cache_dir     = $variantCacheDir
-  data_root     = $DataRoot
-  device        = $Device
-  policy        = $Policy
-  segment_sec   = $SegmentSec
-  hop_sec       = $HopSec
-  n_mels        = $NMels
-  tap_blocks    = $TapBlocks
-  run_clip_policy = [bool]$RunClipPolicy
-  time_conf     = $TimeConf
-  time_stable_k = $TimeStableK
-  time_min_windows = $TimeMinWindows
+  run_id              = $runId
+  variant             = $Variant
+  variant_safe        = $VariantSafe
+  created_at          = $createdAtIso
+  runs_root           = $RunsRoot
+  variant_dir         = $variantRunDir
+  cache_root          = $CacheRoot
+  cache_id            = $CacheIdSafe
+  cache_dir           = $variantCacheDir
+  data_root           = $DataRoot
+  device              = $Device
+  policy              = $Policy
+  segment_sec         = $SegmentSec
+  hop_sec             = $HopSec
+  n_mels              = $NMels
+  tap_blocks          = $TapBlocks
+  exit_hint_override  = $(if ($ExitHint -ne "") { $ExitHint } else { "yaml_default" })
+  run_clip_policy     = [bool]$RunClipPolicy
+  time_conf           = $TimeConf
+  time_stable_k       = $TimeStableK
+  time_min_windows    = $TimeMinWindows
   eval_fixed_k_windows = $EvalFixedKWindows
-  time_margin   = $TimeMargin
+  time_margin         = $TimeMargin
 }
 New-Item -ItemType Directory -Path $runPath -ErrorAction SilentlyContinue | Out-Null
 $meta | ConvertTo-Json -Depth 8 | Out-File -FilePath (Join-Path $runPath "meta.json") -Encoding UTF8
@@ -207,11 +237,24 @@ New-Item -ItemType Directory -Path $analysisDir -ErrorAction SilentlyContinue | 
 $runtimeCsv = Join-Path $analysisDir "pipeline_runtime.csv"
 
 if (-not (Test-Path $runtimeCsv)) {
-  "timestamp,variant,policy,segment_sec,hop_sec,device,cache_dir,runs_root,run_id,total_seconds,total_minutes,run_clip_policy,tap_blocks" | Out-File $runtimeCsv -Encoding UTF8
+  "timestamp,variant,policy,segment_sec,hop_sec,device,cache_dir,runs_root,run_id,total_seconds,total_minutes,run_clip_policy,tap_blocks,exit_hint_override" | Out-File $runtimeCsv -Encoding UTF8
 }
 
-$csvLine = "{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10},{11}" -f `
-  $timestampIso, $Variant, $Policy, $SegmentSec, $HopSec, $Device, $variantCacheDir, $RunsRoot, $runId, $totalSeconds, $totalMinutes, [bool]$RunClipPolicy, $TapBlocks
+$csvLine = "{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10},{11},{12},{13}" -f `
+  $timestampIso, `
+  $Variant, `
+  $Policy, `
+  $SegmentSec, `
+  $HopSec, `
+  $Device, `
+  $variantCacheDir, `
+  $RunsRoot, `
+  $runId, `
+  $totalSeconds, `
+  $totalMinutes, `
+  [bool]$RunClipPolicy, `
+  $TapBlocks, `
+  $(if ($ExitHint -ne "") { $ExitHint } else { "yaml_default" })
 
 Add-Content -Path $runtimeCsv -Value $csvLine
 Write-Host "Pipeline runtime logged to: $runtimeCsv" -ForegroundColor DarkGray

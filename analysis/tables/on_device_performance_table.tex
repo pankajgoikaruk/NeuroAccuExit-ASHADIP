@@ -3,13 +3,14 @@
   \caption{Average on-device latency per ASHADIP variant under dynamic K-exit settings.}
   \label{tab:on_device_performance}
   \resizebox{\textwidth}{!}{%
-  \begin{tabular}{llrlrrrrrrr}
+  \begin{tabular}{llrlrrrrr}
     \toprule
-    Variant & Device & K & Runs & Exit1 (ms) & Exit2 (ms) & Exit3 (ms) & Exit4 (ms) & Exit5 (ms) & Full (ms) & Save (\%) \\
+    Variant & Device & K & Runs & Exit1 (ms) & Exit2 (ms) & Exit3 (ms) & Full (ms) & Save (\%) \\
     \midrule
-    kexit_dev & cpu & 3 & 2 & 0.24 & 2.33 & 6.52 & -- & -- & 6.52 & 53.8 \\
-    kexit_dev & cpu & 5 & 1 & 0.28 & 1.93 & 2.75 & 4.40 & 7.70 & 7.70 & 68.6 \\
-    kexit_greedy_no_hint & cpu & 5 & 3 & 0.28 & 1.95 & 2.79 & 4.46 & 7.80 & 7.80 & 68.6 \\
+    3exit_greedy & cpu & 3 & 1 & 0.24 & 2.40 & 6.72 & 6.72 & 53.8 \\
+    3exit_greedy_hint & cpu & 3 & 1 & 0.25 & 2.52 & 7.06 & 7.06 & 58.6 \\
+    5exit_greedy & cpu & 3 & 1 & 0.26 & 1.81 & 2.58 & 2.58 & 65.3 \\
+    5exit_greedy_hint & cpu & 3 & 1 & 0.28 & 1.97 & 2.81 & 2.81 & 67.7 \\
     \bottomrule
   \end{tabular}
   }
