@@ -1,64 +1,123 @@
 # ASHADIP / NeuroAccuExit — `kexit-greedy-hint` Generic K-Exit Greedy + Hint Audio Pipeline
 
-This branch documents the **`kexit-greedy-hint`** line, which now contains the corrected and unified workflow for:
+This branch documents the corrected **`kexit-greedy-hint`** workflow built on top of the historical **`v0.1.6`** line.
+
+The original `v0.1.6` tag remains the frozen **3-exit greedy baseline**. In contrast, `kexit-greedy-hint` provides a reusable **generic K-exit / C-class** implementation that supports both:
 
 - **3 exits** with `tap_blocks=(1,3)`
 - **5 exits** with `tap_blocks=(1,2,3,4)`
-- **greedy no-hint** runs
-- **greedy hint-enabled** runs
 
-The original `v0.1.6` tag remains the frozen historical **3-exit greedy baseline**. In contrast, `kexit-greedy-hint` is the current reusable branch for **generic K-exit / C-class**, **CLI-controlled hint vs no-hint**, and the corrected four-run comparison.
+and both:
 
----
+- **greedy no-hint**
+- **greedy hint-enabled**
 
-## What this branch is
+The task remains:
 
-This branch provides a single code path that can run all four validated variants:
+- binary moth wingbeat gender classification (**male** vs **female**)
+- log-mel spectrogram input
+- **TinyAudioCNN + ExitNet** early-exit model family
 
-- `3exit_greedy`
-- `5exit_greedy`
-- `3exit_greedy_hint`
-- `5exit_greedy_hint`
+This branch now supports:
 
-The branch now supports:
-
-- dynamic backbone taps via `tap_blocks`
+- dynamic backbone taps
 - dynamic `ExitNet` heads
-- dynamic reconstruction of **3-exit** and **5-exit** models
-- dynamic reconstruction of **hint** and **no-hint** models
-- dynamic loss weights based on the actual number of exits
-- CLI control of `exit_hint.enable` through `-ExitHint "true|false"`
-- corrected saving of effective run config into `config_used.yaml`
-- segment policy, full-clip, and Depth×Time evaluation
-- reporting, profiling, and LaTeX table generation
+- dynamic training / evaluation / calibration loops
+- dynamic greedy threshold selection
+- dynamic segment-policy evaluation
+- dynamic clip-wise **Depth×Time** evaluation
+- optional **sequential exit-to-exit hint passing**
+- CLI control of hint / no-hint through `-ExitHint "true|false"`
+- corrected saving of the effective run config into `config_used.yaml`
 
 ---
 
-## What was implemented / corrected
+## Why this branch exists
 
-### Generic K-exit support
+The old `v0.1.6` line was still hardcoded around a **3-exit** model. This branch generalizes that path so the same codebase can compare:
+
+- compact vs deeper exit hierarchies
+- no-hint vs hint-enabled runs
+- segment-level vs clip-level behavior
+- accuracy vs compute trade-offs
+
+The branch also fixes the earlier configuration mismatch that affected the provisional 5-exit hinted setup. The current results are based on the corrected dynamic configuration.
+
+---
+
+## Main architectural change
+
+### Before
+The historical line assumed:
+
+- a fixed 3-exit backbone
+- a fixed 3-head `ExitNet`
+- training / eval loops written around `range(3)`
+- fixed 3-exit configuration assumptions in downstream scripts
+
+### Now
+The branch supports a **generic K-exit structure**:
+
 - `TinyAudioCNN` exposes configurable `tap_blocks`
-- total exits are derived from `len(tap_blocks) + 1`
+- `ExitNet` builds one head per tap plus one final head
+- total exits = `len(tap_blocks) + 1`
 
-### Hint / no-hint control from CLI
-The workflow no longer requires manual YAML edits for every run.  
-You now choose hinting from the command line:
+Validated settings:
 
-- `-ExitHint "false"` → no-hint
-- `-ExitHint "true"` → hint-enabled
+- `tap_blocks=(1,3)` → **3 exits**
+- `tap_blocks=(1,2,3,4)` → **5 exits**
 
-### Correct effective config saving
-The training code now:
-1. builds the model first
-2. derives the actual number of exits
-3. resolves dynamic loss weights
-4. saves the effective `config_used.yaml`
+The branch also supports optional **sequential exit-to-exit hint passing**:
 
-This matters because earlier 5-exit hinted experiments were affected by a config mismatch between the declared exit count and the actual built model. That issue has now been cleaned up.
+- later exits may consume a small hint derived from the previous exit
+- hint can be switched on/off from the CLI
+- the same shared YAML can be used for all four validated runs
 
 ---
 
-## Exact validated run commands
+## Current pipeline overview
+
+1. prepare segmented audio manifest
+2. extract log-mel features
+3. train dynamic K-exit model
+4. calibrate per-exit temperatures
+5. select greedy threshold `tau`
+6. evaluate segment policy
+7. evaluate clip policy
+   - full-clip baseline
+   - Depth×Time early stopping
+8. summarize, analyze, and profile the run
+9. generate reports and LaTeX tables
+
+---
+
+## Files updated in this refactor
+
+Core code path updated for dynamic K-exit support and corrected hinted model reconstruction:
+
+- `adapters/audio_adapter.py`
+- `models/exit_net.py`
+- `training/train.py`
+- `training/eval.py`
+- `training/calibrate.py`
+- `training/thresholds_offline.py`
+- `scripts/policy_test.py`
+- `scripts/clip_policy_test.py`
+- `scripts/summarize_run.py`
+- `scripts/analyse_run.py`
+- `scripts/profile_latency.py`
+- `utils/model_factory.py`
+- `utils/profiling.py`
+- `scripts/run_full.ps1`
+- `scripts/run_reports.ps1`
+- `scripts/compare_variants.py`
+- `scripts/variants_to_latex.py`
+- `scripts/ondevice_to_latex.py`
+- `scripts/analysis_to_latex.py`
+
+---
+
+## Validated run settings
 
 ### 3-exit no-hint
 ```powershell
@@ -106,250 +165,9 @@ powershell -ExecutionPolicy Bypass -File scripts\run_full.ps1 `
 
 ---
 
-## Main results table
-
-| Setting | Hint | Policy acc | Avg exit depth | Full-clip avg compute | Depth×Time used-win acc | Depth×Time avg windows | Depth×Time avg compute | Depth×Time compute saved | Best interpretation |
-|---|---|---:|---:|---:|---:|---:|---:|---:|---|
-| `3exit_greedy` | No | 0.9754 | 1.982 | 29.273 | 0.9778 | 2.045 / 14.773 | 5.364 | 81.68% | Strong simple no-hint efficiency baseline |
-| `5exit_greedy` | No | 0.9908 | 2.637 | 38.955 | 0.9778 | 2.045 / 14.773 | 7.318 | 80.53% | Best deep-capacity no-hint baseline |
-| `3exit_greedy_hint` | Yes | 0.9908 | 1.895 | 28.000 | 1.0000 | 2.000 / 14.773 | 4.955 | 82.31% | Best overall efficiency-quality tradeoff |
-| `5exit_greedy_hint` | Yes | 0.9723 | 2.465 | 36.409 | 0.9783 | 2.091 / 14.773 | 7.455 | 79.53% | Hint not yet beneficial in current 5-exit setup |
-
-### Per-exit test accuracy
-
-| Setting | Exit1 | Exit2 | Exit3 | Exit4 | Exit5 |
-|---|---:|---:|---:|---:|---:|
-| `3exit_greedy` | 0.8338 | 0.9385 | 0.9754 | — | — |
-| `5exit_greedy` | 0.8369 | 0.8892 | 0.9723 | 0.9754 | 0.9908 |
-| `3exit_greedy_hint` | 0.8369 | 0.9662 | 0.9908 | — | — |
-| `5exit_greedy_hint` | 0.8308 | 0.8646 | 0.9231 | 0.9538 | 0.9692 |
-
----
-
-## Short interpretation of the corrected four-run comparison
-
-The corrected four-run comparison now tells a much cleaner story than the earlier provisional results. **`3exit_greedy_hint`** and **`5exit_greedy`** tie for the best segment-level greedy policy accuracy at **0.9908**, but they reach that result in different ways. **`3exit_greedy_hint`** delivers the best overall **efficiency-quality tradeoff**, with the lowest full-clip compute among the high-accuracy models, the lowest Depth×Time compute (**4.955**), perfect clip accuracy, and the highest compute saving (**82.31%**). In contrast, **`5exit_greedy`** is now the strongest **deep-capacity no-hint baseline** after the corrected dynamic configuration, with very strong later exits and matched best segment accuracy, but it remains more compute-expensive than the compact 3-exit hinted model.
-
-The most important negative result is that **`5exit_greedy_hint`** still does not improve the deeper greedy pipeline under the current design. Its segment policy accuracy falls to **0.9723**, its later exits are weaker than `5exit_greedy`, and its Depth×Time compute (**7.455**) is worse than both `3exit_greedy_hint` and `5exit_greedy`. This means the current evidence supports the claim that **sequential hint passing works very well in the compact 3-exit setting, but does not yet benefit the deeper 5-exit greedy setting**.
-
-### Reviewer-safe conclusion
-
-- **`3exit_greedy_hint`** = best **efficiency-quality** result
-- **`5exit_greedy`** = best **deep-capacity no-hint** result
-- **`5exit_greedy_hint`** = not yet beneficial under the current setup
-
-This is a strong and balanced research story because it shows both a clear success case and a clear limitation.
-
----
-
-## Excel-aligned master table section
-
-The following tables mirror the updated workbook structure and keep the same blocks:
-
-- Segment Random Greedy Policy Test
-- Full-Clip Sequential Greedy Policy Test
-- Depth × Time Clip Greedy Policy Test
-- Key Change
-
-> **Note:** `3-window diagnostic (K=3)` means **3 windows per clip**, not 3 exits.
-
-### Master table — `3exit-greedy`
-
-<table>
-  <tr><th>Metric</th><th>Segment Random Greedy Policy Test</th><th>Full-Clip Sequential Greedy Policy Test</th><th>Depth × Time Clip Greedy Policy Test</th><th>Key Change</th></tr>
-  <tr><td>PowerShell Command</td><td><code>powershell -ExecutionPolicy Bypass -File scripts\run_full.ps1 `</code><br><code>-Variant "3exit_greedy" `</code><br><code>-Policy "greedy" `</code><br><code>-Device "cpu" `</code><br><code>-TapBlocks "1,3" `</code><br><code>-ExitHint "false" `</code><br><code>-RunClipPolicy</code></td><td>—</td><td>—</td><td>Strong no-hint greedy efficiency baseline. Achieves 97.54% segment policy accuracy and perfect clip accuracy with relatively low compute. Useful simple baseline, but now surpassed by 3exit_greedy_hint in both accuracy and Depth×Time efficiency.</td></tr>
-  <tr><td>Files</td><td>Train: 99, Test: 22, Val: 21</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Segment</td><td>Train: 1646, Test: 325, Val: 246</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Policy</td><td>Greedy</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Device</td><td>CPU</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>SegmentSec</td><td>1.0</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>HopSec</td><td>0.5</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>NMels</td><td>64.0</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>TimeConf</td><td>0.95</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>TimeStableK</td><td>2.0</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>TimeMinWindows</td><td>2.0</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>EvalFixedKWindows</td><td>3.0</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>TimeMargin</td><td>0.0</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Exit1 Accuracy</td><td>0.8338</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Exit2 Accuracy</td><td>0.9385</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Exit3 Accuracy</td><td>0.9754</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Policy test accuracy</td><td>0.9754 (n_segments=325)</td><td>0.9754 (n_segments=325)</td><td>0.9778 (n_segments=45)</td><td>—</td></tr>
-  <tr><td>Avg exit depth</td><td>1.982</td><td>1.982</td><td>2.622</td><td>—</td></tr>
-  <tr><td>Exit mix</td><td>e1=0.3631, e2=0.2923, e3=0.3446</td><td>e1=0.3631, e2=0.2923, e3=0.3446</td><td>e1=0.0889, e2=0.2000, e3=0.7111</td><td>—</td></tr>
-  <tr><td>Flip-rate (any flip)</td><td>0.1785</td><td>0.1785 (used windows)</td><td>0.4000 (used windows)</td><td>—</td></tr>
-  <tr><td>Avg flip-count</td><td>0.2031</td><td>N/A</td><td>N/A</td><td>—</td></tr>
-  <tr><td>Exit-consistency (taken==final)</td><td>1.0</td><td>1 (used windows)</td><td>1 (used windows)</td><td>—</td></tr>
-  <tr><td>Windows Saved (%)</td><td>0.0</td><td>0.0</td><td>0.8615</td><td>—</td></tr>
-  <tr><td>Compute Saved (%)</td><td>0.0</td><td>0.0</td><td>0.8168</td><td>—</td></tr>
-  <tr><td>Window distribution mode</td><td>N/A</td><td>N/A</td><td>N/A</td><td>—</td></tr>
-  <tr><td>Clip-metrics (segment-policy, for fair comparison)</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Clip accuracy</td><td>N/A</td><td>1.0</td><td>1.0</td><td>—</td></tr>
-  <tr><td>Avg windows used</td><td>N/A</td><td>14.773 / 14.773 (100%)</td><td>2.045 / 14.773</td><td>—</td></tr>
-  <tr><td>Avg compute units (sum depth over used windows)</td><td>N/A</td><td>29.273</td><td>5.364</td><td>—</td></tr>
-  <tr><td>Fixed-position diagnostic (independent of time-exit)</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>3-window diagnostic Acc_firstK</td><td>—</td><td>0.9538 (n_segments=65)</td><td>0.9538 (n_segments=65)</td><td>—</td></tr>
-  <tr><td>3-window diagnostic Acc_midK</td><td>—</td><td>0.9538 (n_segments=65)</td><td>0.9538 (n_segments=65)</td><td>—</td></tr>
-  <tr><td>3-window diagnostic Acc_lastK</td><td>—</td><td>0.9692 (n_segments=65)</td><td>0.9692 (n_segments=65)</td><td>—</td></tr>
-  <tr><td>Stop-speed group diagnostic (Depth×Time only; first-K accuracy)</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>stop_1</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>stop_2</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>stop_3</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Confusion matrix (clip-level)</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Per_Class: Female</td><td>—</td><td>Precision: 1.0, Recall:1.0, f1: 1.0, Support:12</td><td>Precision: 1.0, Recall:1.0, f1: 1.0, Support:12</td><td>—</td></tr>
-  <tr><td>Per_Class: Male</td><td>—</td><td>Precision: 1.0, Recall:1.0, f1: 1.0, Support:10</td><td>Precision: 1.0, Recall:1.0, f1: 1.0, Support:10</td><td>—</td></tr>
-  <tr><td>Total Time</td><td>207.38 seconds (~3.46 minutes)</td><td>—</td><td>—</td><td>—</td></tr>
-</table>
-
-### Master table — `5exit-greedy`
-
-<table>
-  <tr><th>Metric</th><th>Segment Random Greedy Policy Test</th><th>Full-Clip Sequential Greedy Policy Test</th><th>Depth × Time Clip Greedy Policy Test</th><th>Key Change</th></tr>
-  <tr><td>PowerShell Command</td><td><code>powershell -ExecutionPolicy Bypass -File scripts\run_full.ps1 `</code><br><code>-Variant "5exit_greedy" `</code><br><code>-Policy "greedy" `</code><br><code>-Device "cpu" `</code><br><code>-TapBlocks "1,2,3,4" `</code><br><code>-ExitHint "false" `</code><br><code>-RunClipPolicy</code></td><td>—</td><td>—</td><td>Best deep-capacity no-hint baseline after the corrected dynamic configuration. Ties for best segment policy accuracy at 99.08% and provides very strong late exits, but remains more compute-expensive than 3exit_greedy_hint.</td></tr>
-  <tr><td>Files</td><td>Train: 99, Test: 22, Val: 21</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Segment</td><td>Train: 1646, Test: 325, Val: 246</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Policy</td><td>Greedy</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Device</td><td>CPU</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>SegmentSec</td><td>1.0</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>HopSec</td><td>0.5</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>NMels</td><td>64.0</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>TimeConf</td><td>0.95</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>TimeStableK</td><td>2.0</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>TimeMinWindows</td><td>2.0</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>EvalFixedKWindows</td><td>3.0</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>TimeMargin</td><td>0.0</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Exit1 Accuracy</td><td>0.8369</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Exit2 Accuracy</td><td>0.8892</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Exit3 Accuracy</td><td>0.9723</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Exit4 Accuracy</td><td>0.9754</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Exit5 Accuracy</td><td>0.9908</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Policy test accuracy</td><td>0.9908 (n_segments=325)</td><td>0.9908 (n_segments=325)</td><td>0.9778 (n_segments=45)</td><td>—</td></tr>
-  <tr><td>Avg exit depth</td><td>2.637</td><td>2.637</td><td>3.578</td><td>—</td></tr>
-  <tr><td>Exit mix</td><td>e1=0.3569, e2=0.0308, e3=0.3538, e4=0.1354, e5=0.1231</td><td>e1=0.3569, e2=0.0308, e3=0.3538, e4=0.1354, e5=0.1231</td><td>e1=0.0889, e2=0.0000, e3=0.3778, e4=0.3111, e5=0.2222</td><td>—</td></tr>
-  <tr><td>Flip-rate (any flip)</td><td>0.1908</td><td>0.1908 (used windows)</td><td>0.4222 (used windows)</td><td>—</td></tr>
-  <tr><td>Avg flip-count</td><td>0.2338</td><td>N/A</td><td>N/A</td><td>—</td></tr>
-  <tr><td>Exit-consistency (taken==final)</td><td>1.0</td><td>0.9969 (used windows)</td><td>1 (used windows)</td><td>—</td></tr>
-  <tr><td>Windows Saved (%)</td><td>0.0</td><td>0.0</td><td>0.86152</td><td>—</td></tr>
-  <tr><td>Compute Saved (%)</td><td>0.0</td><td>0.0</td><td>0.8053</td><td>—</td></tr>
-  <tr><td>Window distribution mode</td><td>N/A</td><td>N/A</td><td>N/A</td><td>—</td></tr>
-  <tr><td>Clip-metrics (segment-policy, for fair comparison)</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Clip accuracy</td><td>N/A</td><td>1.0000 (n_clips=22)</td><td>1.0000 (n_clips=22)</td><td>—</td></tr>
-  <tr><td>Avg windows used</td><td>N/A</td><td>14.773 / 14.773 (100%)</td><td>2.045 / 14.773</td><td>—</td></tr>
-  <tr><td>Avg compute units (sum depth over used windows)</td><td>N/A</td><td>38.955</td><td>7.318</td><td>—</td></tr>
-  <tr><td>Fixed-position diagnostic (independent of time-exit)</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>3-window diagnostic Acc_firstK</td><td>—</td><td>0.9846 (n_segments=65)</td><td>0.9846 (n_segments=65)</td><td>—</td></tr>
-  <tr><td>3-window diagnostic Acc_midK</td><td>—</td><td>1.0000 (n_segments=65)</td><td>1.0000 (n_segments=65)</td><td>—</td></tr>
-  <tr><td>3-window diagnostic Acc_lastK</td><td>—</td><td>0.9846 (n_segments=65)</td><td>0.9846 (n_segments=65)</td><td>—</td></tr>
-  <tr><td>Stop-speed group diagnostic (Depth×Time only; first-K accuracy)</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>stop_2</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>stop_3_4</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>stop_5_plus</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Confusion matrix (clip-level)</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Per_Class: Female</td><td>—</td><td>Precision: 1.0, Recall:1.0, f1: 1.0, Support:12</td><td>Precision: 1.0, Recall:1.0, f1: 1.0, Support:12</td><td>—</td></tr>
-  <tr><td>Per_Class: Male</td><td>—</td><td>Precision: 1.0, Recall:1.0, f1: 1.0, Support:10</td><td>Precision: 1.0, Recall:1.0, f1: 1.0, Support:10</td><td>—</td></tr>
-  <tr><td>Total Time</td><td>217.69 seconds (~3.63 minutes)</td><td>—</td><td>—</td><td>—</td></tr>
-</table>
-
-### Master table — `3exit-greedy-hint`
-
-<table>
-  <tr><th>Metric</th><th>Segment Random Greedy Policy Test</th><th>Full-Clip Sequential Greedy Policy Test</th><th>Depth × Time Clip Greedy Policy Test</th><th>Key Change</th></tr>
-  <tr><td>PowerShell Command</td><td><code>powershell -ExecutionPolicy Bypass -File scripts\run_full.ps1 `</code><br><code>-Variant "3exit_greedy_hint" `</code><br><code>-Policy "greedy" `</code><br><code>-Device "cpu" `</code><br><code>-TapBlocks "1,3" `</code><br><code>-ExitHint "true" `</code><br><code>-RunClipPolicy</code></td><td>—</td><td>—</td><td>Best overall efficiency-quality result. Sequential hint passing raises segment policy accuracy from 97.54% to 99.08%, keeps perfect clip accuracy, reduces average exit depth and full/depth-time compute, and gives the strongest deployment-ready tradeoff.</td></tr>
-  <tr><td>Files</td><td>Train: 99, Test: 22, Val: 21</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Segment</td><td>Train: 1646, Test: 325, Val: 246</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Policy</td><td>Greedy</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Device</td><td>CPU</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>SegmentSec</td><td>1.0</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>HopSec</td><td>0.5</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>NMels</td><td>64.0</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>TimeConf</td><td>0.95</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>TimeStableK</td><td>2.0</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>TimeMinWindows</td><td>2.0</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>EvalFixedKWindows</td><td>3.0</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>TimeMargin</td><td>0.0</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Exit1 Accuracy</td><td>0.8369</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Exit2 Accuracy</td><td>0.9662</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Exit3 Accuracy</td><td>0.9908</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Policy test accuracy</td><td>0.9908 (n_segments=325)</td><td>0.9908 (n_segments=325)</td><td>1.0000 (n_segments=44)</td><td>—</td></tr>
-  <tr><td>Avg exit depth</td><td>1.895</td><td>1.895</td><td>2.477</td><td>—</td></tr>
-  <tr><td>Exit mix</td><td>e1=0.3846, e2=0.3354, e3=0.2800</td><td>e1=0.3846, e2=0.3354, e3=0.2800</td><td>e1=0.0909, e2=0.3409, e3=0.568</td><td>—</td></tr>
-  <tr><td>Flip-rate (any flip)</td><td>0.1908</td><td>0.1908 (used windows)</td><td>0.3864 (used windows)</td><td>—</td></tr>
-  <tr><td>Avg flip-count</td><td>0.2154</td><td>N/A</td><td>N/A</td><td>—</td></tr>
-  <tr><td>Exit-consistency (taken==final)</td><td>1.0</td><td>1 (used windows)</td><td>1 (used windows)</td><td>—</td></tr>
-  <tr><td>Windows Saved (%)</td><td>0.0</td><td>0.0</td><td>0.8646</td><td>—</td></tr>
-  <tr><td>Compute Saved (%)</td><td>0.0</td><td>0.0</td><td>0.8231</td><td>—</td></tr>
-  <tr><td>Window distribution mode</td><td>N/A</td><td>N/A</td><td>N/A</td><td>—</td></tr>
-  <tr><td>Clip-metrics (segment-policy, for fair comparison)</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Clip accuracy</td><td>N/A</td><td>1.0</td><td>1.0</td><td>—</td></tr>
-  <tr><td>Avg windows used</td><td>N/A</td><td>14.773 / 14.773 (100%)</td><td>2.000 / 14.773</td><td>—</td></tr>
-  <tr><td>Avg compute units (sum depth over used windows)</td><td>N/A</td><td>28.0</td><td>4.955</td><td>—</td></tr>
-  <tr><td>Fixed-position diagnostic (independent of time-exit)</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>3-window diagnostic Acc_firstK</td><td>—</td><td>1.0000 (n_segments=65)</td><td>1.0000 (n_segments=65)</td><td>—</td></tr>
-  <tr><td>3-window diagnostic Acc_midK</td><td>—</td><td>1.0000 (n_segments=65)</td><td>1.0000 (n_segments=65)</td><td>—</td></tr>
-  <tr><td>3-window diagnostic Acc_lastK</td><td>—</td><td>0.9692 (n_segments=65)</td><td>0.9692 (n_segments=65)</td><td>—</td></tr>
-  <tr><td>Stop-speed group diagnostic (Depth×Time only; first-K accuracy)</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>stop_1</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>stop_2</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>stop_3</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Confusion matrix (clip-level)</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Per_Class: Female</td><td>—</td><td>Precision: 1.0, Recall:1.0, f1: 1.0, Support:12</td><td>Precision: 1.0, Recall:1.0, f1: 1.0, Support:12</td><td>—</td></tr>
-  <tr><td>Per_Class: Male</td><td>—</td><td>Precision: 1.0, Recall:1.0, f1: 1.0, Support:10</td><td>Precision: 1.0, Recall:1.0, f1: 1.0, Support:10</td><td>—</td></tr>
-  <tr><td>Total Time</td><td>208.9 seconds (~3.48 minutes)</td><td>—</td><td>—</td><td>—</td></tr>
-</table>
-
-### Master table — `5exit-greedy-hint`
-
-<table>
-  <tr><th>Metric</th><th>Segment Random Greedy Policy Test</th><th>Full-Clip Sequential Greedy Policy Test</th><th>Depth × Time Clip Greedy Policy Test</th><th>Key Change</th></tr>
-  <tr><td>PowerShell Command</td><td><code>powershell -ExecutionPolicy Bypass -File scripts\run_full.ps1 `</code><br><code>-Variant "5exit_greedy_hint" `</code><br><code>-Policy "greedy" `</code><br><code>-Device "cpu" `</code><br><code>-TapBlocks "1,2,3,4" `</code><br><code>-ExitHint "true" `</code><br><code>-RunClipPolicy</code></td><td>—</td><td>—</td><td>Still weaker than 5exit_greedy under the corrected setup. Hint passing does not improve the deeper greedy pipeline yet: policy accuracy drops to 97.23%, and Depth×Time compute/efficiency remain worse than both 3exit_greedy_hint and 5exit_greedy.</td></tr>
-  <tr><td>Files</td><td>Train: 99, Test: 22, Val: 21</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Segment</td><td>Train: 1646, Test: 325, Val: 246</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Policy</td><td>Greedy</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Device</td><td>CPU</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>SegmentSec</td><td>1.0</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>HopSec</td><td>0.5</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>NMels</td><td>64.0</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>TimeConf</td><td>0.95</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>TimeStableK</td><td>2.0</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>TimeMinWindows</td><td>2.0</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>EvalFixedKWindows</td><td>3.0</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>TimeMargin</td><td>0.0</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Exit1 Accuracy</td><td>0.8308</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Exit2 Accuracy</td><td>0.8646</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Exit3 Accuracy</td><td>0.9231</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Exit4 Accuracy</td><td>0.9538</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Exit5 Accuracy</td><td>0.9692</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Policy test accuracy</td><td>0.9723 (n_segments=325)</td><td>0.9723 (n_segments=325)</td><td>0.9783 (n_segments=48)</td><td>—</td></tr>
-  <tr><td>Avg exit depth</td><td>2.465</td><td>2.465</td><td>3.565</td><td>—</td></tr>
-  <tr><td>Exit mix</td><td>e1=0.3723, e2=0.1354, e3=0.2677, e4=0.1046, e5=0.1200</td><td>e1=0.0554, e2=0.3877, e3=0.1385, e4=0.2338, e5=0.1846</td><td>e1=0.0870, e2=0.0652, e3=0.3043, e4=0.2826, e5=0.2609</td><td>—</td></tr>
-  <tr><td>Flip-rate (any flip)</td><td>0.2123</td><td>0.2123 (used windows)</td><td>0.4565 (used windows)</td><td>—</td></tr>
-  <tr><td>Avg flip-count</td><td>0.2492</td><td>N/A</td><td>N/A</td><td>—</td></tr>
-  <tr><td>Exit-consistency (taken==final)</td><td>0.9908</td><td>0.9908 (used windows)</td><td>1 (used windows)</td><td>—</td></tr>
-  <tr><td>Windows Saved (%)</td><td>0.0</td><td>0.0</td><td>0.8585</td><td>—</td></tr>
-  <tr><td>Compute Saved (%)</td><td>0.0</td><td>0.0</td><td>0.7953</td><td>—</td></tr>
-  <tr><td>Window distribution mode</td><td>N/A</td><td>N/A</td><td>N/A</td><td>—</td></tr>
-  <tr><td>Clip-metrics (segment-policy, for fair comparison)</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Clip accuracy</td><td>N/A</td><td>1.0000 (n_clips=22)</td><td>1.0000 (n_clips=22)</td><td>—</td></tr>
-  <tr><td>Avg windows used</td><td>N/A</td><td>14.773 / 14.773 (100%)</td><td>2.091 / 14.773</td><td>—</td></tr>
-  <tr><td>Avg compute units (sum depth over used windows)</td><td>N/A</td><td>36.409</td><td>7.455</td><td>—</td></tr>
-  <tr><td>Fixed-position diagnostic (independent of time-exit)</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>3-window diagnostic Acc_firstK</td><td>—</td><td>0.9538 (n_segments=65)</td><td>0.9538 (n_segments=65)</td><td>—</td></tr>
-  <tr><td>3-window diagnostic Acc_midK</td><td>—</td><td>0.9538 (n_segments=65)</td><td>0.9538 (n_segments=65)</td><td>—</td></tr>
-  <tr><td>3-window diagnostic Acc_lastK</td><td>—</td><td>0.9385 (n_segments=65)</td><td>0.9385 (n_segments=65)</td><td>—</td></tr>
-  <tr><td>Stop-speed group diagnostic (Depth×Time only; first-K accuracy)</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>stop_2</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>stop_3_4</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>stop_5_plus</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Confusion matrix (clip-level)</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-  <tr><td>Per_Class: Female</td><td>—</td><td>Precision: 1.0, Recall:1.0, f1: 1.0, Support:12</td><td>Precision: 1.0, Recall:1.0, f1: 1.0, Support:12</td><td>—</td></tr>
-  <tr><td>Per_Class: Male</td><td>—</td><td>Precision: 1.0, Recall:1.0, f1: 1.0, Support:10</td><td>Precision: 1.0, Recall:1.0, f1: 1.0, Support:10</td><td>—</td></tr>
-  <tr><td>Total Time</td><td>217.69 seconds (~3.63 minutes)</td><td>—</td><td>—</td><td>—</td></tr>
-</table>
-
----
-
 ## Main run artifacts
 
-Each run directory contains the usual core outputs:
+Each run directory contains the usual outputs:
 
 - `ckpt/best.pt`
 - `metrics.json`
@@ -369,6 +187,57 @@ Each run directory contains the usual core outputs:
 
 ---
 
+## Validated results and findings
+
+### Per-exit test accuracy
+
+| Setting | Exit1 | Exit2 | Exit3 | Exit4 | Exit5 |
+|---|---:|---:|---:|---:|---:|
+| `3exit_greedy` | 0.8338 | 0.9385 | 0.9754 | — | — |
+| `5exit_greedy` | 0.8369 | 0.8892 | 0.9723 | 0.9754 | 0.9908 |
+| `3exit_greedy_hint` | 0.8369 | 0.9662 | 0.9908 | — | — |
+| `5exit_greedy_hint` | 0.8308 | 0.8646 | 0.9231 | 0.9538 | 0.9692 |
+
+### Segment-level results table
+
+| Setting | Hint | Policy acc | Avg exit depth | Flip-any rate | Avg flip-count | Exit consistency | Best interpretation |
+|---|---|---:|---:|---:|---:|---:|---|
+| `3exit_greedy` | No | 0.9754 | 1.982 | 0.1785 | 0.2031 | 1.0000 | Strong simple no-hint efficiency baseline |
+| `5exit_greedy` | No | 0.9908 | 2.637 | 0.1908 | 0.2338 | 1.0000 | Best deep-capacity no-hint baseline |
+| `3exit_greedy_hint` | Yes | 0.9908 | 1.895 | 0.1908 | 0.2154 | 1.0000 | Best overall efficiency-quality tradeoff |
+| `5exit_greedy_hint` | Yes | 0.9723 | 2.465 | 0.2123 | 0.2492 | 0.9908 | Hint not yet beneficial in current 5-exit setup |
+
+### Clip-based results table
+
+| Setting | Hint | Clip mode | Clip acc | Used-window acc | Avg depth per used window | Avg windows used | Flip rate | Windows saved | Avg compute units | Compute saved | Best interpretation |
+|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `3exit_greedy` | No | Full-clip | 1.0000 | 0.9754 | 1.982 | 14.773 / 14.773 | 0.1785 | 0.00% | 29.273 | 0.00% | Full-window baseline for 3-exit no-hint |
+| `3exit_greedy` | No | Depth×Time | 1.0000 | 0.9778 | 2.622 | 2.045 / 14.773 | 0.4000 | 86.15% | 5.364 | 81.68% | Strong no-hint clip efficiency baseline |
+| `5exit_greedy` | No | Full-clip | 1.0000 | 0.9908 | 2.637 | 14.773 / 14.773 | 0.1908 | 0.00% | 38.955 | 0.00% | Strong deep no-hint full-window baseline |
+| `5exit_greedy` | No | Depth×Time | 1.0000 | 0.9778 | 3.578 | 2.045 / 14.773 | 0.4222 | 86.15% | 7.318 | 80.53% | Best deep-capacity no-hint clip baseline |
+| `3exit_greedy_hint` | Yes | Full-clip | 1.0000 | 0.9908 | 1.895 | 14.773 / 14.773 | 0.1908 | 0.00% | 28.000 | 0.00% | Best compact hinted full-window baseline |
+| `3exit_greedy_hint` | Yes | Depth×Time | 1.0000 | 1.0000 | 2.477 | 2.000 / 14.773 | 0.3864 | 86.46% | 4.955 | 82.31% | Best overall efficiency-quality clip result |
+| `5exit_greedy_hint` | Yes | Full-clip | 1.0000 | 0.9723 | 2.465 | 14.773 / 14.773 | 0.2123 | 0.00% | 36.409 | 0.00% | Corrected 5-exit hinted full-window result |
+| `5exit_greedy_hint` | Yes | Depth×Time | 1.0000 | 0.9783 | 3.565 | 2.091 / 14.773 | 0.4565 | 85.85% | 7.455 | 79.53% | Hint still not beneficial in current 5-exit setup |
+
+---
+
+## Short interpretation of the corrected four-run comparison
+
+The corrected four-run comparison now gives a much cleaner and more credible research story. **`3exit_greedy_hint`** and **`5exit_greedy`** tie for the best segment-level greedy policy accuracy at **0.9908**, but they reach that result through different trade-offs. **`3exit_greedy_hint`** provides the best overall **efficiency-quality tradeoff**, with lower average exit depth, lower full-clip and Depth×Time compute, perfect clip accuracy, and the strongest compute saving. In contrast, **`5exit_greedy`** is now the strongest **deep-capacity no-hint baseline**, with very strong deeper exits and matched best segment accuracy, but it remains more compute-expensive than the compact hinted model.
+
+The most important negative result is that **`5exit_greedy_hint`** still does not improve the deeper greedy pipeline under the current design. Its policy accuracy remains lower than `5exit_greedy`, its deeper exits are weaker, and its Depth×Time compute is not competitive with either `3exit_greedy_hint` or `5exit_greedy`. Therefore, the corrected evidence supports the claim that **sequential hint passing works very well in the compact 3-exit setting, but does not yet benefit the deeper 5-exit greedy setting**.
+
+### Reviewer-safe conclusion
+
+- **`3exit_greedy_hint`** = best **efficiency-quality** result
+- **`5exit_greedy`** = best **deep-capacity no-hint** result
+- **`5exit_greedy_hint`** = not yet beneficial under the current setup
+
+This is a strong and balanced branch-level conclusion because it shows both a clear success case and a clear limitation.
+
+---
+
 ## Current research takeaway
 
 This branch should now be described as:
@@ -376,3 +245,112 @@ This branch should now be described as:
 > a corrected and reusable **generic K-exit / C-class** greedy branch with **CLI-controlled hint vs no-hint**, validated across four runs and showing that hint passing is highly effective in the **3-exit** setting but not yet beneficial in the current **5-exit** greedy setting.
 
 That is the cleanest documentation position for `kexit-greedy-hint` right now.
+
+
+---
+
+## Additional comparison tables from workbook draft
+
+The workbook includes several useful comparison tables. They are worth keeping, but a few names are clearer after minor revision and all difference columns should be computed explicitly.
+
+### Recommended table names
+
+- **Segment-level greedy policy comparison**
+- **Per-exit test accuracy comparison**
+- **Exit mix comparison (segment policy and Depth×Time)**
+- **Depth×Time comparison: no-hint vs hint passing**
+- **Full-clip vs Depth×Time accuracy-efficiency tradeoff**
+
+> In the tables below, **Δ** means:
+> - **Hint−No-Hint** for Tables 1–4
+> - **Depth×Time−Full** for Table 5
+
+### 1) Segment-level greedy policy comparison
+
+| Metric | 3exit No-Hint | 3exit Hint | Δ (Hint−No-Hint) | 5exit No-Hint | 5exit Hint | Δ (Hint−No-Hint) |
+|---|---:|---:|---:|---:|---:|---:|
+| Policy accuracy | 0.9754 | 0.9908 | +0.0154 | 0.9908 | 0.9723 | -0.0185 |
+| Avg exit depth | 1.982 | 1.895 | -0.0870 | 2.637 | 2.465 | -0.1720 |
+| Flip-any rate | 0.1785 | 0.1908 | +0.0123 | 0.1908 | 0.2123 | +0.0215 |
+| Avg flip count | 0.2031 | 0.2154 | +0.0123 | 0.2338 | 0.2492 | +0.0154 |
+| Exit consistency | 1.0000 | 1.0000 | +0.0000 | 1.0000 | 0.9908 | -0.0092 |
+
+### 2) Per-exit test accuracy comparison
+
+| Metric | 3exit No-Hint | 3exit Hint | Δ (Hint−No-Hint) | 5exit No-Hint | 5exit Hint | Δ (Hint−No-Hint) |
+|---|---:|---:|---:|---:|---:|---:|
+| Exit1 accuracy | 0.8338 | 0.8369 | +0.0031 | 0.8369 | 0.8308 | -0.0061 |
+| Exit2 accuracy | 0.9385 | 0.9662 | +0.0277 | 0.8892 | 0.8646 | -0.0246 |
+| Exit3 accuracy | 0.9754 | 0.9908 | +0.0154 | 0.9723 | 0.9231 | -0.0492 |
+| Exit4 accuracy | — | — | — | 0.9754 | 0.9538 | -0.0216 |
+| Exit5 accuracy | — | — | — | 0.9908 | 0.9692 | -0.0216 |
+
+### 3) Exit mix comparison (segment policy and Depth×Time)
+
+#### 3-exit
+
+| Exit | 3exit No-Hint Segment | 3exit Hint Segment | Δ | 3exit No-Hint Depth×Time | 3exit Hint Depth×Time | Δ |
+|---|---:|---:|---:|---:|---:|---:|
+| e1 | 0.3631 | 0.3846 | +0.0215 | 0.0889 | 0.0909 | +0.0020 |
+| e2 | 0.2923 | 0.3354 | +0.0431 | 0.2000 | 0.3409 | +0.1409 |
+| e3 | 0.3446 | 0.2800 | -0.0646 | 0.7111 | 0.5680 | -0.1431 |
+
+#### 5-exit
+
+| Exit | 5exit No-Hint Segment | 5exit Hint Segment | Δ | 5exit No-Hint Depth×Time | 5exit Hint Depth×Time | Δ |
+|---|---:|---:|---:|---:|---:|---:|
+| e1 | 0.3569 | 0.3723 | +0.0154 | 0.0889 | 0.0870 | -0.0019 |
+| e2 | 0.0308 | 0.1354 | +0.1046 | 0.0000 | 0.0652 | +0.0652 |
+| e3 | 0.3538 | 0.2677 | -0.0861 | 0.3778 | 0.3043 | -0.0735 |
+| e4 | 0.1354 | 0.1046 | -0.0308 | 0.3111 | 0.2826 | -0.0285 |
+| e5 | 0.1231 | 0.1200 | -0.0031 | 0.2222 | 0.2609 | +0.0387 |
+
+### 4) Depth×Time comparison: no-hint vs hint passing
+
+| Metric | 3exit No-Hint | 3exit Hint | Δ (Hint−No-Hint) | 5exit No-Hint | 5exit Hint | Δ (Hint−No-Hint) |
+|---|---:|---:|---:|---:|---:|---:|
+| Used-window segment accuracy | 0.9778 | 1.0000 | +0.0222 | 0.9778 | 0.9783 | +0.0005 |
+| Avg depth per used window | 2.622 | 2.477 | -0.1450 | 3.578 | 3.565 | -0.0130 |
+| Clip accuracy | 1.0000 | 1.0000 | +0.0000 | 1.0000 | 1.0000 | +0.0000 |
+| Avg windows used | 2.045 / 14.773 | 2.000 / 14.773 | -0.045 / 14.773 | 2.045 / 14.773 | 2.091 / 14.773 | +0.046 / 14.773 |
+| Windows saved | 86.15% | 86.46% | +0.31 pp | 86.15% | 85.85% | -0.30 pp |
+| Compute saved | 81.68% | 82.31% | +0.63 pp | 80.53% | 79.53% | -1.00 pp |
+| Avg compute units | 5.364 | 4.955 | -0.4090 | 7.318 | 7.455 | +0.1370 |
+| Flip-rate | 0.4000 | 0.3864 | -0.0136 | 0.4222 | 0.4565 | +0.0343 |
+| Exit consistency | 1.0000 | 1.0000 | +0.0000 | 1.0000 | 1.0000 | +0.0000 |
+
+### 5) Full-clip vs Depth×Time accuracy-efficiency tradeoff
+
+| Metric | 3exit NH Full | 3exit NH Depth×Time | Δ (DT−Full) | 5exit NH Full | 5exit NH Depth×Time | Δ (DT−Full) | 3exit Hint Full | 3exit Hint Depth×Time | Δ (DT−Full) | 5exit Hint Full | 5exit Hint Depth×Time | Δ (DT−Full) |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Used-window segment accuracy | 0.9754 | 0.9778 | +0.0024 | 0.9908 | 0.9778 | -0.0130 | 0.9908 | 1.0000 | +0.0092 | 0.9723 | 0.9783 | +0.0060 |
+| Clip accuracy | 1.0000 | 1.0000 | +0.0000 | 1.0000 | 1.0000 | +0.0000 | 1.0000 | 1.0000 | +0.0000 | 1.0000 | 1.0000 | +0.0000 |
+| Avg depth per used window | 1.982 | 2.622 | +0.640 | 2.637 | 3.578 | +0.941 | 1.895 | 2.477 | +0.582 | 2.465 | 3.565 | +1.100 |
+| Avg windows used | 14.773 / 14.773 | 2.045 / 14.773 | -12.728 / 14.773 | 14.773 / 14.773 | 2.045 / 14.773 | -12.728 / 14.773 | 14.773 / 14.773 | 2.000 / 14.773 | -12.773 / 14.773 | 14.773 / 14.773 | 2.091 / 14.773 | -12.682 / 14.773 |
+| Windows saved | 0.00% | 86.15% | +86.15 pp | 0.00% | 86.15% | +86.15 pp | 0.00% | 86.46% | +86.46 pp | 0.00% | 85.85% | +85.85 pp |
+| Compute saved | 0.00% | 81.68% | +81.68 pp | 0.00% | 80.53% | +80.53 pp | 0.00% | 82.31% | +82.31 pp | 0.00% | 79.53% | +79.53 pp |
+| Avg compute units | 29.273 | 5.364 | -23.909 | 38.955 | 7.318 | -31.637 | 28.000 | 4.955 | -23.045 | 36.409 | 7.455 | -28.954 |
+| Flip-rate | 0.1785 | 0.4000 | +0.2215 | 0.1908 | 0.4222 | +0.2314 | 0.1908 | 0.3864 | +0.1956 | 0.2123 | 0.4565 | +0.2442 |
+| Exit consistency | 1.0000 | 1.0000 | +0.0000 | 0.9969 | 1.0000 | +0.0031 | 1.0000 | 1.0000 | +0.0000 | 0.9908 | 1.0000 | +0.0092 |
+
+### Are all evaluation aspects covered?
+
+You covered the **core evaluation space well**. The five proposed tables are useful and, after renaming and filling the difference columns, they capture the most important views of the results:
+
+1. **Segment-level greedy policy comparison** — suitable name  
+2. **Per-exit test accuracy comparison** — suitable name  
+3. **Exit mix comparison (segment policy and Depth×Time)** — better than just “Exit Mix”  
+4. **Depth×Time comparison: no-hint vs hint passing** — clearer than “Greedy-Depth×Time No-Hint or Hint Passing”  
+5. **Full-clip vs Depth×Time accuracy-efficiency tradeoff** — better than “Full Clip vs Depth * Time-Based Accuracy vs Efficiency Tradeoff”
+
+The only important correction is that your original draft of Table 5 did **not** include the **5exit_greedy_hint** block. That row group should be included, otherwise the tradeoff analysis is incomplete.
+
+### Optional additions
+
+The current five tables are enough for `README.md` and `DOC_STRUCTURE.md`. If you want one more table later, the most useful optional addition would be:
+
+- **Calibration / threshold summary**  
+  Columns could include: temperatures, selected `tau`, and maybe ECE.
+
+That is useful for appendix/thesis detail, but it is **not required** for the main README.
+
