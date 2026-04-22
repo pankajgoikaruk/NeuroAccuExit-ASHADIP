@@ -3,3 +3,9 @@
 2026-04-12T19:36:27.9938142+01:00,5exit_greedy,greedy,1,0.5,cpu,data_caches\5exit_greedy\seg1_hop0p5_bp100-3000_mels64_tap1-2-3-4,runs,5exit_greedy_001,218.87,3.65,True,1,2,3,4,false
 2026-04-12T20:24:08.8059576+01:00,3exit_greedy_hint,greedy,1,0.5,cpu,data_caches\3exit_greedy_hint\seg1_hop0p5_bp100-3000_mels64_tap1-3,runs,3exit_greedy_hint_001,210.17,3.5,True,1,3,true
 2026-04-12T20:29:33.1283204+01:00,5exit_greedy_hint,greedy,1,0.5,cpu,data_caches\5exit_greedy_hint\seg1_hop0p5_bp100-3000_mels64_tap1-2-3-4,runs,5exit_greedy_hint_001,219.61,3.66,True,1,2,3,4,true
+2026-04-18T20:51:28.0386337+01:00,gs3,greedy,1,0.5,cpu,data_caches\gs3\s1_h05_t13_ng5,runs,gs3_001,421.44,7.02,True,1,3,yaml_default
+2026-04-18T21:13:10.4634896+01:00,gs3_hint,greedy,1,0.5,cpu,data_caches\gs3_hint\s1_h05_t13_ng5,runs,gs3_hint_001,426.47,7.11,True,1,3,true
+2026-04-18T21:38:49.2658289+01:00,gs5,greedy,1,0.5,cpu,data_caches\gs5\s1_h05_t1234_ng5,runs,gs5_001,439.83,7.33,True,1,2,3,4,yaml_default
+2026-04-18T21:47:50.6976354+01:00,gs5_hint,greedy,1,0.5,cpu,data_caches\gs5_hint\s1_h05_t1234_ng5,runs,gs5_hint_001,449.7,7.49,True,1,2,3,4,true
+2026-04-19T06:42:50.8011202+01:00,gs3_h025,greedy,1,0.25,cpu,data_caches\gs3_h025\s1_h025_t13_ng5,runs,gs3_h025_001,548.42,9.14,True,1,3,yaml_default
+2026-04-19T08:29:06.0143733+01:00,gs3_hint_h025,greedy,1,0.25,cpu,data_caches\gs3_hint_h025\s1_h025_t13_ng5,runs,gs3_hint_h025_001,508.32,8.47,True,1,3,true

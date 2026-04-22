@@ -14,6 +14,8 @@ Thumbs.db
 .vscode/
 
 # Data / caches / runs (do not commit)
+data2*/
+data3*/
 data_cache*/
 data_caches*/
 data_cache_v*/

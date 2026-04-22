@@ -1,12 +1,12 @@
 # scripts/run_full.ps1
 
 param(
-  [string]$DataRoot   = "data\moth_sounds",
+  [string]$DataRoot   = "data2",
   [string]$CacheRoot  = "data_caches",
   [string]$CacheId    = "",
   [string]$Config     = "configs\audio_moth.yaml",
   [string]$RunsRoot   = "runs",
-  [string]$Variant    = "V0",
+  [string]$Variant    = "gunshot_greedy_hint",
   [string]$Policy     = "greedy",
   [string]$Device     = "cpu",
   [double]$SegmentSec = 1.0,
@@ -25,7 +25,12 @@ param(
   [int]$EvalFixedKWindows = 3,
   [double]$TimeMargin = 0.0,
 
-  # New: CLI override for hint passing.
+  # New: gunshot data-prep controls
+  [double]$MinKeepSec = 0.25,
+  [int]$MaxSegmentsPerFileGunshot = 0,
+  [int]$MaxSegmentsPerFileNonGunshot = 5,
+
+  # CLI override for hint passing.
   # Use:
   #   -ExitHint "true"   -> force hint enabled
   #   -ExitHint "false"  -> force hint disabled
@@ -83,7 +88,9 @@ if ([string]::IsNullOrWhiteSpace($CacheId)) {
   $segId = ConvertTo-Id $SegmentSec
   $hopId = ConvertTo-Id $HopSec
   $tapId = (($TapBlocks -replace '\s+', '') -replace ',', '-')
-  $CacheId = "seg$segId" + "_hop$hopId" + "_bp100-3000" + "_mels$NMels" + "_tap$tapId"
+  $ngCapId = $(if ($MaxSegmentsPerFileNonGunshot -gt 0) { "ngcap$MaxSegmentsPerFileNonGunshot" } else { "ngcapAll" })
+  $gCapId  = $(if ($MaxSegmentsPerFileGunshot -gt 0) { "gcap$MaxSegmentsPerFileGunshot" } else { "gcapAll" })
+  $CacheId = "seg$segId" + "_hop$hopId" + "_bp100-3000" + "_mels$NMels" + "_tap$tapId" + "_$gCapId" + "_$ngCapId"
 }
 
 $CacheIdSafe     = ($CacheId -replace '[^A-Za-z0-9_-]', '_')
@@ -112,6 +119,9 @@ Write-Host "  SegmentSec      = $SegmentSec"      -ForegroundColor DarkGray
 Write-Host "  HopSec          = $HopSec"          -ForegroundColor DarkGray
 Write-Host "  NMels           = $NMels"           -ForegroundColor DarkGray
 Write-Host "  TapBlocks       = $TapBlocks"       -ForegroundColor DarkGray
+Write-Host "  MinKeepSec      = $MinKeepSec"      -ForegroundColor DarkGray
+Write-Host "  GCap/File       = $MaxSegmentsPerFileGunshot" -ForegroundColor DarkGray
+Write-Host "  NGCap/File      = $MaxSegmentsPerFileNonGunshot" -ForegroundColor DarkGray
 if ($ExitHint -ne "") {
   Write-Host "  ExitHint        = $ExitHint (CLI override)" -ForegroundColor DarkGray
 } else {
@@ -128,13 +138,13 @@ if ($cacheReady) {
 else {
   # --------------------- 1/10) Prep segments ---------------------
   Write-Host "`n[1/10] Prep segments..." -ForegroundColor Yellow
-  Invoke-Python ('python -m scripts.prep_segments --root "{0}" --cache "{1}" --sr 16000 --segment_sec {2} --hop {3} --silence_dbfs -40 --bandpass 100 3000 --config "{4}"' -f `
-    $DataRoot, $variantCacheDir, $SegmentSec, $HopSec, $Config)
+  Invoke-Python ('python -m scripts.prep_segments --root "{0}" --cache "{1}" --sr 16000 --segment_sec {2} --hop {3} --silence_dbfs -40 --bandpass 100 3000 --min_keep_sec {4} --max_segments_per_file_gunshot {5} --max_segments_per_file_non_gunshot {6} --config "{7}"' -f `
+    $DataRoot, $variantCacheDir, $SegmentSec, $HopSec, $MinKeepSec, $MaxSegmentsPerFileGunshot, $MaxSegmentsPerFileNonGunshot, $Config)
 
   # --------------------- 2/10) Extract features ---------------------
   Write-Host "`n[2/10] Extract features..." -ForegroundColor Yellow
-  Invoke-Python ('python -m scripts.extract_features --cache "{0}" --n_mels {1} --n_fft 1024 --win_ms 25 --hop_ms 10 --cmvn' -f `
-    $variantCacheDir, $NMels)
+  Invoke-Python ('python -m scripts.extract_features --cache "{0}" --n_mels {1} --n_fft 1024 --win_ms 25 --hop_ms 10 --cmvn --pad_short' -f `
+  $variantCacheDir, $NMels)
 }
 
 # --------------------- Optional CLI arg for training.train ---------------------
@@ -153,29 +163,32 @@ Write-Host "Using run: $runPath" -ForegroundColor Green
 # Save meta.json for traceability
 $createdAtIso = Get-Date -Format o
 $meta = @{
-  run_id              = $runId
-  variant             = $Variant
-  variant_safe        = $VariantSafe
-  created_at          = $createdAtIso
-  runs_root           = $RunsRoot
-  variant_dir         = $variantRunDir
-  cache_root          = $CacheRoot
-  cache_id            = $CacheIdSafe
-  cache_dir           = $variantCacheDir
-  data_root           = $DataRoot
-  device              = $Device
-  policy              = $Policy
-  segment_sec         = $SegmentSec
-  hop_sec             = $HopSec
-  n_mels              = $NMels
-  tap_blocks          = $TapBlocks
-  exit_hint_override  = $(if ($ExitHint -ne "") { $ExitHint } else { "yaml_default" })
-  run_clip_policy     = [bool]$RunClipPolicy
-  time_conf           = $TimeConf
-  time_stable_k       = $TimeStableK
-  time_min_windows    = $TimeMinWindows
+  run_id               = $runId
+  variant              = $Variant
+  variant_safe         = $VariantSafe
+  created_at           = $createdAtIso
+  runs_root            = $RunsRoot
+  variant_dir          = $variantRunDir
+  cache_root           = $CacheRoot
+  cache_id             = $CacheIdSafe
+  cache_dir            = $variantCacheDir
+  data_root            = $DataRoot
+  device               = $Device
+  policy               = $Policy
+  segment_sec          = $SegmentSec
+  hop_sec              = $HopSec
+  n_mels               = $NMels
+  tap_blocks           = $TapBlocks
+  min_keep_sec         = $MinKeepSec
+  max_segments_gunshot = $MaxSegmentsPerFileGunshot
+  max_segments_non_gunshot = $MaxSegmentsPerFileNonGunshot
+  exit_hint_override   = $(if ($ExitHint -ne "") { $ExitHint } else { "yaml_default" })
+  run_clip_policy      = [bool]$RunClipPolicy
+  time_conf            = $TimeConf
+  time_stable_k        = $TimeStableK
+  time_min_windows     = $TimeMinWindows
   eval_fixed_k_windows = $EvalFixedKWindows
-  time_margin         = $TimeMargin
+  time_margin          = $TimeMargin
 }
 New-Item -ItemType Directory -Path $runPath -ErrorAction SilentlyContinue | Out-Null
 $meta | ConvertTo-Json -Depth 8 | Out-File -FilePath (Join-Path $runPath "meta.json") -Encoding UTF8
