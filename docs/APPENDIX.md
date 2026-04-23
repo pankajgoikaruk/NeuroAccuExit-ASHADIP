@@ -1,100 +1,178 @@
-# Appendix: Additional Comparison Tables for `kexit-greedy-hint-gunshot`
+# Appendix: Additional Tables for `kexit-greedy-gunshot-segment`
 
-This appendix provides compact comparison tables for the current **gunshot vs non-gunshot** branch-level evaluation on `kexit-greedy-hint-gunshot`.
+This appendix provides compact tables for the current **generic segmentation + multiclass greedy** branch-level evaluation on `kexit-greedy-gunshot-segment`.
 
-The four validated greedy runs are:
-- `gs3`
-- `gs3_hint`
-- `gs5`
-- `gs5_hint`
+The current validated stable run is:
 
-Throughout Tables A–D, the difference column is defined as:
+- `kexit_greedy_gunshot_segment_001`
 
-- **Δ = Hint − No-Hint**
+A key note for this appendix is that the current validated run is a **segment-level greedy baseline**.  
+The current result set does **not** include validated clip-policy outputs because the run used:
 
-For Table E, the difference column is defined as:
+- `RunClipPolicy = False`
 
-- **Δ = Depth×Time − Full-Clip**
+Therefore, this appendix focuses on:
 
-A key note for this appendix is that the current gunshot dataset has a much smaller average clip window budget than the earlier moth setting. In this branch, the full-clip denominator is **3.012** windows per clip, not **14.773**. Therefore, all accuracy-efficiency comparisons below must be interpreted in the context of the **current dataset and current preprocessing**, not forced to match the earlier branch.
-
----
-
-## Table A. Segment-level greedy policy comparison
-
-| Exit setting | No-hint policy acc | Hint policy acc | Δ policy acc | No-hint avg exit depth | Hint avg exit depth | Δ avg exit depth | No-hint flip-any | Hint flip-any | Δ flip-any | No-hint avg flip count | Hint avg flip count | Δ avg flip count | No-hint exit consistency | Hint exit consistency | Δ exit consistency |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 3-exit | 0.9548 | 0.9535 | -0.0013 | 1.801 | 1.810 | +0.009 | 0.1628 | 0.1809 | +0.0181 | 0.1731 | 0.2003 | +0.0272 | 0.9935 | 0.9987 | +0.0052 |
-| 5-exit | 0.9587 | 0.9561 | -0.0026 | 2.265 | 2.288 | +0.023 | 0.2080 | 0.1744 | -0.0336 | 0.2532 | 0.2054 | -0.0478 | 0.9987 | 0.9910 | -0.0077 |
-
-**Interpretation.**  
-Hint passing does **not** improve segment-level greedy policy accuracy in either 3-exit or 5-exit on this gunshot dataset. In 3-exit, hint is slightly worse and slightly deeper. In 5-exit, hint is also slightly worse in policy accuracy, although it reduces flip-any rate. So the current hinted models alter routing behavior, but they do not improve the main segment-policy decision quality.
+- dataset inventory
+- segmentation statistics
+- per-exit test accuracy
+- segment-level greedy policy
+- current research findings
 
 ---
 
-## Table B. Per-exit test accuracy comparison
+## Table A. Inventory summary of the current validated dataset
 
-| Setting | Exit1 | Exit2 | Exit3 | Exit4 | Exit5 |
+| Class | Files | Min sec | Median sec | Mean sec | Max sec |
 |---|---:|---:|---:|---:|---:|
-| `gs3` | 0.8269 | 0.9380 | 0.9587 | — | — |
-| `gs3_hint` | 0.8165 | 0.9432 | 0.9548 | — | — |
-| Δ (Hint − No-Hint) | -0.0104 | +0.0052 | -0.0039 | — | — |
-| `gs5` | 0.8049 | 0.9057 | 0.9509 | 0.9651 | 0.9599 |
-| `gs5_hint` | 0.8140 | 0.8915 | 0.9496 | 0.9561 | 0.9625 |
-| Δ (Hint − No-Hint) | +0.0091 | -0.0142 | -0.0013 | -0.0090 | +0.0026 |
+| car_crash | 92 | 1.0000 | 2.3064 | 2.9281 | 10.8639 |
+| conversation | 81 | 1.4800 | 3.0000 | 14.6656 | 994.3688 |
+| engine_idling | 65 | 1.0376 | 8.0000 | 11.3280 | 36.0000 |
+| fireworks | 14 | 1.3095 | 21.0000 | 108.0361 | 770.2427 |
+| gun_shot | 187 | 0.4988 | 1.5084 | 1.9196 | 44.0000 |
+| rain | 100 | 4.9995 | 5.0000 | 5.0000 | 5.0005 |
+| road_traffic | 121 | 3.9998 | 4.9999 | 5.4463 | 60.0000 |
+| scream | 151 | 0.5151 | 1.5020 | 1.7642 | 6.5912 |
+| thunderstorm | 100 | 4.9995 | 5.0000 | 5.0000 | 5.0005 |
+| wind | 100 | 4.9995 | 5.0000 | 5.0000 | 5.0005 |
 
 **Interpretation.**  
-The per-exit comparison shows that hint has **mixed local effects**, not a universal benefit. In the 3-exit case, hint improves only Exit2 and slightly harms Exit1 and Exit3. In the 5-exit case, hint helps Exit1 and Exit5 slightly, but hurts Exit2–Exit4. This supports the conclusion that the current hint mechanism is **task-dependent** and not consistently strengthening all intermediate stages on this binary gunshot dataset.
+The current dataset is clearly heterogeneous. Some classes contain short event-like sounds (`car_crash`, `gun_shot`, `scream`), while others contain much longer ambience/background recordings (`conversation`, `engine_idling`, `fireworks`). This is exactly why a generic segmentation branch was needed.
 
 ---
 
-## Table C. Exit mix comparison (segment policy and Depth×Time)
+## Table B. File and segment split summary
 
-| Setting | Segment exit mix | Depth×Time exit mix |
-|---|---|---|
-| `gs3` | e1=0.4070, e2=0.3850, e3=0.2080 | e1=0.3252, e2=0.4513, e3=0.2235 |
-| `gs3_hint` | e1=0.3837, e2=0.4225, e3=0.1938 | e1=0.2683, e2=0.5255, e3=0.2062 |
-| `gs5` | e1=0.3760, e2=0.2468, e3=0.2132, e4=0.0646, e5=0.0995 | e1=0.2667, e2=0.3244, e3=0.2422, e4=0.0667, e5=0.1000 |
-| `gs5_hint` | e1=0.3540, e2=0.2946, e3=0.1693, e4=0.0736, e5=0.1085 | e1=0.2899, e2=0.3371, e3=0.1865, e4=0.0719, e5=0.1146 |
+### B1. File-level split
+
+| Split | Files |
+|---|---:|
+| train | 707 |
+| val | 152 |
+| test | 152 |
+
+### B2. Segment-level split
+
+| Split | Segments |
+|---|---:|
+| train | 2536 |
+| val | 551 |
+| test | 555 |
+
+### B3. Test split by label
+
+| Label | Test segments |
+|---|---:|
+| car_crash | 58 |
+| conversation | 43 |
+| engine_idling | 49 |
+| fireworks | 6 |
+| gun_shot | 40 |
+| rain | 75 |
+| road_traffic | 90 |
+| scream | 44 |
+| thunderstorm | 75 |
+| wind | 75 |
 
 **Interpretation.**  
-Hint clearly changes routing behavior. In 3-exit, hint shifts more decisions toward **Exit2** in both segment policy and Depth×Time, but this routing change does not improve the final clip result. In 5-exit, hint slightly increases usage of deeper exits under both modes, but again the routing change is not enough to surpass the no-hint baseline on overall clip accuracy.
+The split procedure is functioning, but class balance is still uneven. `fireworks` is especially small, which makes it an important rare-class stress point in the current branch.
 
 ---
 
-## Table D. Depth×Time comparison: no-hint vs hint passing
+## Table C. Rejected segment summary
 
-| Exit setting | No-hint used-win acc | Hint used-win acc | Δ used-win acc | No-hint avg windows | Hint avg windows | Δ avg windows | No-hint avg compute | Hint avg compute | Δ avg compute | No-hint compute saved | Hint compute saved | Δ compute saved |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 3-exit | 0.9558 | 0.9512 | -0.0046 | 1.759 / 3.012 | 1.755 / 3.012 | -0.004 | 3.339 | 3.401 | +0.062 | 38.45% | 37.62% | -0.83 pp |
-| 5-exit | 0.9578 | 0.9551 | -0.0027 | 1.751 / 3.012 | 1.732 / 3.012 | -0.019 | 4.218 | 4.128 | -0.090 | 38.16% | 40.09% | +1.93 pp |
+| Reason | Count |
+|---|---:|
+| `cap_dropped` | 6249 |
+| `silent_window` | 1786 |
 
 **Interpretation.**  
-Depth×Time again shows a mixed story. In 3-exit, hint slightly reduces windows used, but it also lowers used-window accuracy and worsens compute saving. In 5-exit, hint slightly reduces used windows and compute, and improves compute saved, but it still does **not** recover the loss in clip accuracy relative to the 5-exit no-hint baseline. Therefore, the current 5-exit hint result may be viewed as a **small efficiency trade-off**, not a clear accuracy improvement.
+This table captures one of the most important findings of the branch. The current hard cap successfully prevents segment explosion, but it discards a very large number of non-silent candidate segments. So the branch now works technically, but the current capping policy is likely too aggressive for long informative recordings.
 
 ---
 
-## Table E. Full-clip vs Depth×Time accuracy-efficiency tradeoff
+## Table D. Per-exit test accuracy
 
-| Setting | Full-clip acc | Full-clip avg windows | Full-clip avg compute | Depth×Time acc | Depth×Time avg windows | Depth×Time avg compute | Δ windows (D×T − Full) | Δ compute (D×T − Full) |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| `gs3` | 0.9844 | 3.012 / 3.012 | 5.424 | 0.9844 | 1.759 / 3.012 | 3.339 | -1.253 | -2.085 |
-| `gs5` | 0.9767 | 3.012 / 3.012 | 6.821 | 0.9728 | 1.751 / 3.012 | 4.218 | -1.261 | -2.603 |
-| `gs3_hint` | 0.9650 | 3.012 / 3.012 | 5.451 | 0.9650 | 1.755 / 3.012 | 3.401 | -1.257 | -2.050 |
-| `gs5_hint` | 0.9689 | 3.012 / 3.012 | 6.891 | 0.9650 | 1.732 / 3.012 | 4.128 | -1.280 | -2.763 |
+| Exit | Accuracy |
+|---|---:|
+| Exit1 | 0.2613 |
+| Exit2 | 0.4162 |
+| Exit3 | 0.5946 |
+| Exit4 | 0.7027 |
+| Exit5 | 0.6739 |
 
 **Interpretation.**  
-All four models benefit from Depth×Time by reducing the average number of used windows and compute relative to the full-clip baseline. However, the strongest **overall practical result** is still `gs3`, because it preserves **0.9844** clip accuracy under both full-clip and Depth×Time while also using lower compute than the deeper 5-exit models. The hinted runs do not beat their no-hint counterparts on this dataset in final clip accuracy, even when they provide modest efficiency gains.
+The most important result here is that **Exit4 is stronger than Exit5**. This means the deepest exit is not currently the strongest classifier. It suggests that the final stage may be overfitting, under-calibrated for this data regime, or simply not benefiting from the current training balance.
+
+---
+
+## Table E. Segment-level greedy policy
+
+| Metric | Value |
+|---|---:|
+| Policy accuracy | 0.6739 |
+| Avg exit depth | 4.589 |
+| Flip-any rate | 0.8198 |
+| Avg flip count | 1.2793 |
+| Exit consistency | 1.0000 |
+
+### Exit mix
+
+| Exit | Usage |
+|---|---:|
+| e1 | 0.0000 |
+| e2 | 0.0649 |
+| e3 | 0.0721 |
+| e4 | 0.0721 |
+| e5 | 0.7910 |
+
+**Interpretation.**  
+The current greedy policy is strongly biased toward the deepest exit. That matches the current multiclass difficulty: the system is effectively refusing to exit early most of the time. This is consistent with the weaker early-exit accuracies and with the general difficulty of the 10-class task.
+
+---
+
+## Table F. Threshold selection summary
+
+| Metric | Value |
+|---|---:|
+| Best tau | 0.92 |
+| Validation macro-F1 | 0.6708 |
+| Validation accuracy | 0.7169 |
+
+**Interpretation.**  
+The selected threshold is relatively conservative, which again aligns with the routing behavior: the model is preferring deeper decisions rather than early exits for the current multiclass dataset.
+
+---
+
+## Table G. Current branch findings
+
+| Finding | Status |
+|---|---|
+| Generic segmentation pipeline works end to end | Yes |
+| Exported segment WAV generation works | Yes |
+| File-level split and feature extraction are stable | Yes |
+| Dynamic class-count override works in practice | Yes |
+| Multiclass run is stable | Yes |
+| Full-clip sequential greedy results validated in this run | No |
+| Depth×Time clip-greedy results validated in this run | No |
+| Current capping strategy is satisfactory | No |
+| Current class balance is satisfactory | No |
+
+**Interpretation.**  
+This table summarizes the branch state clearly: the engineering objective has largely been achieved, but the experimental objective is still in progress.
 
 ---
 
 ## Overall appendix takeaway
 
-These appendix tables support the same main conclusion as the updated gunshot branch documentation:
+These appendix tables support the main conclusion of the updated branch documentation:
 
-- **`gs3`** is the best overall **practical model** on the current gunshot dataset.
-- **`gs5`** is the best **deeper no-hint reference**.
-- **`gs3_hint`** does not improve the compact 3-exit system on this dataset.
-- **`gs5_hint`** is mixed: it shows slight efficiency advantages in some metrics, but it does not beat `gs5` or `gs3` on overall clip accuracy.
+- the branch now has a **stable generic segmentation pipeline**
+- the current validated run is the first stable **10-class greedy baseline**
+- the main remaining issues are:
+  - class imbalance
+  - heavy `cap_dropped` loss
+  - weaker early-exit performance
+  - missing validated clip-policy results in the current branch result set
 
-Therefore, the current evidence suggests that sequential hint passing is **not useless**, but it is **not universally beneficial**. In this branch, its effect is **task-dependent** and currently weaker than on the earlier moth setting.
+Therefore, the current evidence suggests that the next stage of work should focus on **data balance and clip-policy evaluation**, not on basic preprocessing stability.

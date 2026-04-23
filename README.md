@@ -1,101 +1,138 @@
-# ASHADIP / NeuroAccuExit — `kexit-greedy-hint-gunshot`
+# ASHADIP / NeuroAccuExit — `kexit-greedy-gunshot-segment`
 
-This branch documents the **gunshot adaptation** of the generic K-exit / hint pipeline.
+This branch documents the **generic audio-segmentation and multiclass adaptation** of the K-exit greedy pipeline.
 
-It is built on top of the earlier K-exit / C-class refactor, but the dataset and reporting focus are now different:
+It extends the earlier work in two important ways:
 
-- **old branch/docs**: moth wingbeat audio (`male` vs `female`)
-- **this branch**: gunshot audio (`gunshot` vs `non_gunshot`)
+- **older branch/docs**: moth wingbeat (`male` vs `female`) and later gunshot binary adaptation
+- **this branch**: **generic mixed-length audio preprocessing** plus a **10-class acoustic classification study**
 
-The goal of this branch is **fair reuse of the existing architecture** on a new binary audio task, while preserving:
+The goal of this branch is to keep the **same K-exit architecture** while making the data pipeline reusable for raw audio collections that:
 
-- dynamic **3-exit** and **5-exit** settings
-- greedy no-hint and greedy hint-enabled runs
-- segment-level and clip-level evaluation
-- Depth×Time clip policy analysis
+- contain **multiple classes**
+- contain **mixed file lengths**
+- contain **multiple input formats**
+- may need **physical exported segment WAVs**
+- may already be **ready-clipped** and therefore should skip re-segmentation
 
-This branch is currently the correct place to document the gunshot binary study, not the older moth-only README.
+This branch is now the correct place to document the **generic segmentation pipeline** and the current **multiclass greedy baseline**.
 
 ---
 
 ## Current task
 
-### Binary classification
-- `gunshot`
-- `non_gunshot`
+### Multiclass acoustic classification
 
-### Non-gunshot includes
-- fireworks
-- engine / background-type clips
-- other negative / confusing sounds placed under `data2/non_gunshot`
+The current validated run uses these **10 classes**:
 
-### Dataset root used in this branch
+- `car_crash`
+- `conversation`
+- `engine_idling`
+- `fireworks`
+- `gun_shot`
+- `rain`
+- `road_traffic`
+- `scream`
+- `thunderstorm`
+- `wind`
+
+### Dataset root used in the current validated run
+
 ```text
 data2/
-  gunshot/
-  non_gunshot/
+  car_crash/
+  conversation/
+  engine_idling/
+  fireworks/
+  gun_shot/
+  rain/
+  road_traffic/
+  scream/
+  thunderstorm/
+  wind/
 ```
 
 ---
 
 ## Why this branch exists
 
-The earlier K-exit branch already generalized the model side well, but the data-preparation path was still moth-specific.
+The earlier K-exit branch generalized the **model side** well, but the preprocessing path was still too tied to older task assumptions.
 
-This branch adds the missing gunshot-specific practical pieces:
+This branch adds the missing practical pieces required for a reusable acoustic pipeline:
 
 - generic label discovery from subfolders
 - mixed-length audio support
-- preprocessing for `.wav`, `.flac`, and other supported audio formats
+- preprocessing for `.wav`, `.flac`, and other supported formats
 - inventory summary before segmentation
 - file-level train/val/test splitting
 - support for short clips
-- control over segment explosion from very long non-gunshot recordings
-- short Windows-safe processed filenames
-- run commands specialized for the gunshot binary dataset
+- optional export of physical segment WAV files
+- support for already-ready datasets
+- shorter processed filenames for Windows safety
+- multiclass runs without manually redesigning the architecture
 
 ---
 
 ## Main implementation changes in this branch
 
 ### 1. `scripts/prep_segments.py`
-Updated so that it now:
+
+Updated so that it now supports a more generic preprocessing flow:
 
 - auto-discovers class folders under `--root`
 - reads mixed audio formats
 - writes `audio_inventory.csv`
 - writes `audio_inventory_by_label.csv`
+- supports `--input_mode segment|ready`
 - supports `--min_keep_sec`
-- supports `--max_segments_per_file_gunshot`
-- supports `--max_segments_per_file_non_gunshot`
+- supports generic file-level caps through `MaxSegmentsPerFileDefault`
+- supports optional exported 1-second segment WAVs
 - performs file-level train/val/test splitting
-- handles very short clips through padded 1-second segments when appropriate
-- uses shorter hashed processed filenames to avoid Windows path-length failures
+- handles short clips through padded 1-second segments when appropriate
+- supports reusable `segments.csv` generation for later feature extraction and training
 
 ### 2. `scripts/run_full.ps1`
-Updated so that it now supports gunshot data preparation directly through CLI:
+
+Updated so that it now supports generic data preparation directly through CLI:
 
 - `-DataRoot "data2"`
+- `-InputMode "segment"` or `"ready"`
+- `-SplitUnit`
+- `-GroupMode`
 - `-MinKeepSec`
-- `-MaxSegmentsPerFileGunshot`
-- `-MaxSegmentsPerFileNonGunshot`
-- `-ExitHint "true|false"`
-- gunshot-oriented cache naming
+- `-MaxSegmentsPerFileDefault`
+- `-ExportSegmentWavs`
+- `-ForceRebuild`
 - run metadata logging for the new preprocessing controls
 
-### 3. `scripts.extract_features.py` usage
-The full pipeline now uses `--pad_short` during feature extraction so short gunshot clips do not produce missing `feat_relpath` entries.
+### 3. `scripts/extract_features.py`
+
+Updated so that feature extraction is more robust for the new pipeline:
+
+- uses padded short-feature extraction when needed
+- writes unique feature paths back into `segments.csv`
+- uses shorter per-segment feature names to avoid path and overwrite issues
+
+### 4. Dynamic class handling in training/evaluation
+
+The current branch now tolerates class-count mismatch between the old config and the current dataset:
+
+- if `config num_classes` does not match the dataset,
+- training and evaluation automatically use the dataset class count.
+
+This allows the same architecture to be reused without manually changing every old config before testing a new dataset.
 
 ---
 
 ## Current end-to-end pipeline
 
-1. raw audio under `data2/gunshot` and `data2/non_gunshot`
+1. raw audio under `data2/<class_name>/`
 2. `scripts/prep_segments.py`
    - scan inventory
    - create cleaned cache WAVs
    - create `segments.csv`
    - apply file-level split
+   - optionally export physical 1-second WAV segments
 3. `scripts.extract_features.py`
    - compute log-mel `.npy` features
    - update `feat_relpath`
@@ -104,7 +141,7 @@ The full pipeline now uses `--pad_short` during feature extraction so short guns
 5. `adapters/audio_adapter.py`
    - dynamic `TinyAudioCNN` with configurable tap blocks
 6. `models/exit_net.py`
-   - generic multi-exit classifier with optional sequential hint passing
+   - generic multi-exit classifier
 7. `training/train.py`
    - train the K-exit model
 8. `training/calibrate.py`
@@ -114,7 +151,7 @@ The full pipeline now uses `--pad_short` during feature extraction so short guns
 10. `scripts/policy_test.py`
    - segment-level greedy policy
 11. `scripts/clip_policy_test.py`
-   - full-clip baseline and Depth×Time evaluation
+   - full-clip and Depth×Time clip evaluation
 12. `scripts/summarize_run.py`
 13. `scripts/analyse_run.py`
 14. `scripts/profile_latency.py`
@@ -122,245 +159,200 @@ The full pipeline now uses `--pad_short` during feature extraction so short guns
 
 ---
 
-## Dataset summary used for the current gunshot experiments
+## Current validated dataset summary
 
-The inventory summary for the current binary dataset is:
+The current validated multiclass run used the following inventory:
 
-- **1712 total files**
-- **896 gunshot**
-- **816 non_gunshot**
+- **1011 total files**
+- **10 classes**
 
-Duration statistics:
+### Inventory summary
 
 | Class | Files | Min sec | Median sec | Mean sec | Max sec |
 |---|---:|---:|---:|---:|---:|
-| gunshot | 896 | 0.4988 | 1.9461 | 1.5271 | 44.0000 |
-| non_gunshot | 816 | 0.5151 | 4.9998 | 7.4386 | 994.3688 |
+| car_crash | 92 | 1.0000 | 2.3064 | 2.9281 | 10.8639 |
+| conversation | 81 | 1.4800 | 3.0000 | 14.6656 | 994.3688 |
+| engine_idling | 65 | 1.0376 | 8.0000 | 11.3280 | 36.0000 |
+| fireworks | 14 | 1.3095 | 21.0000 | 108.0361 | 770.2427 |
+| gun_shot | 187 | 0.4988 | 1.5084 | 1.9196 | 44.0000 |
+| rain | 100 | 4.9995 | 5.0000 | 5.0000 | 5.0005 |
+| road_traffic | 121 | 3.9998 | 4.9999 | 5.4463 | 60.0000 |
+| scream | 151 | 0.5151 | 1.5020 | 1.7642 | 6.5912 |
+| thunderstorm | 100 | 4.9995 | 5.0000 | 5.0000 | 5.0005 |
+| wind | 100 | 4.9995 | 5.0000 | 5.0000 | 5.0005 |
 
-Shorter than 1 second:
+### Segmentation setting used in the validated run
 
-- gunshot: **250**
-- non_gunshot: **3**
+- `segment_sec = 1.0`
+- `hop = 0.5`
+- `input_mode = segment`
+- `split_unit = file`
+- `min_keep_sec = 0.25`
+- `max_segments_per_file_default = 5`
+- `export_segment_wavs = True`
 
-Because very long non-gunshot files were flooding the segment count, the current branch uses:
+### File-level split
 
-- `MaxSegmentsPerFileGunshot = 0` → keep all
-- `MaxSegmentsPerFileNonGunshot = 5` → cap non-gunshot windows per file
+| Split | Files |
+|---|---:|
+| train | 707 |
+| val | 152 |
+| test | 152 |
 
-This produced the working split:
+### Segment-level split
 
-| Split | Gunshot | Non-gunshot | Total |
-|---|---:|---:|---:|
-| train | 1295 | 2323 | 3618 |
-| val | 267 | 486 | 753 |
-| test | 259 | 515 | 774 |
+| Split | Segments |
+|---|---:|
+| train | 2536 |
+| val | 551 |
+| test | 555 |
+
+### Important preprocessing finding
+
+The current run rejected:
+
+- **6249** `cap_dropped`
+- **1786** `silent_window`
+
+This is a major result for this branch:
+
+- the cap prevented segment explosion,
+- but it also discarded a very large number of valid non-silent segments.
+
+That means the branch is now **pipeline-stable**, but the **sampling/capping strategy still needs refinement**.
 
 ---
 
-## Validated run settings on this branch
+## Current validated run command
 
-### 3-exit no-hint
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\run_full.ps1 `
   -DataRoot "data2" `
   -CacheRoot "data_caches" `
   -Config "configs\audio_moth.yaml" `
   -RunsRoot "runs" `
-  -Variant "gs3" `
+  -Variant "kexit_greedy_gunshot_segment" `
   -Policy "greedy" `
   -Device "cpu" `
-  -TapBlocks "1,3" `
-  -RunClipPolicy `
-  -CacheId "s1_h05_t13_ng5" `
-  -MaxSegmentsPerFileNonGunshot 5 `
-  -MaxSegmentsPerFileGunshot 0
-```
-
-### 3-exit hint
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\run_full.ps1 `
-  -DataRoot "data2" `
-  -CacheRoot "data_caches" `
-  -Config "configs\audio_moth.yaml" `
-  -RunsRoot "runs" `
-  -Variant "gs3_hint" `
-  -Policy "greedy" `
-  -Device "cpu" `
-  -TapBlocks "1,3" `
-  -RunClipPolicy `
-  -CacheId "s1_h05_t13_ng5" `
-  -MaxSegmentsPerFileNonGunshot 5 `
-  -MaxSegmentsPerFileGunshot 0 `
-  -ExitHint "true"
-```
-
-### 5-exit no-hint
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\run_full.ps1 `
-  -DataRoot "data2" `
-  -CacheRoot "data_caches" `
-  -Config "configs\audio_moth.yaml" `
-  -RunsRoot "runs" `
-  -Variant "gs5" `
-  -Policy "greedy" `
-  -Device "cpu" `
+  -SegmentSec 1.0 `
+  -HopSec 0.5 `
+  -NMels 64 `
   -TapBlocks "1,2,3,4" `
-  -RunClipPolicy `
-  -CacheId "s1_h05_t1234_ng5" `
-  -MaxSegmentsPerFileNonGunshot 5 `
-  -MaxSegmentsPerFileGunshot 0
-```
-
-### 5-exit hint
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\run_full.ps1 `
-  -DataRoot "data2" `
-  -CacheRoot "data_caches" `
-  -Config "configs\audio_moth.yaml" `
-  -RunsRoot "runs" `
-  -Variant "gs5_hint" `
-  -Policy "greedy" `
-  -Device "cpu" `
-  -TapBlocks "1,2,3,4" `
-  -RunClipPolicy `
-  -CacheId "s1_h05_t1234_ng5" `
-  -MaxSegmentsPerFileNonGunshot 5 `
-  -MaxSegmentsPerFileGunshot 0 `
-  -ExitHint "true"
+  -InputMode "segment" `
+  -SplitUnit "file" `
+  -GroupMode "none" `
+  -MinKeepSec 0.25 `
+  -MaxSegmentsPerFileDefault 5 `
+  -ForceRebuild `
+  -ExportSegmentWavs
 ```
 
 ---
 
 ## Main artifacts per run
 
-Each run still generates the standard output set:
+Each successful run still generates the standard artifact set:
 
 - `ckpt/best.pt`
 - `metrics.json`
 - `temperature.json`
 - `thresholds.json`
 - `policy_results.json`
-- `clip_policy_results_full.json`
-- `clip_policy_results_time.json`
-- `clip_policy_results.json`
 - `summary.json`
 - `report.json`
 - `analysis_run.json`
 - `profiling.json`
-- `windows_used_hist.json`
 - `meta.json`
 - plots under `plots/`
 
----
+For this validated run, exported segment WAVs were also generated under:
 
-## Main results on the gunshot dataset
-
-## 1) Per-exit test accuracy
-
-| Metric | `gs3` | `gs3_hint` | Δ (Hint−No-Hint) | `gs5` | `gs5_hint` | Δ (Hint−No-Hint) |
-|---|---:|---:|---:|---:|---:|---:|
-| Exit1 accuracy | 0.8269 | 0.8165 | -0.0104 | 0.8049 | 0.8140 | +0.0091 |
-| Exit2 accuracy | 0.9380 | 0.9432 | +0.0052 | 0.9057 | 0.8915 | -0.0142 |
-| Exit3 accuracy | 0.9587 | 0.9548 | -0.0039 | 0.9509 | 0.9496 | -0.0013 |
-| Exit4 accuracy | — | — | — | 0.9651 | 0.9561 | -0.0090 |
-| Exit5 accuracy | — | — | — | 0.9599 | 0.9625 | +0.0026 |
-
-## 2) Segment-level greedy policy
-
-| Metric | `gs3` | `gs3_hint` | Δ | `gs5` | `gs5_hint` | Δ |
-|---|---:|---:|---:|---:|---:|---:|
-| Policy accuracy | 0.9548 | 0.9535 | -0.0013 | 0.9587 | 0.9561 | -0.0026 |
-| Avg exit depth | 1.801 | 1.810 | +0.009 | 2.265 | 2.288 | +0.023 |
-| Flip-any rate | 0.1628 | 0.1809 | +0.0181 | 0.2080 | 0.1744 | -0.0336 |
-| Avg flip count | 0.1731 | 0.2003 | +0.0272 | 0.2532 | 0.2054 | -0.0478 |
-| Exit consistency | 0.9935 | 0.9987 | +0.0052 | 0.9987 | 0.9910 | -0.0077 |
-
-## 3) Full-clip baseline
-
-| Setting | Clip acc | Processed-win acc | Avg windows used | Avg compute units | Avg depth per used window |
-|---|---:|---:|---:|---:|---:|
-| `gs3` | 0.9844 | 0.9548 | 3.012 / 3.012 | 5.424 | 1.801 |
-| `gs3_hint` | 0.9650 | 0.9535 | 3.012 / 3.012 | 5.451 | 1.810 |
-| `gs5` | 0.9767 | 0.9587 | 3.012 / 3.012 | 6.821 | 2.265 |
-| `gs5_hint` | 0.9689 | 0.9561 | 3.012 / 3.012 | 6.891 | 2.288 |
-
-## 4) Depth×Time
-
-| Metric | `gs3` | `gs3_hint` | Δ | `gs5` | `gs5_hint` | Δ |
-|---|---:|---:|---:|---:|---:|---:|
-| Clip accuracy | 0.9844 | 0.9650 | -0.0194 | 0.9728 | 0.9650 | -0.0078 |
-| Used-window segment accuracy | 0.9558 | 0.9512 | -0.0046 | 0.9578 | 0.9551 | -0.0027 |
-| Avg windows used | 1.759 / 3.012 | 1.755 / 3.012 | -0.004 / 3.012 | 1.751 / 3.012 | 1.732 / 3.012 | -0.019 / 3.012 |
-| Windows saved | 41.60% | 41.73% | +0.13 pp | 41.86% | 42.51% | +0.65 pp |
-| Avg compute units | 3.339 | 3.401 | +0.062 | 4.218 | 4.128 | -0.090 |
-| Avg depth per used window | 1.898 | 1.938 | +0.040 | 2.409 | 2.384 | -0.025 |
-| Compute saved | 38.45% | 37.62% | -0.83 pp | 38.16% | 40.09% | +1.93 pp |
-| Flip-rate | 0.1770 | 0.1863 | +0.0093 | 0.2089 | 0.1798 | -0.0291 |
-| Exit consistency | 0.9978 | 0.9978 | +0.0000 | 0.9978 | 0.9933 | -0.0045 |
+```text
+data_caches/.../exported_segments/
+  train/<class>/
+  val/<class>/
+  test/<class>/
+```
 
 ---
 
-## Short interpretation of the current four-run comparison
+## Main results from the current validated multiclass run
 
-The current gunshot dataset gives a very different picture from the older moth branch.
+### 1) Per-exit test accuracy
+
+| Metric | Value |
+|---|---:|
+| Exit1 accuracy | 0.2613 |
+| Exit2 accuracy | 0.4162 |
+| Exit3 accuracy | 0.5946 |
+| Exit4 accuracy | 0.7027 |
+| Exit5 accuracy | 0.6739 |
+
+### 2) Segment-level greedy policy
+
+| Metric | Value |
+|---|---:|
+| Policy accuracy | 0.6739 |
+| Avg exit depth | 4.589 |
+| Flip-any rate | 0.8198 |
+| Avg flip count | 1.2793 |
+| Exit consistency | 1.0000 |
+
+### 3) Segment policy exit mix
+
+- `e1 = 0.0000`
+- `e2 = 0.0649`
+- `e3 = 0.0721`
+- `e4 = 0.0721`
+- `e5 = 0.7910`
+
+### 4) Greedy threshold selection
+
+| Metric | Value |
+|---|---:|
+| Best tau | 0.92 |
+| Validation macro-F1 | 0.6708 |
+| Validation accuracy | 0.7169 |
+
+---
+
+## Short interpretation of the current validated run
+
+The current validated run gives a very clear picture.
 
 ### Main observations
 
-1. **`gs3` (3-exit no-hint)** is the current **best overall practical model**.
-   - highest full-clip accuracy: **0.9844**
-   - highest Depth×Time clip accuracy: **0.9844**
-   - lowest compute among the strong-performing settings
+1. **The engineering pipeline is now stable.**
+   - preprocessing works
+   - export of physical WAV segments works
+   - feature extraction works
+   - training, calibration, policy test, analysis, profiling, and report generation all complete end to end
 
-2. **`gs3_hint` is worse overall** on this dataset.
-   - exit2 improves slightly
-   - but final exit accuracy, segment-policy accuracy, and clip accuracy all decline
+2. **The current challenge is no longer pipeline failure.**
+   The main challenge is now:
+   - class imbalance
+   - segment imbalance caused by very long source files
+   - aggressive `cap_dropped` loss
+   - weaker multiclass model quality than the earlier simpler tasks
 
-3. **`gs5` is the strongest deeper no-hint reference**.
-   - good segment-level behavior
-   - stronger deeper exits than the 3-exit model
-   - but still lower clip accuracy than `gs3`
+3. **Exit4 is stronger than Exit5 in the current run.**
+   - Exit4 test accuracy: **0.7027**
+   - Exit5 test accuracy: **0.6739**
 
-4. **`gs5_hint` is mixed**.
-   - slight gain at the final exit
-   - slightly better validation threshold accuracy
-   - slightly better Depth×Time compute saving
-   - but lower segment-policy and clip accuracy than `gs5`
+   This means the deepest exit is not currently the strongest one.
 
----
+4. **The current run did not include clip-policy results.**
+   The validated run used:
+   - `RunClipPolicy = False`
 
-## Reviewer-safe conclusion
+   Therefore:
+   - **Full-Clip Sequential Greedy**
+   - **Depth×Time Clip Greedy**
 
-The current gunshot binary study supports the following claim:
+   were **not** produced in this validated result set.
 
-- **hint passing is not universally beneficial**
-- it may still be behaviorally meaningful
-- but on this short, binary gunshot dataset it does **not** improve the overall greedy accuracy-efficiency trade-off
-
-The clean current recommendation is:
-
-- **best overall practical model:** `gs3`
-- **best deeper no-hint reference:** `gs5`
-- **best hint result on this dataset:** `gs5_hint` only in a limited, mixed sense
-- **clear negative result:** `gs3_hint`
-
----
-
-## Why the result differs from the older branch
-
-This dataset is different in ways that matter:
-
-- binary gunshot vs non-gunshot is a simpler label space
-- clips are much shorter on average
-- the available windows per clip are only about **3.012**, not the much larger values seen in the older branch
-- many gunshot files are shorter than 1 second and required careful handling
-
-So the current evidence suggests that hint passing may need:
-
-- richer temporal evidence
-- more ambiguous intermediate decisions
-- or a different task regime
-
-before it becomes consistently beneficial.
+5. **Dynamic class handling already works in practice.**
+   The run started from an older config with `num_classes=2`, but the code detected that the dataset has `10` classes and used the dataset value automatically.
 
 ---
 
@@ -368,20 +360,78 @@ before it becomes consistently beneficial.
 
 This branch should now be described as:
 
-> a gunshot-adapted generic K-exit / hint pipeline that successfully transfers the existing early-exit architecture to a new binary audio domain, while showing that sequential hint passing is **task-dependent** rather than universally beneficial.
+> a generic mixed-length acoustic preprocessing and K-exit greedy pipeline that successfully transfers the existing early-exit architecture to a new 10-class audio setting, while showing that the remaining bottlenecks are now data balance, capping strategy, and multiclass decision quality rather than engineering instability.
 
-That is a strong and honest result.
+This is an important transition point:
+
+- **before**: the branch was blocked by preprocessing and feature-extraction problems
+- **now**: the branch is stable enough for controlled experimental improvement
 
 ---
 
-## Next recommended experiment
+## Current limitations
 
-The best next controlled follow-up is:
+The current validated run also makes the next problems very clear:
 
-- keep `segment_sec = 1.0`
-- reduce `hop` from `0.5` to `0.25`
-- compare:
-  - `gs3_h025`
-  - `gs3_hint_h025`
+1. **Full-clip and Depth×Time clip results are missing**
+   - because `RunClipPolicy` was not enabled in the validated run
 
-That tests whether hint begins to help when the model receives more temporal evidence per clip, without changing the dataset or architecture fundamentally.
+2. **Class imbalance remains severe**
+   - for example, `fireworks` has very few source files compared with several background classes
+
+3. **A global hard cap is too blunt**
+   - the current `max_segments_per_file_default = 5` avoided explosion
+   - but also discarded many potentially useful segments
+
+4. **The config still contains older binary assumptions**
+   - the runtime auto-corrects class count,
+   - but the documentation and defaults should now catch up to the current generic multiclass branch
+
+---
+
+## Best next steps
+
+The strongest next follow-up experiments are:
+
+### A. Enable clip-level evaluation
+Rerun the same branch with:
+
+- `-RunClipPolicy`
+
+so that the branch produces:
+
+- Full-Clip Sequential Greedy
+- Depth×Time Clip Greedy
+
+### B. Replace hard capping with softer control
+Move toward:
+
+- keeping all valid non-silent segments in `segments.csv`
+- balancing or sub-sampling during training
+
+instead of permanently discarding large numbers of segments during preprocessing
+
+### C. Make class count fully automatic in the documented defaults
+The runtime already corrects this dynamically.  
+The documentation and default config logic should now reflect that design explicitly.
+
+### D. Improve per-class handling
+The current branch should eventually support:
+
+- per-class segment caps
+- better balancing for rare classes like `fireworks`
+- less destructive handling of long but informative source files
+
+---
+
+## Branch-level conclusion
+
+The current recommendation for this branch is:
+
+- keep the generic preprocessing and segmentation design
+- keep file-level splitting
+- keep exported segment WAV support
+- keep dynamic K-exit training
+- improve class balancing and capping strategy next
+- generate clip-policy results next
+- treat the current run as the first stable multiclass greedy baseline for this branch
