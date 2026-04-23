@@ -2,6 +2,8 @@
 
 import os
 import re
+import json
+import shutil
 import hashlib
 import argparse
 import warnings
@@ -15,14 +17,13 @@ import yaml
 
 from data.transforms_audio import bandpass
 
-
 SUPPORTED_EXTS = {".wav", ".flac", ".ogg", ".aiff", ".aif", ".aifc", ".au", ".mp3", ".m4a"}
 
 
 def rms_dbfs(y: np.ndarray) -> float:
     if y.size == 0:
         return -120.0
-    return 20 * np.log10(np.sqrt(np.mean(y ** 2)) + 1e-9)
+    return 20.0 * np.log10(np.sqrt(np.mean(y ** 2)) + 1e-9)
 
 
 def detect_num_channels(y: np.ndarray) -> int:
@@ -30,26 +31,20 @@ def detect_num_channels(y: np.ndarray) -> int:
     if y.ndim == 1:
         return 1
     if y.shape[0] <= 8 and y.shape[0] < y.shape[1]:
-        return int(y.shape[0])   # channel-first
-    return int(y.shape[1])       # channel-last
+        return int(y.shape[0])
+    return int(y.shape[1])
 
 
 def to_mono(y: np.ndarray) -> np.ndarray:
     y = np.asarray(y, dtype=np.float32)
     if y.ndim == 1:
         return y
-    # librosa.load(..., mono=False) -> (channels, samples)
     if y.shape[0] <= 8 and y.shape[0] < y.shape[1]:
         return y.mean(axis=0).astype(np.float32)
-    # soundfile.read stereo -> (samples, channels)
     return y.mean(axis=1).astype(np.float32)
 
 
 def safe_read_audio(path, dtype="float32"):
-    """
-    Try soundfile first, then fall back to librosa/audioread.
-    Returns (y, sr) or (None, None) if unreadable.
-    """
     try:
         y, sr = sf.read(path, dtype=dtype)
         return y, sr
@@ -74,12 +69,517 @@ def load_yaml(path: str):
         return yaml.safe_load(f) or {}
 
 
+def parse_json_arg(text: str, default=None):
+    if not text:
+        return {} if default is None else default
+    try:
+        obj = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise SystemExit(f"Invalid JSON: {e}")
+    if not isinstance(obj, dict):
+        raise SystemExit("JSON option must decode to an object/dict.")
+    return obj
+
+
+def derive_group_id(relpath: str, group_mode: str = "none", group_regex: str = "") -> str:
+    rel = str(relpath).replace("\\", "/")
+    p = Path(rel)
+    if group_mode == "none":
+        return rel
+    if group_mode == "parent":
+        parent = p.parent.as_posix()
+        return parent if parent and parent != "." else rel
+    if group_mode == "stem":
+        return p.stem
+    if group_mode == "regex":
+        if not group_regex:
+            raise SystemExit("group_mode=regex requires --group_regex")
+        m = re.search(group_regex, rel)
+        if not m:
+            return rel
+        if m.groups():
+            return m.group(1)
+        return m.group(0)
+    raise SystemExit(f"Unknown group_mode: {group_mode}")
+
+
+def ensure_parent(path: Path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+
+def list_label_dirs(root: Path, explicit_labels=None):
+    if explicit_labels:
+        labels = [str(x) for x in explicit_labels]
+        missing = [lab for lab in labels if not (root / lab).is_dir()]
+        if missing:
+            raise SystemExit(f"These label folders were not found under {root}: {missing}")
+        return labels
+    labels = sorted([p.name for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")])
+    if not labels:
+        raise SystemExit(f"No class folders found under {root}")
+    return labels
+
+
+def iter_audio_files(label_dir: Path):
+    files = []
+    for p in label_dir.rglob("*"):
+        if not p.is_file():
+            continue
+        if p.name.startswith("._"):
+            continue
+        if p.suffix.lower() in SUPPORTED_EXTS:
+            files.append(p)
+    return sorted(files)
+
+
+def print_inventory_summary(inv_df: pd.DataFrame):
+    print("\n=== Audio inventory summary ===")
+    print(f"Files found: {len(inv_df)}")
+    print("Labels:", sorted(inv_df["label"].unique().tolist()))
+    by_label = (
+        inv_df.groupby("label")
+        .agg(
+            files=("label", "size"),
+            min_sec=("duration_sec", "min"),
+            median_sec=("duration_sec", "median"),
+            mean_sec=("duration_sec", "mean"),
+            max_sec=("duration_sec", "max"),
+            unreadable=("read_ok", lambda s: int((~s).sum())),
+        )
+        .reset_index()
+    )
+    print(by_label.to_string(index=False))
+
+
+def resolve_label_cap(label: str, args) -> int:
+    if label in args.max_segments_per_label:
+        return int(args.max_segments_per_label[label])
+    if label == "gunshot" and args.max_segments_per_file_gunshot is not None:
+        return int(args.max_segments_per_file_gunshot)
+    if label == "non_gunshot" and args.max_segments_per_file_non_gunshot is not None:
+        return int(args.max_segments_per_file_non_gunshot)
+    return int(args.max_segments_per_file_default)
+
+
+def select_evenly_spaced_starts(all_starts, max_keep: int):
+    if max_keep <= 0 or len(all_starts) <= max_keep:
+        return list(all_starts)
+    idx = np.linspace(0, len(all_starts) - 1, num=max_keep, dtype=int)
+    idx = np.unique(idx)
+    return [all_starts[i] for i in idx]
+
+
+def split_by_key(df: pd.DataFrame, key_col: str, train_frac: float, val_frac: float, test_frac: float,
+                 seed: int, stratify: bool):
+    from sklearn.model_selection import train_test_split
+
+    total = train_frac + val_frac + test_frac
+    if not np.isclose(total, 1.0, atol=1e-6):
+        raise ValueError(
+            f"Split ratios must sum to 1.0; got {total:.6f} "
+            f"(train={train_frac}, val={val_frac}, test={test_frac})"
+        )
+    if min(train_frac, val_frac, test_frac) <= 0:
+        raise ValueError("Split ratios must be > 0 for train/val/test.")
+
+    unit_df = df[[key_col, "label"]].drop_duplicates().reset_index(drop=True)
+    nunq = unit_df.groupby(key_col)["label"].nunique()
+    if nunq.max() != 1:
+        bad = nunq[nunq > 1].index.tolist()[:10]
+        raise ValueError(f"Some split keys map to multiple labels (examples): {bad}")
+
+    keys = unit_df[key_col].values
+    labels = unit_df["label"].values
+    temp_frac = val_frac + test_frac
+
+    try:
+        if stratify:
+            keys_train, keys_temp, _, y_temp = train_test_split(
+                keys, labels, test_size=temp_frac, stratify=labels, random_state=seed
+            )
+        else:
+            keys_train, keys_temp, _, y_temp = train_test_split(
+                keys, labels, test_size=temp_frac, random_state=seed, shuffle=True
+            )
+
+        test_within_temp = test_frac / temp_frac
+        if stratify:
+            keys_val, keys_test = train_test_split(
+                keys_temp, test_size=test_within_temp, stratify=y_temp, random_state=seed
+            )
+        else:
+            keys_val, keys_test = train_test_split(
+                keys_temp, test_size=test_within_temp, random_state=seed, shuffle=True
+            )
+    except ValueError as e:
+        warnings.warn(f"Stratified split failed ({e}). Falling back to non-stratified split.")
+        keys_train, keys_temp = train_test_split(keys, test_size=temp_frac, random_state=seed, shuffle=True)
+        keys_val, keys_test = train_test_split(
+            keys_temp, test_size=(test_frac / temp_frac), random_state=seed, shuffle=True
+        )
+
+    split_map = {k: "train" for k in keys_train}
+    split_map.update({k: "val" for k in keys_val})
+    split_map.update({k: "test" for k in keys_test})
+
+    out_df = df.copy()
+    out_df["split"] = out_df[key_col].map(split_map)
+    if out_df["split"].isna().any():
+        missing = out_df.loc[out_df["split"].isna(), key_col].unique()[:10]
+        raise SystemExit(f"Some split keys were not assigned a split (examples): {missing}")
+
+    split_counts = out_df["split"].value_counts().to_dict()
+    unit_counts = unit_df.assign(split=unit_df[key_col].map(split_map))["split"].value_counts().to_dict()
+    return out_df, split_counts, unit_counts
+
+
+def build_inventory(root: Path, labels, group_mode: str, group_regex: str):
+    inv_rows = []
+    for label in labels:
+        for src in iter_audio_files(root / label):
+            rel = os.path.relpath(src, root)
+            group_id = derive_group_id(rel, group_mode, group_regex)
+            y, sr = safe_read_audio(src, dtype="float32")
+            if y is None:
+                inv_rows.append({
+                    "label": label,
+                    "orig_filepath": str(src),
+                    "orig_relpath": rel,
+                    "orig_ext": src.suffix.lower(),
+                    "read_ok": False,
+                    "orig_sr": np.nan,
+                    "channels": np.nan,
+                    "num_samples": np.nan,
+                    "duration_sec": np.nan,
+                    "group_id": group_id,
+                })
+                continue
+
+            channels = detect_num_channels(y)
+            y_mono = to_mono(y)
+            duration_sec = float(len(y_mono) / sr)
+            inv_rows.append({
+                "label": label,
+                "orig_filepath": str(src),
+                "orig_relpath": rel,
+                "orig_ext": src.suffix.lower(),
+                "read_ok": True,
+                "orig_sr": int(sr),
+                "channels": int(channels),
+                "num_samples": int(len(y_mono)),
+                "duration_sec": duration_sec,
+                "group_id": group_id,
+            })
+    inv_df = pd.DataFrame(inv_rows)
+    if len(inv_df) == 0:
+        raise SystemExit(f"No audio files found under {root}")
+    return inv_df
+
+
+def write_clean_manifest(inv_df: pd.DataFrame, cache: Path, sr_target: int, bandpass_range, write_compat_manifest: bool):
+    clean_root = cache / "clean"
+    clean_root.mkdir(parents=True, exist_ok=True)
+
+    rows = []
+    skipped = []
+    for _, r in inv_df.iterrows():
+        if not bool(r["read_ok"]):
+            skipped.append(str(r["orig_filepath"]))
+            continue
+
+        src = Path(r["orig_filepath"])
+        label = str(r["label"])
+        orig_relpath = str(r["orig_relpath"])
+        group_id = str(r["group_id"])
+
+        y, sr = safe_read_audio(src, dtype="float32")
+        if y is None:
+            skipped.append(str(src))
+            continue
+
+        y = to_mono(y)
+        if sr != sr_target:
+            y = librosa.resample(y, orig_sr=sr, target_sr=sr_target)
+            sr = sr_target
+
+        y = y.astype(np.float32)
+        if y.size > 0:
+            y = y - float(np.mean(y))
+        if bandpass_range:
+            y = bandpass(y, sr, float(bandpass_range[0]), float(bandpass_range[1]))
+        peak = float(np.max(np.abs(y)) + 1e-9)
+        if peak > 0:
+            y = 0.8913 * y / peak
+
+        file_hash = hashlib.md5(orig_relpath.encode("utf-8")).hexdigest()[:12]
+        out_name = f"{label}_{file_hash}.wav"
+        out = clean_root / label / out_name
+        out.parent.mkdir(parents=True, exist_ok=True)
+        sf.write(out, y, sr)
+
+        rows.append({
+            "filepath": str(out),
+            "clean_relpath": os.path.relpath(out, clean_root),
+            "label": label,
+            "duration": float(len(y) / sr),
+            "orig_filepath": str(src),
+            "orig_relpath": orig_relpath,
+            "group_id": group_id,
+        })
+
+    if skipped:
+        print(f"\nSkipped {len(skipped)} unreadable files (showing up to 10):")
+        for s in skipped[:10]:
+            print(" -", s)
+        if len(skipped) > 10:
+            print(" ... (more skipped)")
+
+    manifest = pd.DataFrame(rows)
+    if len(manifest) == 0:
+        raise SystemExit("No valid audio files were cleaned successfully.")
+    manifest.to_csv(cache / "manifest.csv", index=False)
+    if write_compat_manifest:
+        manifest.to_csv(cache / "moths_manifest.csv", index=False)
+    return manifest
+
+
+def build_segments_segment_mode(manifest: pd.DataFrame, args):
+    seg_rows = []
+    rejected_rows = []
+
+    for _, r in manifest.iterrows():
+        y, sr = sf.read(r["filepath"], dtype="float32")
+        y = np.asarray(y, dtype=np.float32)
+        win = int(args.segment_sec * sr)
+        hop = int(args.hop * sr)
+        n = int(len(y))
+        dur_sec = float(n / sr)
+
+        rel = str(r["clean_relpath"])
+        label = str(r["label"])
+        orig_relpath = str(r["orig_relpath"])
+        group_id = str(r["group_id"])
+        max_keep = resolve_label_cap(label, args)
+        split_key = group_id if args.split_unit == "group" else rel
+
+        if n < win:
+            clip_rms = rms_dbfs(y)
+            if dur_sec < float(args.min_keep_sec):
+                rejected_rows.append({
+                    "wav_relpath": rel,
+                    "orig_relpath": orig_relpath,
+                    "label": label,
+                    "group_id": group_id,
+                    "reason": "too_short",
+                    "duration_sec": dur_sec,
+                    "rms_dbfs": clip_rms,
+                })
+                continue
+            if clip_rms < args.silence_dbfs:
+                rejected_rows.append({
+                    "wav_relpath": rel,
+                    "orig_relpath": orig_relpath,
+                    "label": label,
+                    "group_id": group_id,
+                    "reason": "short_but_silent",
+                    "duration_sec": dur_sec,
+                    "rms_dbfs": clip_rms,
+                })
+                continue
+            seg_rows.append({
+                "wav_relpath": rel,
+                "orig_relpath": orig_relpath,
+                "split_key": split_key,
+                "group_id": group_id,
+                "label": label,
+                "start": 0.0,
+                "duration": float(args.segment_sec),
+                "source_duration": dur_sec,
+                "is_padded_short": True,
+                "segment_rms_dbfs": clip_rms,
+                "input_mode": args.input_mode,
+            })
+            continue
+
+        all_starts = list(range(0, max(n - win + 1, 0), hop))
+        valid_pairs = []
+        for s in all_starts:
+            seg = y[s:s + win]
+            seg_rms = rms_dbfs(seg)
+            if seg_rms < args.silence_dbfs:
+                rejected_rows.append({
+                    "wav_relpath": rel,
+                    "orig_relpath": orig_relpath,
+                    "label": label,
+                    "group_id": group_id,
+                    "reason": "silent_window",
+                    "start": float(s / sr),
+                    "duration_sec": float(args.segment_sec),
+                    "rms_dbfs": seg_rms,
+                })
+                continue
+            valid_pairs.append((s, seg_rms))
+
+        kept_pairs = valid_pairs
+        if max_keep > 0 and len(valid_pairs) > max_keep:
+            keep_starts = set(select_evenly_spaced_starts([s for s, _ in valid_pairs], max_keep))
+            kept_pairs = [(s, seg_rms) for s, seg_rms in valid_pairs if s in keep_starts]
+            dropped_pairs = [(s, seg_rms) for s, seg_rms in valid_pairs if s not in keep_starts]
+            for s, seg_rms in dropped_pairs:
+                rejected_rows.append({
+                    "wav_relpath": rel,
+                    "orig_relpath": orig_relpath,
+                    "label": label,
+                    "group_id": group_id,
+                    "reason": "cap_dropped",
+                    "start": float(s / sr),
+                    "duration_sec": float(args.segment_sec),
+                    "rms_dbfs": seg_rms,
+                })
+
+        for s, seg_rms in kept_pairs:
+            seg_rows.append({
+                "wav_relpath": rel,
+                "orig_relpath": orig_relpath,
+                "split_key": split_key,
+                "group_id": group_id,
+                "label": label,
+                "start": float(s / sr),
+                "duration": float(args.segment_sec),
+                "source_duration": dur_sec,
+                "is_padded_short": False,
+                "segment_rms_dbfs": seg_rms,
+                "input_mode": args.input_mode,
+            })
+
+    return pd.DataFrame(seg_rows), pd.DataFrame(rejected_rows)
+
+
+def build_segments_ready_mode(manifest: pd.DataFrame, args):
+    seg_rows = []
+    rejected_rows = []
+
+    for _, r in manifest.iterrows():
+        y, sr = sf.read(r["filepath"], dtype="float32")
+        y = np.asarray(y, dtype=np.float32)
+        dur_sec = float(len(y) / sr)
+        clip_rms = rms_dbfs(y)
+
+        rel = str(r["clean_relpath"])
+        label = str(r["label"])
+        orig_relpath = str(r["orig_relpath"])
+        group_id = str(r["group_id"])
+        split_key = group_id if args.split_unit == "group" else rel
+
+        if dur_sec < float(args.min_keep_sec):
+            rejected_rows.append({
+                "wav_relpath": rel,
+                "orig_relpath": orig_relpath,
+                "label": label,
+                "group_id": group_id,
+                "reason": "ready_too_short",
+                "duration_sec": dur_sec,
+                "rms_dbfs": clip_rms,
+            })
+            continue
+        if clip_rms < args.silence_dbfs:
+            rejected_rows.append({
+                "wav_relpath": rel,
+                "orig_relpath": orig_relpath,
+                "label": label,
+                "group_id": group_id,
+                "reason": "ready_silent",
+                "duration_sec": dur_sec,
+                "rms_dbfs": clip_rms,
+            })
+            continue
+
+        if args.strict_ready_length:
+            if abs(dur_sec - float(args.segment_sec)) > float(args.ready_length_tolerance_sec):
+                rejected_rows.append({
+                    "wav_relpath": rel,
+                    "orig_relpath": orig_relpath,
+                    "label": label,
+                    "group_id": group_id,
+                    "reason": "ready_length_mismatch",
+                    "duration_sec": dur_sec,
+                    "target_duration_sec": float(args.segment_sec),
+                    "rms_dbfs": clip_rms,
+                })
+                continue
+
+        seg_rows.append({
+            "wav_relpath": rel,
+            "orig_relpath": orig_relpath,
+            "split_key": split_key,
+            "group_id": group_id,
+            "label": label,
+            "start": 0.0,
+            "duration": float(args.segment_sec),
+            "source_duration": dur_sec,
+            "is_padded_short": bool(dur_sec < float(args.segment_sec)),
+            "segment_rms_dbfs": clip_rms,
+            "input_mode": args.input_mode,
+        })
+
+    return pd.DataFrame(seg_rows), pd.DataFrame(rejected_rows)
+
+
+def sanitize_export_name(text: str) -> str:
+    text = re.sub(r"[^A-Za-z0-9._-]+", "_", str(text))
+    return text.strip("._") or "clip"
+
+
+def export_segment_wavs(seg_df: pd.DataFrame, cache: Path, export_root: Path, sr_target: int):
+    clean_root = cache / "clean"
+    export_rows = []
+
+    for idx, row in seg_df.reset_index(drop=True).iterrows():
+        src = clean_root / str(row["wav_relpath"])
+        if not src.exists():
+            warnings.warn(f"Cannot export segment; source file missing: {src}")
+            continue
+
+        y, sr = sf.read(src, dtype="float32")
+        y = np.asarray(y, dtype=np.float32)
+        if sr != sr_target:
+            y = librosa.resample(y, orig_sr=sr, target_sr=sr_target)
+            sr = sr_target
+
+        start_sample = int(round(float(row["start"]) * sr))
+        win = int(round(float(row["duration"]) * sr))
+        seg = y[start_sample:start_sample + win]
+        if len(seg) < win:
+            seg = np.pad(seg, (0, win - len(seg)), mode="constant")
+
+        split = str(row["split"])
+        label = str(row["label"])
+        rel = str(row["wav_relpath"])
+        stem = sanitize_export_name(Path(rel).stem)
+        start_ms = int(round(float(row["start"]) * 1000.0))
+        out_name = f"{stem}__{start_ms:08d}ms__{idx:06d}.wav"
+        out = export_root / split / label / out_name
+        out.parent.mkdir(parents=True, exist_ok=True)
+        sf.write(out, seg, sr)
+
+        export_rows.append({
+            "wav_relpath": rel,
+            "label": label,
+            "split": split,
+            "start": float(row["start"]),
+            "duration": float(row["duration"]),
+            "export_path": str(out),
+            "export_relpath": os.path.relpath(out, export_root),
+        })
+
+    export_df = pd.DataFrame(export_rows)
+    export_df.to_csv(export_root / "export_manifest.csv", index=False)
+    return export_df
+
+
 def two_stage_parse():
-    """
-    Parse --config first, then load YAML defaults, then allow CLI overrides.
-    """
     p0 = argparse.ArgumentParser(add_help=False)
-    p0.add_argument("--config", type=str, default="", help="Optional YAML config (e.g., configs/audio_moth.yaml).")
+    p0.add_argument("--config", type=str, default="", help="Optional YAML config.")
     cfg0, rest = p0.parse_known_args()
 
     cfg = load_yaml(cfg0.config)
@@ -102,7 +602,6 @@ def two_stage_parse():
 
     p = argparse.ArgumentParser()
     p.add_argument("--config", type=str, default=cfg0.config)
-
     p.add_argument("--root", default="data")
     p.add_argument("--cache", default="data_cache")
 
@@ -125,10 +624,41 @@ def two_stage_parse():
                    help="Only scan and summarize audio. Do not write cleaned audio or segments.")
     p.add_argument("--write_compat_manifest", action="store_true", default=True,
                    help="Also write moths_manifest.csv for compatibility with older scripts.")
-    p.add_argument("--max_segments_per_file_gunshot", type=int, default=0,
-                   help="Max kept segments per gunshot file. 0 = keep all.")
-    p.add_argument("--max_segments_per_file_non_gunshot", type=int, default=5,
-                   help="Max kept segments per non_gunshot file. 0 = keep all.")
+
+    p.add_argument("--input_mode", choices=["segment", "ready"], default="segment",
+                   help="segment = cut longer files into windows; ready = each file is already one clip.")
+    p.add_argument("--strict_ready_length", action="store_true",
+                   help="In ready mode, reject files whose duration differs too much from segment_sec.")
+    p.add_argument("--ready_length_tolerance_sec", type=float, default=0.05,
+                   help="Allowed duration mismatch in ready mode when --strict_ready_length is used.")
+
+    p.add_argument("--export_segment_wavs", action="store_true",
+                   help="Also export physical segment WAVs split/label wise.")
+    p.add_argument("--export_root", type=str, default="",
+                   help="Where to export segment WAVs. Default: <cache>/exported_segments")
+
+    p.add_argument("--skip_if_segments_exist", action="store_true",
+                   help="If cache/segments.csv exists, stop early and reuse it.")
+    p.add_argument("--force_rebuild", action="store_true",
+                   help="Delete old cache outputs before rebuilding.")
+
+    p.add_argument("--max_segments_per_file_default", type=int, default=0,
+                   help="Generic default cap for kept segments per file. 0 = keep all.")
+    p.add_argument("--max_segments_per_label_json", type=str, default="",
+                   help='JSON dict of per-label caps, e.g. {"non_gunshot": 5, "fireworks": 8}.')
+
+    # Backward-compatible old options
+    p.add_argument("--max_segments_per_file_gunshot", type=int, default=None,
+                   help="Backward-compatible legacy option. Prefer --max_segments_per_label_json.")
+    p.add_argument("--max_segments_per_file_non_gunshot", type=int, default=None,
+                   help="Backward-compatible legacy option. Prefer --max_segments_per_label_json.")
+
+    p.add_argument("--group_mode", choices=["none", "parent", "stem", "regex"], default="none",
+                   help="How to derive split groups from orig_relpath. none=file-level; parent=folder-level; stem=filename stem; regex=use group_regex.")
+    p.add_argument("--group_regex", type=str, default="",
+                   help="Regex used when group_mode=regex. First capture group is preferred.")
+    p.add_argument("--split_unit", choices=["file", "group"], default="file",
+                   help="Split by cleaned file path or derived group id.")
 
     if strat_default:
         p.add_argument("--stratify", dest="stratify", action="store_true", default=True)
@@ -139,153 +669,22 @@ def two_stage_parse():
 
     args = p.parse_args(rest)
     args._cfg = cfg
+    args.max_segments_per_label = parse_json_arg(args.max_segments_per_label_json, default={})
     return args
 
 
-def list_label_dirs(root: Path, explicit_labels=None):
-    if explicit_labels:
-        labels = [str(x) for x in explicit_labels]
-        missing = [lab for lab in labels if not (root / lab).is_dir()]
-        if missing:
-            raise SystemExit(f"These label folders were not found under {root}: {missing}")
-        return labels
-
-    labels = sorted([p.name for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")])
-    if not labels:
-        raise SystemExit(f"No class folders found under {root}")
-    return labels
-
-
-def iter_audio_files(label_dir: Path):
-    files = []
-    for p in label_dir.rglob("*"):
-        if not p.is_file():
-            continue
-        if p.name.startswith("._"):
-            continue
-        if p.suffix.lower() in SUPPORTED_EXTS:
-            files.append(p)
-    return sorted(files)
-
-
-def slugify_relpath(relpath: str) -> str:
-    stem = Path(relpath).stem
-    stem = re.sub(r"[^A-Za-z0-9._-]+", "_", stem)
-    h = hashlib.md5(relpath.encode("utf-8")).hexdigest()[:10]
-    return f"{stem}_{h}.wav"
-
-
-def print_inventory_summary(inv_df: pd.DataFrame):
-    print("\n=== Audio inventory summary ===")
-    print(f"Files found: {len(inv_df)}")
-    print("Labels:", sorted(inv_df["label"].unique().tolist()))
-
-    by_label = (
-        inv_df.groupby("label")
-        .agg(
-            files=("label", "size"),
-            min_sec=("duration_sec", "min"),
-            median_sec=("duration_sec", "median"),
-            mean_sec=("duration_sec", "mean"),
-            max_sec=("duration_sec", "max"),
-            unreadable=("read_ok", lambda s: int((~s).sum()))
-        )
-        .reset_index()
-    )
-    print(by_label.to_string(index=False))
-
-    short_df = inv_df[(inv_df["read_ok"]) & (inv_df["duration_sec"] < 1.0)]
-    if len(short_df) > 0:
-        print("\nShorter than 1.0 sec:")
-        print(
-            short_df.groupby("label")
-            .size()
-            .rename("count")
-            .reset_index()
-            .to_string(index=False)
-        )
-
-
-def file_level_split(seg_df: pd.DataFrame, train_frac: float, val_frac: float, test_frac: float,
-                     seed: int, stratify: bool):
-    from sklearn.model_selection import train_test_split
-
-    total = train_frac + val_frac + test_frac
-    if not np.isclose(total, 1.0, atol=1e-6):
-        raise ValueError(
-            f"Split ratios must sum to 1.0; got {total:.6f} "
-            f"(train={train_frac}, val={val_frac}, test={test_frac})"
-        )
-    if min(train_frac, val_frac, test_frac) <= 0:
-        raise ValueError("Split ratios must be > 0 for train/val/test.")
-
-    file_df = seg_df[["wav_relpath", "label"]].drop_duplicates().reset_index(drop=True)
-
-    nunq = file_df.groupby("wav_relpath")["label"].nunique()
-    if nunq.max() != 1:
-        bad = nunq[nunq > 1].index.tolist()[:10]
-        raise ValueError(f"Some wav_relpath map to multiple labels (examples): {bad}")
-
-    files = file_df["wav_relpath"].values
-    labels = file_df["label"].values
-
-    temp_frac = val_frac + test_frac
-    try:
-        if stratify:
-            files_train, files_temp, y_train, y_temp = train_test_split(
-                files, labels, test_size=temp_frac, stratify=labels, random_state=seed
-            )
-        else:
-            files_train, files_temp, y_train, y_temp = train_test_split(
-                files, labels, test_size=temp_frac, random_state=seed, shuffle=True
-            )
-
-        test_within_temp = test_frac / temp_frac
-        if stratify:
-            files_val, files_test = train_test_split(
-                files_temp, test_size=test_within_temp, stratify=y_temp, random_state=seed
-            )
-        else:
-            files_val, files_test = train_test_split(
-                files_temp, test_size=test_within_temp, random_state=seed, shuffle=True
-            )
-
-    except ValueError as e:
-        warnings.warn(f"Stratified file-level split failed ({e}). Falling back to non-stratified split.")
-        files_train, files_temp = train_test_split(
-            files, test_size=temp_frac, random_state=seed, shuffle=True
-        )
-        files_val, files_test = train_test_split(
-            files_temp, test_size=(test_frac / temp_frac), random_state=seed, shuffle=True
-        )
-
-    split_map = {f: "train" for f in files_train}
-    split_map.update({f: "val" for f in files_val})
-    split_map.update({f: "test" for f in files_test})
-
-    seg_df = seg_df.copy()
-    seg_df["split"] = seg_df["wav_relpath"].map(split_map)
-
-    if seg_df["split"].isna().any():
-        missing = seg_df.loc[seg_df["split"].isna(), "wav_relpath"].unique()[:10]
-        raise SystemExit(f"Some wav_relpath not assigned a split (examples): {missing}")
-
-    seg_counts = seg_df["split"].value_counts().to_dict()
-    file_counts = file_df.assign(split=file_df["wav_relpath"].map(split_map))["split"].value_counts().to_dict()
-    return seg_df, seg_counts, file_counts
-
-
-def select_evenly_spaced_starts(all_starts, max_keep: int):
-    """
-    Keep up to max_keep starts, evenly spaced across the file.
-    If max_keep <= 0 or enough room already, keep all.
-    """
-    if max_keep <= 0 or len(all_starts) <= max_keep:
-        return all_starts
-
-    idx = np.linspace(0, len(all_starts) - 1, num=max_keep, dtype=int)
-    idx = np.unique(idx)  # just in case
-    return [all_starts[i] for i in idx]
+def maybe_cleanup_cache(cache: Path, export_root: Path, force_rebuild: bool):
+    if not force_rebuild:
+        return
+    for target in [cache / "audio_inventory.csv", cache / "audio_inventory_by_label.csv", cache / "manifest.csv",
+                   cache / "moths_manifest.csv", cache / "segments.csv", cache / "segments_rejected.csv",
+                   cache / "clean"]:
+        if target.is_dir():
+            shutil.rmtree(target, ignore_errors=True)
+        elif target.exists():
+            target.unlink(missing_ok=True)
+    if export_root.exists():
+        shutil.rmtree(export_root, ignore_errors=True)
 
 
 def main():
@@ -293,53 +692,19 @@ def main():
 
     root = Path(args.root)
     cache = Path(args.cache)
-    clean_root = cache / "clean"
-    clean_root.mkdir(parents=True, exist_ok=True)
+    export_root = Path(args.export_root) if args.export_root else (cache / "exported_segments")
+    cache.mkdir(parents=True, exist_ok=True)
+
+    maybe_cleanup_cache(cache, export_root, args.force_rebuild)
+
+    segments_csv = cache / "segments.csv"
+    if args.skip_if_segments_exist and segments_csv.exists() and not args.force_rebuild:
+        print(f"segments.csv already exists at {segments_csv}. Skipping because --skip_if_segments_exist was set.")
+        return
 
     labels = list_label_dirs(root, args.labels)
 
-    # ------------------------------------------------------------
-    # Stage 1: inventory / summary
-    # ------------------------------------------------------------
-    inv_rows = []
-    for label in labels:
-        for src in iter_audio_files(root / label):
-            rel = os.path.relpath(src, root)
-            y, sr = safe_read_audio(src, dtype="float32")
-            if y is None:
-                inv_rows.append({
-                    "label": label,
-                    "orig_filepath": str(src),
-                    "orig_relpath": rel,
-                    "orig_ext": src.suffix.lower(),
-                    "read_ok": False,
-                    "orig_sr": np.nan,
-                    "channels": np.nan,
-                    "num_samples": np.nan,
-                    "duration_sec": np.nan,
-                })
-                continue
-
-            channels = detect_num_channels(y)
-            y_mono = to_mono(y)
-            duration_sec = float(len(y_mono) / sr)
-
-            inv_rows.append({
-                "label": label,
-                "orig_filepath": str(src),
-                "orig_relpath": rel,
-                "orig_ext": src.suffix.lower(),
-                "read_ok": True,
-                "orig_sr": int(sr),
-                "channels": int(channels),
-                "num_samples": int(len(y_mono)),
-                "duration_sec": duration_sec,
-            })
-
-    inv_df = pd.DataFrame(inv_rows)
-    if len(inv_df) == 0:
-        raise SystemExit(f"No audio files found under {root}")
-
+    inv_df = build_inventory(root, labels, args.group_mode, args.group_regex)
     inv_df.to_csv(cache / "audio_inventory.csv", index=False)
     print_inventory_summary(inv_df)
 
@@ -361,155 +726,26 @@ def main():
         print("\ninspect_only=True -> wrote inventory CSVs only. Stopping before cleaning/segmentation.")
         return
 
-    # ------------------------------------------------------------
-    # Stage 2: clean/resample/normalize and write cache WAVs
-    # ------------------------------------------------------------
-    rows = []
-    skipped = []
+    manifest = write_clean_manifest(
+        inv_df=inv_df,
+        cache=cache,
+        sr_target=int(args.sr),
+        bandpass_range=args.bandpass,
+        write_compat_manifest=bool(args.write_compat_manifest),
+    )
 
-    for _, r in inv_df.iterrows():
-        if not bool(r["read_ok"]):
-            skipped.append(str(r["orig_filepath"]))
-            continue
+    if args.input_mode == "segment":
+        seg_df, rej_df = build_segments_segment_mode(manifest, args)
+    else:
+        seg_df, rej_df = build_segments_ready_mode(manifest, args)
 
-        src = Path(r["orig_filepath"])
-        label = str(r["label"])
-        orig_relpath = str(r["orig_relpath"])
-
-        y, sr = safe_read_audio(src, dtype="float32")
-        if y is None:
-            skipped.append(str(src))
-            continue
-
-        y = to_mono(y)
-
-        if sr != args.sr:
-            y = librosa.resample(y, orig_sr=sr, target_sr=args.sr)
-            sr = args.sr
-
-        y = y.astype(np.float32)
-        if y.size > 0:
-            y = y - float(np.mean(y))
-
-        if args.bandpass:
-            y = bandpass(y, sr, float(args.bandpass[0]), float(args.bandpass[1]))
-
-        peak = float(np.max(np.abs(y)) + 1e-9)
-        if peak > 0:
-            y = 0.8913 * y / peak
-
-        file_hash = hashlib.md5(orig_relpath.encode("utf-8")).hexdigest()[:12]
-        out_name = f"{label}_{file_hash}.wav"
-        out = clean_root / label / out_name
-        out.parent.mkdir(parents=True, exist_ok=True)
-        sf.write(out, y, sr)
-
-        clean_rel = os.path.relpath(out, clean_root)
-        dur = float(len(y) / sr)
-
-        rows.append({
-            "filepath": str(out),
-            "clean_relpath": clean_rel,
-            "label": label,
-            "duration": dur,
-            "orig_filepath": str(src),
-            "orig_relpath": orig_relpath,
-        })
-
-    if skipped:
-        print(f"\nSkipped {len(skipped)} unreadable files (showing up to 10):")
-        for s in skipped[:10]:
-            print(" -", s)
-        if len(skipped) > 10:
-            print(" ... (more skipped)")
-
-    manifest = pd.DataFrame(rows)
-    if len(manifest) == 0:
-        raise SystemExit("No valid audio files were cleaned successfully.")
-
-    manifest.to_csv(cache / "manifest.csv", index=False)
-    if args.write_compat_manifest:
-        manifest.to_csv(cache / "moths_manifest.csv", index=False)
-
-    # ------------------------------------------------------------
-    # Stage 3: segmentation
-    # ------------------------------------------------------------
-    seg_rows = []
-    dropped_too_short = []
-
-    for _, r in manifest.iterrows():
-        y, sr = sf.read(r["filepath"], dtype="float32")
-        y = np.asarray(y, dtype=np.float32)
-
-        win = int(args.segment_sec * sr)
-        hop = int(args.hop * sr)
-        n = int(len(y))
-        dur_sec = float(n / sr)
-
-        rel = r["clean_relpath"]
-        label = r["label"]
-
-        max_keep = (
-            int(args.max_segments_per_file_non_gunshot)
-            if label == "non_gunshot"
-            else int(args.max_segments_per_file_gunshot)
-        )
-
-        # short file: keep one padded segment if long enough
-        if n < win:
-            if dur_sec < float(args.min_keep_sec):
-                dropped_too_short.append((rel, dur_sec))
-                continue
-
-            if rms_dbfs(y) < args.silence_dbfs:
-                continue
-
-            seg_rows.append({
-                "wav_relpath": rel,
-                "label": label,
-                "start": 0.0,
-                "duration": float(args.segment_sec),
-            })
-            continue
-
-        # all candidate starts
-        all_starts = list(range(0, max(n - win + 1, 0), hop))
-
-        # keep only non-silent candidates
-        valid_starts = []
-        for s in all_starts:
-            seg = y[s:s + win]
-            if rms_dbfs(seg) < args.silence_dbfs:
-                continue
-            valid_starts.append(s)
-
-        # apply per-file cap
-        kept_starts = select_evenly_spaced_starts(valid_starts, max_keep)
-
-        for s in kept_starts:
-            seg_rows.append({
-                "wav_relpath": rel,
-                "label": label,
-                "start": float(s / sr),
-                "duration": float(args.segment_sec),
-            })
-
-    if dropped_too_short:
-        print(
-            f"\nDropped {len(dropped_too_short)} files shorter than "
-            f"min_keep_sec={args.min_keep_sec} sec (showing up to 10):"
-        )
-        for rel, dur in dropped_too_short[:10]:
-            print(f" - {rel} ({dur:.3f}s)")
-        if len(dropped_too_short) > 10:
-            print(" ... (more dropped)")
-
-    seg_df = pd.DataFrame(seg_rows)
     if len(seg_df) == 0:
-        raise SystemExit("No segments above silence threshold; try raising --silence_dbfs (e.g., -55).")
+        raise SystemExit("No valid segments were produced. Check silence threshold, labels, or ready-mode length assumptions.")
 
-    seg_df, seg_counts, file_counts = file_level_split(
+    key_col = "split_key"
+    seg_df, seg_counts, unit_counts = split_by_key(
         seg_df,
+        key_col=key_col,
         train_frac=float(args.train_frac),
         val_frac=float(args.val_frac),
         test_frac=float(args.test_frac),
@@ -517,16 +753,35 @@ def main():
         stratify=bool(args.stratify),
     )
 
+    # Keep core downstream columns first for compatibility.
+    preferred = [
+        "wav_relpath", "label", "start", "duration", "split",
+        "orig_relpath", "group_id", "source_duration", "is_padded_short",
+        "segment_rms_dbfs", "input_mode", "split_key",
+    ]
+    seg_cols = [c for c in preferred if c in seg_df.columns] + [c for c in seg_df.columns if c not in preferred]
+    seg_df = seg_df[seg_cols]
+
     seg_df.to_csv(cache / "segments.csv", index=False)
+    if len(rej_df) == 0:
+        rej_df = pd.DataFrame(columns=["wav_relpath", "orig_relpath", "label", "group_id", "reason"])
+    rej_df.to_csv(cache / "segments_rejected.csv", index=False)
 
     print("\n=== Segmentation summary ===")
-    print("Files:", file_counts)
+    print(f"Input mode: {args.input_mode}")
+    print(f"Split unit: {args.split_unit}")
+    print("Units:", unit_counts)
     print("Segments:", seg_counts)
-
     print("\nSegments by label:")
-    print(
-        seg_df.groupby(["split", "label"]).size().rename("count").reset_index().to_string(index=False)
-    )
+    print(seg_df.groupby(["split", "label"]).size().rename("count").reset_index().to_string(index=False))
+    if len(rej_df) > 0:
+        print("\nRejected segment reasons:")
+        print(rej_df.groupby("reason").size().rename("count").reset_index().to_string(index=False))
+
+    if args.export_segment_wavs:
+        export_root.mkdir(parents=True, exist_ok=True)
+        export_df = export_segment_wavs(seg_df, cache=cache, export_root=export_root, sr_target=int(args.sr))
+        print(f"\nExported {len(export_df)} segment WAVs to: {export_root}")
 
 
 if __name__ == "__main__":

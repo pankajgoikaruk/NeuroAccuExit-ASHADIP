@@ -1,20 +1,36 @@
 # scripts/extract_features.py
 
 import argparse
+import hashlib
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import soundfile as sf
-from pathlib import Path
 
 from data.transforms_audio import to_logmel, cmvn_feat
 
 
 def _pad_to_length(x: np.ndarray, length: int) -> np.ndarray:
-    """Pad with zeros if shorter than required length."""
     if x.shape[0] >= length:
         return x[:length]
     pad = length - x.shape[0]
     return np.pad(x, (0, pad), mode="constant")
+
+
+def _to_mono_if_needed(y: np.ndarray) -> np.ndarray:
+    y = np.asarray(y, dtype=np.float32)
+    if y.ndim == 1:
+        return y
+    if y.shape[0] >= y.shape[1]:
+        return y.mean(axis=1).astype(np.float32)
+    return y.mean(axis=0).astype(np.float32)
+
+
+def _make_short_feature_name(rel: str, segment_uid: str, start_i: int, dur_i: int) -> str:
+    key = f"{rel}|{segment_uid}|{start_i}|{dur_i}"
+    h = hashlib.md5(key.encode("utf-8")).hexdigest()[:16]
+    return f"seg_{h}.npy"
 
 
 if __name__ == "__main__":
@@ -25,17 +41,8 @@ if __name__ == "__main__":
     ap.add_argument("--win_ms", type=int, default=25)
     ap.add_argument("--hop_ms", type=int, default=10)
     ap.add_argument("--cmvn", action="store_true")
-    ap.add_argument(
-        "--pad_short",
-        action="store_true",
-        help="If a clip is shorter than expected, pad zeros (recommended).",
-    )
-    ap.add_argument(
-        "--progress_every",
-        type=int,
-        default=500,
-        help="Print progress every N segments (0 disables).",
-    )
+    ap.add_argument("--pad_short", action="store_true")
+    ap.add_argument("--progress_every", type=int, default=500)
     args = ap.parse_args()
 
     cache = Path(args.cache)
@@ -45,59 +52,63 @@ if __name__ == "__main__":
 
     seg = pd.read_csv(seg_path)
 
+    required_cols = ["wav_relpath", "label", "start", "duration", "split"]
+    missing_cols = [c for c in required_cols if c not in seg.columns]
+    if missing_cols:
+        raise SystemExit(f"segments.csv missing required column(s): {missing_cols}")
+
     feat_root = cache / "features"
     feat_root.mkdir(parents=True, exist_ok=True)
 
-    # ---- Path safety: normalize to POSIX separators in the dataframe ----
-    if "wav_relpath" not in seg.columns:
-        raise SystemExit("segments.csv missing required column: wav_relpath")
+    seg_work = seg.copy()
+    if "segment_id" in seg_work.columns:
+        seg_work["segment_uid"] = seg_work["segment_id"].astype(str)
+        if seg_work["segment_uid"].duplicated().any():
+            raise SystemExit("segments.csv has duplicate segment_id values.")
+    else:
+        seg_work["segment_uid"] = [f"row_{i:09d}" for i in range(len(seg_work))]
 
-    seg2 = seg.copy()
-    seg2["wav_relpath"] = (
-        seg2["wav_relpath"].astype(str).str.replace("\\", "/", regex=False)
+    seg_work["wav_relpath"] = (
+        seg_work["wav_relpath"].astype(str).str.replace("\\", "/", regex=False)
     )
 
-    # ---- Speed: sort by wav_relpath so we read each wav only once ----
-    # (Keeps logic simple and avoids unbounded caching)
-    seg2 = seg2.sort_values(["wav_relpath", "start"]).reset_index(drop=True)
+    seg_sorted = seg_work.sort_values(
+        ["wav_relpath", "start", "duration", "segment_uid"]
+    ).reset_index(drop=True)
 
-    feats = []
-
+    feat_rows = []
     current_rel = None
     current_y = None
     current_sr = None
+    total = len(seg_sorted)
 
-    total = len(seg2)
-
-    for i, row in enumerate(seg2.itertuples(index=False), start=1):
-        rel = str(getattr(row, "wav_relpath"))
+    for i, row in enumerate(seg_sorted.itertuples(index=False), start=1):
+        rel = str(row.wav_relpath)
         wav_path = cache / "clean" / rel
 
         if args.progress_every and (i % args.progress_every == 0):
             print(f"[extract_features] processed {i}/{total} segments...")
 
-        # Read audio only when wav changes
         if rel != current_rel:
             y, sr = sf.read(wav_path, dtype="float32")
-            if y.ndim > 1:
-                y = y.mean(axis=1)
+            y = _to_mono_if_needed(y)
             current_rel, current_y, current_sr = rel, y, sr
 
-        start_s = float(getattr(row, "start"))
-        dur_s = float(getattr(row, "duration"))
-
-        # Convert to *sample indices* (more robust than encoding floats)
+        start_s = float(row.start)
+        dur_s = float(row.duration)
         start_i = int(round(start_s * current_sr))
         dur_i = int(round(dur_s * current_sr))
 
-        clip = current_y[start_i : start_i + dur_i]
+        clip = current_y[start_i:start_i + dur_i]
 
-        # Handle rare short slice (rounding / end-of-file)
         if clip.shape[0] != dur_i:
             if args.pad_short:
                 clip = _pad_to_length(clip, dur_i)
             else:
-                feats.append("")  # keep alignment
+                feat_rows.append({
+                    "segment_uid": row.segment_uid,
+                    "feat_relpath": "",
+                })
                 continue
 
         S = to_logmel(
@@ -106,60 +117,38 @@ if __name__ == "__main__":
         if args.cmvn:
             S = cmvn_feat(S)
 
-        # ---- Unique feat_relpath per segment (robust + no overwrite) ----
-        # Keep class folder (male/ or female/) from wav_relpath
-        p = Path(rel)  # rel is POSIX-style now
-        stem = p.stem
-        # encode *sample* start/dur => avoids float issues
-        fname = f"{stem}_si{start_i:09d}_di{dur_i:09d}.npy"
-        out_rel = str(p.parent / fname).replace("\\", "/")
-        # ----------------------------------------------------------------
-
+        label_dir = Path(rel).parent.as_posix()
+        fname = _make_short_feature_name(rel, str(row.segment_uid), start_i, dur_i)
+        out_rel = f"{label_dir}/{fname}" if label_dir not in ("", ".") else fname
         out_path = feat_root / out_rel
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        np.save(out_path, S)
 
-        feats.append(out_rel)
+        with open(out_path, "wb") as f:
+            np.save(f, S)
 
-    # Attach feat_relpath back
-    seg2["feat_relpath"] = feats
+        feat_rows.append({
+            "segment_uid": row.segment_uid,
+            "feat_relpath": out_rel.replace("\\", "/"),
+        })
 
-    # Restore original row order so downstream behaviour stays stable
-    # (We align by original content: add a temporary index before sort)
-    # If segments.csv order doesn't matter for you, you can skip this.
-    # Here we keep it stable by merging on key columns.
-    key_cols = ["wav_relpath", "label", "start", "duration", "split"]
-    for c in key_cols:
-        if c not in seg.columns:
-            raise SystemExit(f"segments.csv missing required column: {c}")
+    feat_df = pd.DataFrame(feat_rows)
+    if feat_df["segment_uid"].duplicated().any():
+        dups = feat_df.loc[feat_df["segment_uid"].duplicated(), "segment_uid"].head(5).tolist()
+        raise SystemExit(f"Duplicate segment_uid values in features output: {dups}")
 
-    # Normalize the original seg wav_relpath too for a consistent merge
-    seg_norm = seg.copy()
-    seg_norm["wav_relpath"] = (
-        seg_norm["wav_relpath"].astype(str).str.replace("\\", "/", regex=False)
-    )
-
-    # Merge feat_relpath back onto the original seg ordering
-    seg_out = seg_norm.merge(
-        seg2[key_cols + ["feat_relpath"]],
-        on=key_cols,
-        how="left",
-        validate="one_to_one",
-    )
+    seg_out = seg_work.merge(feat_df, on="segment_uid", how="left", validate="one_to_one")
 
     if seg_out["feat_relpath"].isna().any():
         missing = seg_out.loc[seg_out["feat_relpath"].isna(), "wav_relpath"].head(5).tolist()
-        raise SystemExit(
-            f"Failed to map feat_relpath back to segments.csv rows (examples wav_relpath): {missing}"
-        )
+        raise SystemExit(f"Failed to map feat_relpath back to rows (examples): {missing}")
 
-    # Sanity: should be unique now (ignoring skipped empty paths)
     nonempty = seg_out["feat_relpath"].astype(str)
     nonempty = nonempty[nonempty.str.len() > 0]
     if nonempty.duplicated().any():
         dups = nonempty[nonempty.duplicated()].head(5).tolist()
-        raise SystemExit(f"feat_relpath still has duplicates (examples): {dups}")
+        raise SystemExit(f"feat_relpath has duplicates (examples): {dups}")
 
+    seg_out = seg_out.drop(columns=["segment_uid"])
     seg_out.to_csv(seg_path, index=False)
     print("Saved features to", feat_root)
-    print("Updated segments.csv feat_relpath with unique per-segment filenames.")
+    print("Updated segments.csv feat_relpath with short unique filenames.")
