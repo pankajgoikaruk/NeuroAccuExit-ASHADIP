@@ -26,10 +26,11 @@ This document should be used for the updated thesis mini-book / branch-level wri
   - however, preprocessing and dataset preparation were still too task-specific
   - a fair continuation required a reusable pipeline for mixed-length, mixed-format audio without redesigning the model
 - **High-level idea**
-  - raw mixed-length audio → inventory scan → cleaning/resampling → file-level split → optional segment WAV export → log-mel features → dynamic K-exit TinyAudioCNN + ExitNet → calibration → greedy thresholding → segment-policy evaluation
+  - raw mixed-length audio → inventory scan → cleaning/resampling → file-level split → log-mel features → dynamic K-exit TinyAudioCNN + ExitNet → calibration → greedy thresholding → segment-policy evaluation → clip-level greedy evaluation
 - **Main contribution of this branch**
   - successful end-to-end generic segmentation pipeline
   - successful transfer of the K-exit model to a new 10-class dataset
+  - validated full-clip sequential greedy and Depth×Time clip-greedy evaluation on the same branch
   - clear evidence that the current bottleneck is now data balance and segment selection, not pipeline failure
 
 ---
@@ -164,12 +165,12 @@ This section should explicitly discuss why `cap_dropped` is now one of the major
 7. `training/train.py`
 8. `training/calibrate.py`
 9. `training/thresholds_offline.py`
-10. `scripts/policy_test.py`
-11. `scripts/clip_policy_test.py`
-12. `scripts/summarize_run.py`
-13. `scripts/analyse_run.py`
-14. `scripts/profile_latency.py`
-15. `scripts/run_reports.ps1`
+10. `scripts.policy_test.py`
+11. `scripts.clip_policy_test.py`
+12. `scripts.summarize_run.py`
+13. `scripts.analyse_run.py`
+14. `scripts.profile_latency.py`
+15. `scripts.run_reports.ps1`
 
 ---
 
@@ -202,6 +203,7 @@ Document that it now supports:
 - `MinKeepSec`
 - `MaxSegmentsPerFileDefault`
 - `ExportSegmentWavs`
+- `RunClipPolicy`
 - `ForceRebuild`
 - run metadata for new preprocessing settings
 
@@ -250,7 +252,7 @@ This branch should currently be interpreted as:
 
 - a **generic preprocessing and segmentation branch first**
 - a **multiclass greedy baseline branch second**
-- not yet the final branch for the clip-policy comparison or a definitive hint study
+- now including validated clip-policy comparison on the same run
 
 ---
 
@@ -281,14 +283,22 @@ Report:
 
 ### 6.3 Clip-level evaluation
 
-State clearly that the current validated run did **not** include clip-policy outputs because:
-
-- `RunClipPolicy = False`
-
-Therefore, the following are **pending for the next validated rerun**:
+Report the two validated clip-level policies:
 
 - full-clip sequential greedy
 - Depth×Time clip greedy
+
+For each, report:
+
+- clip accuracy
+- segment accuracy over processed/used windows
+- avg windows used
+- windows saved
+- avg compute units
+- compute saved
+- avg depth per used window
+- flip-rate
+- exit-consistency
 
 ---
 
@@ -314,8 +324,13 @@ powershell -ExecutionPolicy Bypass -File scripts\run_full.ps1 `
   -GroupMode "none" `
   -MinKeepSec 0.25 `
   -MaxSegmentsPerFileDefault 5 `
+  -TimeConf 0.95 `
+  -TimeStableK 2 `
+  -TimeMinWindows 2 `
+  -EvalFixedKWindows 3 `
+  -TimeMargin 0.0 `
   -ForceRebuild `
-  -ExportSegmentWavs
+  -RunClipPolicy
 ```
 
 ---
@@ -362,14 +377,41 @@ powershell -ExecutionPolicy Bypass -File scripts\run_full.ps1 `
 | Validation macro-F1 | 0.6708 |
 | Validation accuracy | 0.7169 |
 
-### 8.5 Key structural observation
+### 8.5 Full-clip sequential greedy
 
-Exit4 is currently stronger than Exit5:
+| Metric | Value |
+|---|---:|
+| Clip accuracy | 0.7829 |
+| Segment acc over processed windows | 0.6739 |
+| Avg windows used | 3.651 / 3.651 |
+| Windows saved | 0.00% |
+| Avg compute units | 16.757 |
+| Compute saved | 0.00% |
+| Avg depth per used window | 4.589 |
+| Flip-rate | 0.8198 |
+| Exit-consistency | 1.0000 |
 
-- Exit4 = **0.7027**
-- Exit5 = **0.6739**
+### 8.6 Depth×Time clip greedy
 
-This is an important research finding and should be explicitly discussed.
+| Metric | Value |
+|---|---:|
+| Clip accuracy | 0.7829 |
+| Segment acc over used windows | 0.6209 |
+| Avg windows used | 2.638 / 3.651 |
+| Windows saved | 27.75% |
+| Avg compute units | 11.993 |
+| Compute saved | 28.43% |
+| Avg depth per used window | 4.546 |
+| Flip-rate | 0.8254 |
+| Exit-consistency | 1.0000 |
+
+### 8.7 Key structural observations
+
+- Exit4 is currently stronger than Exit5:
+  - Exit4 = **0.7027**
+  - Exit5 = **0.6739**
+- Depth×Time preserves the same clip accuracy as the full-clip baseline while reducing windows and compute.
+- Rare classes such as `fireworks` remain the main failure point.
 
 ---
 
@@ -380,7 +422,7 @@ This is an important research finding and should be explicitly discussed.
 ### Main conclusions
 
 1. The generic segmentation adaptation is successful.
-   - preprocessing, feature extraction, training, calibration, and report generation all work end to end
+   - preprocessing, feature extraction, training, calibration, clip evaluation, and report generation all work end to end
 
 2. The branch is no longer blocked by engineering instability.
    - the main issues are now:
@@ -396,12 +438,13 @@ This is an important research finding and should be explicitly discussed.
    - the runtime detects the true number of classes
    - this reduces manual reconfiguration burden
 
-5. The current validated run is not yet the final branch result.
-   - clip-policy results still need a validated rerun with `RunClipPolicy`
+5. Validated clip-policy results now exist for this branch.
+   - full-clip sequential greedy and Depth×Time clip greedy are no longer pending
+   - the current result shows moderate savings with no clip-accuracy loss under Depth×Time
 
 ### Recommended reviewer-safe interpretation
 
-> The `kexit-greedy-gunshot-segment` branch establishes a stable generic mixed-length audio preprocessing and K-exit greedy baseline for a 10-class acoustic dataset. The main limitations now arise from class balance, aggressive segment capping, and multiclass decision quality rather than from preprocessing or training-pipeline instability.
+> The `kexit-greedy-gunshot-segment` branch establishes a stable generic mixed-length audio preprocessing and K-exit greedy baseline for a 10-class acoustic dataset. The main limitations now arise from class balance, aggressive segment capping, and multiclass decision quality rather than from preprocessing or training-pipeline instability. The branch already shows that Depth×Time can reduce windows and compute without reducing clip accuracy on this dataset.
 
 ---
 
@@ -414,19 +457,19 @@ This is an important research finding and should be explicitly discussed.
 - generic mixed-length segmentation
 - multiclass label auto-discovery
 - file-level split
-- optional exported segment WAVs
 - robust feature extraction
 - dynamic 5-exit greedy training
 - calibration, thresholding, analysis, and profiling
+- validated full-clip sequential greedy results
+- validated Depth×Time clip-greedy results
 
 ### Not yet finalized
 
-- validated full-clip sequential greedy results
-- validated Depth×Time clip-greedy results for this branch
 - finalized per-class capping strategy
 - soft training-time balancing instead of preprocessing-time destruction
 - final cleaned config defaults for fully dynamic class count
-- broader multiclass comparison beyond the first stable run
+- stronger rare-class performance
+- broader multiclass comparison beyond the first stable greedy run
 
 ---
 
@@ -440,29 +483,28 @@ This branch establishes:
 
 - a reusable generic preprocessing path for the K-exit architecture
 - successful transfer of the existing architecture to mixed-length multiclass audio
-- a stable first multiclass greedy baseline on the new branch
+- a stable multiclass greedy baseline on the new branch
+- a validated clip-policy comparison on the same branch
 - a clear experimental basis for improving balancing and clip-level policies next
 
 ### Best current recommendation
 
 - keep the generic segmentation design
 - keep file-level splitting
-- keep exported segment WAV support
+- keep clip-policy evaluation
 - improve capping and balancing next
-- generate clip-policy results next
 
 ### Best next experiment
 
 The recommended next controlled experiment is:
 
-1. rerun the same branch with `-RunClipPolicy`
+1. reduce dependence on hard cap-dropped removal
 2. compare:
-   - full-clip sequential greedy
-   - Depth×Time clip greedy
-3. reduce dependence on hard cap-dropped removal
-4. move toward:
-   - keeping all valid non-silent segments
-   - balancing or limiting at training time instead
+   - no cap / softer cap
+   - class-aware caps
+   - training-time balancing
+3. explicitly improve rare-class handling for `fireworks`
+4. keep the same clip-policy evaluation so the compute/accuracy trade-off remains directly comparable
 
 ---
 
@@ -474,7 +516,7 @@ Keep the distinction clear:
 
 - `v0.1.6` = historical frozen moth baseline
 - earlier K-exit / hint branches = prior dynamic architecture studies
-- `kexit-greedy-gunshot-segment` = current generic segmentation + multiclass greedy baseline branch
+- `kexit-greedy-gunshot-segment` = current generic segmentation + multiclass greedy baseline branch with validated segment- and clip-level results
 
 When the implementation changes, update:
 

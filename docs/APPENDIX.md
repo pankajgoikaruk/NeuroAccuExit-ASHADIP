@@ -4,19 +4,16 @@ This appendix provides compact tables for the current **generic segmentation + m
 
 The current validated stable run is:
 
-- `kexit_greedy_gunshot_segment_001`
+- `kexit_greedy_gunshot_segment_002`
 
-A key note for this appendix is that the current validated run is a **segment-level greedy baseline**.  
-The current result set does **not** include validated clip-policy outputs because the run used:
-
-- `RunClipPolicy = False`
-
-Therefore, this appendix focuses on:
+This appendix now includes:
 
 - dataset inventory
 - segmentation statistics
 - per-exit test accuracy
 - segment-level greedy policy
+- full-clip sequential greedy
+- Depth×Time clip greedy
 - current research findings
 
 ---
@@ -144,22 +141,74 @@ The selected threshold is relatively conservative, which again aligns with the r
 
 ---
 
-## Table G. Current branch findings
+## Table G. Full-clip sequential greedy
+
+| Metric | Value |
+|---|---:|
+| Clip accuracy | 0.7829 |
+| Segment acc over processed windows | 0.6739 |
+| Avg windows used | 3.651 / 3.651 |
+| Windows saved | 0.00% |
+| Avg compute units | 16.757 |
+| Compute saved | 0.00% |
+| Avg depth per used window | 4.589 |
+| Flip-rate (used windows) | 0.8198 |
+| Exit-consistency | 1.0000 |
+
+**Interpretation.**  
+This is the no-saving clip baseline: it uses all windows and therefore establishes the reference compute cost for the clip-level evaluation on this dataset.
+
+---
+
+## Table H. Depth×Time clip greedy
+
+| Metric | Value |
+|---|---:|
+| Clip accuracy | 0.7829 |
+| Segment acc over used windows | 0.6209 |
+| Avg windows used | 2.638 / 3.651 |
+| Windows saved | 27.75% |
+| Avg compute units | 11.993 |
+| Compute saved | 28.43% |
+| Avg depth per used window | 4.546 |
+| Flip-rate (used windows) | 0.8254 |
+| Exit-consistency | 1.0000 |
+
+**Interpretation.**  
+Depth×Time is already useful in this branch. It preserves the same clip accuracy as the full-clip baseline while reducing both windows and compute. This is one of the most important positive results of the current validated run.
+
+---
+
+## Table I. Current branch findings
 
 | Finding | Status |
 |---|---|
 | Generic segmentation pipeline works end to end | Yes |
-| Exported segment WAV generation works | Yes |
 | File-level split and feature extraction are stable | Yes |
 | Dynamic class-count override works in practice | Yes |
 | Multiclass run is stable | Yes |
-| Full-clip sequential greedy results validated in this run | No |
-| Depth×Time clip-greedy results validated in this run | No |
+| Full-clip sequential greedy results validated in this run | Yes |
+| Depth×Time clip-greedy results validated in this run | Yes |
 | Current capping strategy is satisfactory | No |
 | Current class balance is satisfactory | No |
+| Rare-class performance is satisfactory | No |
 
 **Interpretation.**  
-This table summarizes the branch state clearly: the engineering objective has largely been achieved, but the experimental objective is still in progress.
+This table summarizes the branch state clearly: the engineering objective has largely been achieved, and clip-policy evaluation is now validated. The main open experimental problems are class imbalance, aggressive capping, and poor rare-class performance.
+
+---
+
+## Table J. Rare-class warning
+
+The clip-level per-class report shows that `fireworks` currently has:
+
+- precision = **0.0**
+- recall = **0.0**
+- f1 = **0.0**
+- support = **2**
+
+**Interpretation.**  
+This is a strong warning that the current global cap and class imbalance are harming rare classes. Any next-stage balancing strategy should explicitly target this weakness.
 
 ---
 
@@ -168,11 +217,12 @@ This table summarizes the branch state clearly: the engineering objective has la
 These appendix tables support the main conclusion of the updated branch documentation:
 
 - the branch now has a **stable generic segmentation pipeline**
-- the current validated run is the first stable **10-class greedy baseline**
+- the current validated run is the first stable **10-class greedy baseline with clip-policy results**
+- the most positive clip-level finding is that **Depth×Time saves 27.75% windows and 28.43% compute with no clip-accuracy loss**
 - the main remaining issues are:
   - class imbalance
   - heavy `cap_dropped` loss
   - weaker early-exit performance
-  - missing validated clip-policy results in the current branch result set
+  - very poor rare-class behavior for `fireworks`
 
-Therefore, the current evidence suggests that the next stage of work should focus on **data balance and clip-policy evaluation**, not on basic preprocessing stability.
+Therefore, the current evidence suggests that the next stage of work should focus on **data balance, softer capping, and rare-class handling**, not on basic preprocessing stability.

@@ -20,6 +20,7 @@ data_cache*/
 data_caches*/
 data_cache_v*/
 runs*/
+analysis*/
 analysis/plots/
 analysis/*.png
 
