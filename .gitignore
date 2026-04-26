@@ -37,3 +37,20 @@ analysis/*.png
 
 # optional: keep raw datasets out of git (recommended for bigger data)
 data/moth_sounds/
+
+data2/
+data3/
+data_1_sec/
+old run 12-04-26/
+
+data/
+data2/
+data_cache/
+data_caches/
+runs/
+analysis/
+*.npy
+*.wav
+*.pt
+*.pth
+__pycache__/
