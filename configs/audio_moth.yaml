@@ -40,7 +40,7 @@ train:
   # loss_weights: []
 
 model:
-  num_classes: 2
+  # num_classes: 2 # num_classes is now detected automatically from segments.csv
 
   # Do NOT hardcode exits here.
   # The updated training/train.py should derive:

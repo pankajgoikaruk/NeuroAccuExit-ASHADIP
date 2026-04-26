@@ -25,7 +25,38 @@ param(
   [int]$EvalFixedKWindows = 3,
   [double]$TimeMargin = 0.0,
 
-  # New: CLI override for hint passing.
+  # Unified preprocessing / segmentation controls
+  # InputMode:
+  #   segment -> raw mixed-length audio is cleaned and segmented
+  #   ready   -> already clipped audio is cleaned and exported as fixed-length segment WAVs
+  [ValidateSet("segment", "ready")]
+  [string]$InputMode = "segment",
+
+  # Optional comma-separated labels. Empty = auto-discover class folders under DataRoot.
+  # Example: -Labels "gun_shot,fireworks,rain,wind"
+  [string]$Labels = "",
+
+  # Keep short audio if duration >= MinKeepSec by padding to SegmentSec.
+  [double]$MinKeepSec = 0.25,
+
+  # Generic cap. 0 = keep all segments per parent file.
+  [int]$MaxSegmentsPerFileDefault = 0,
+
+  # Per-label override. Example:
+  # -MaxSegmentsPerLabelJson '{"fireworks":5,"rain":5,"wind":5,"gun_shot":0}'
+  [string]$MaxSegmentsPerLabelJson = "",
+
+  # Leakage control:
+  #   file  -> all segments from one source file stay in one split
+  #   group -> related files stay together based on GroupRegex or folder structure
+  [ValidateSet("file", "group")]
+  [string]$SplitUnit = "file",
+  [string]$GroupRegex = "",
+
+  # Rebuild cache even if segments/features already exist
+  [switch]$ForceRebuild,
+
+  # CLI override for hint passing.
   # Use:
   #   -ExitHint "true"   -> force hint enabled
   #   -ExitHint "false"  -> force hint disabled
@@ -37,11 +68,20 @@ $ErrorActionPreference = "Stop"
 $env:PYTHONPATH = (Get-Location).Path
 $env:KMP_DUPLICATE_LIB_OK = "TRUE"
 
-function Invoke-Python([string]$cmd) {
-  Write-Host "  $cmd" -ForegroundColor DarkGray
-  Invoke-Expression $cmd
+function Format-ArgForDisplay([string]$s) {
+  if ($null -eq $s) { return "''" }
+  if ($s -match '[\s"''{}:,\\]') {
+    return '"' + ($s -replace '"', '\"') + '"'
+  }
+  return $s
+}
+
+function Invoke-PythonArgs([string[]]$ArgsList) {
+  $display = ($ArgsList | ForEach-Object { Format-ArgForDisplay $_ }) -join " "
+  Write-Host "  python $display" -ForegroundColor DarkGray
+  & python @ArgsList
   if ($LASTEXITCODE -ne 0) {
-    throw "Python command failed ($LASTEXITCODE): $cmd"
+    throw "Python command failed ($LASTEXITCODE): python $display"
   }
 }
 
@@ -83,18 +123,27 @@ if ([string]::IsNullOrWhiteSpace($CacheId)) {
   $segId = ConvertTo-Id $SegmentSec
   $hopId = ConvertTo-Id $HopSec
   $tapId = (($TapBlocks -replace '\s+', '') -replace ',', '-')
-  $CacheId = "seg$segId" + "_hop$hopId" + "_bp100-3000" + "_mels$NMels" + "_tap$tapId"
+  $capId = $(if ($MaxSegmentsPerFileDefault -gt 0) { "cap$MaxSegmentsPerFileDefault" } else { "capAll" })
+  $modeId = $InputMode
+  $splitId = $SplitUnit
+  $CacheId = "mode$modeId" + "_seg$segId" + "_hop$hopId" + "_bp100-3000" + "_mels$NMels" + "_tap$tapId" + "_$capId" + "_split$splitId"
 }
 
 $CacheIdSafe     = ($CacheId -replace '[^A-Za-z0-9_-]', '_')
 $variantCacheDir = Join-Path (Join-Path $CacheRoot $VariantSafe) $CacheIdSafe
 
+if ($ForceRebuild -and (Test-Path $variantCacheDir)) {
+  Write-Host "`n[cache] ForceRebuild enabled. Removing cache: $variantCacheDir" -ForegroundColor Yellow
+  Remove-Item -Recurse -Force $variantCacheDir
+}
+
 New-Item -ItemType Directory -Path $CacheRoot -ErrorAction SilentlyContinue | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $CacheRoot $VariantSafe) -ErrorAction SilentlyContinue | Out-Null
 New-Item -ItemType Directory -Path $variantCacheDir -ErrorAction SilentlyContinue | Out-Null
 
-$SegCsv   = Join-Path $variantCacheDir "segments.csv"
-$FeatRoot = Join-Path $variantCacheDir "features"
+$SegCsv     = Join-Path $variantCacheDir "segments.csv"
+$FeatRoot   = Join-Path $variantCacheDir "features"
+$SegWavRoot = Join-Path $variantCacheDir "segment_wavs"
 
 $pipelineStart = Get-Date
 
@@ -112,88 +161,178 @@ Write-Host "  SegmentSec      = $SegmentSec"      -ForegroundColor DarkGray
 Write-Host "  HopSec          = $HopSec"          -ForegroundColor DarkGray
 Write-Host "  NMels           = $NMels"           -ForegroundColor DarkGray
 Write-Host "  TapBlocks       = $TapBlocks"       -ForegroundColor DarkGray
+Write-Host "  InputMode       = $InputMode"       -ForegroundColor DarkGray
+Write-Host "  Labels          = $(if ($Labels -ne '') { $Labels } else { 'auto-discover' })" -ForegroundColor DarkGray
+Write-Host "  MinKeepSec      = $MinKeepSec"      -ForegroundColor DarkGray
+Write-Host "  MaxSeg/File     = $MaxSegmentsPerFileDefault" -ForegroundColor DarkGray
+Write-Host "  MaxSeg/Label    = $(if ($MaxSegmentsPerLabelJson -ne '') { $MaxSegmentsPerLabelJson } else { '{}' })" -ForegroundColor DarkGray
+Write-Host "  SplitUnit       = $SplitUnit"       -ForegroundColor DarkGray
+Write-Host "  GroupRegex      = $(if ($GroupRegex -ne '') { $GroupRegex } else { '<none>' })" -ForegroundColor DarkGray
 if ($ExitHint -ne "") {
   Write-Host "  ExitHint        = $ExitHint (CLI override)" -ForegroundColor DarkGray
 } else {
   Write-Host "  ExitHint        = YAML default" -ForegroundColor DarkGray
 }
+Write-Host "  ForceRebuild    = $ForceRebuild"    -ForegroundColor DarkGray
 Write-Host "  RunDir          = $runPath"         -ForegroundColor DarkGray
 Write-Host "  RunClipPolicy   = $RunClipPolicy"   -ForegroundColor DarkGray
 
-$cacheReady = (Test-Path $SegCsv) -and (Test-Path $FeatRoot)
+$cacheReady = (Test-Path $SegCsv) -and (Test-Path $FeatRoot) -and (Test-Path $SegWavRoot)
 
-if ($cacheReady) {
+if ($cacheReady -and -not $ForceRebuild) {
   Write-Host "`n[cache] Reusing existing cache: $variantCacheDir" -ForegroundColor Green
 }
 else {
   # --------------------- 1/10) Prep segments ---------------------
-  Write-Host "`n[1/10] Prep segments..." -ForegroundColor Yellow
-  Invoke-Python ('python -m scripts.prep_segments --root "{0}" --cache "{1}" --sr 16000 --segment_sec {2} --hop {3} --silence_dbfs -40 --bandpass 100 3000 --config "{4}"' -f `
-    $DataRoot, $variantCacheDir, $SegmentSec, $HopSec, $Config)
+  Write-Host "`n[1/10] Prep segments and export physical segment WAVs..." -ForegroundColor Yellow
+
+  $prepArgs = @(
+    "-m", "scripts.prep_segments",
+    "--root", $DataRoot,
+    "--cache", $variantCacheDir,
+    "--sr", "16000",
+    "--segment_sec", ([string]$SegmentSec),
+    "--hop", ([string]$HopSec),
+    "--silence_dbfs", "-40",
+    "--bandpass", "100", "3000",
+    "--config", $Config,
+    "--input_mode", $InputMode,
+    "--min_keep_sec", ([string]$MinKeepSec),
+    "--max_segments_per_file_default", ([string]$MaxSegmentsPerFileDefault),
+    "--split_unit", $SplitUnit,
+    "--export_segment_wavs"
+  )
+
+  if ($Labels.Trim() -ne "") {
+    $labelItems = @($Labels.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" })
+    if ($labelItems.Count -gt 0) {
+      $prepArgs += "--labels"
+      foreach ($lab in $labelItems) {
+        $prepArgs += $lab
+      }
+    }
+  }
+
+  if ($MaxSegmentsPerLabelJson.Trim() -ne "") {
+    # IMPORTANT: pass as a single argv item. This prevents PowerShell from stripping JSON quotes.
+    $prepArgs += "--max_segments_per_label_json"
+    $prepArgs += $MaxSegmentsPerLabelJson
+  }
+
+  if ($GroupRegex.Trim() -ne "") {
+    $prepArgs += "--group_regex"
+    $prepArgs += $GroupRegex
+  }
+
+  Invoke-PythonArgs $prepArgs
 
   # --------------------- 2/10) Extract features ---------------------
-  Write-Host "`n[2/10] Extract features..." -ForegroundColor Yellow
-  Invoke-Python ('python -m scripts.extract_features --cache "{0}" --n_mels {1} --n_fft 1024 --win_ms 25 --hop_ms 10 --cmvn' -f `
-    $variantCacheDir, $NMels)
-}
-
-# --------------------- Optional CLI arg for training.train ---------------------
-$TrainHintArg = ""
-if ($ExitHint -ne "") {
-  $TrainHintArg = " --exit_hint_enable $ExitHint"
+  Write-Host "`n[2/10] Extract features from physical segment WAVs..." -ForegroundColor Yellow
+  $featureArgs = @(
+    "-m", "scripts.extract_features",
+    "--cache", $variantCacheDir,
+    "--n_mels", ([string]$NMels),
+    "--n_fft", "1024",
+    "--win_ms", "25",
+    "--hop_ms", "10",
+    "--cmvn",
+    "--pad_short"
+  )
+  Invoke-PythonArgs $featureArgs
 }
 
 # --------------------- 3/10) Train ExitNet ---------------------
 Write-Host "`n[3/10] Train ExitNet..." -ForegroundColor Yellow
-Invoke-Python ('python -m training.train --config "{0}" --run_dir "{1}" --cache_dir "{2}" --device "{3}" --segment_sec {4} --hop_sec {5} --variant "{6}" --tap_blocks "{7}"{8}' -f `
-  $Config, $runPath, $variantCacheDir, $Device, $SegmentSec, $HopSec, $Variant, $TapBlocks, $TrainHintArg)
+$trainArgs = @(
+  "-m", "training.train",
+  "--config", $Config,
+  "--run_dir", $runPath,
+  "--cache_dir", $variantCacheDir,
+  "--device", $Device,
+  "--segment_sec", ([string]$SegmentSec),
+  "--hop_sec", ([string]$HopSec),
+  "--variant", $Variant,
+  "--tap_blocks", $TapBlocks
+)
+if ($ExitHint -ne "") {
+  $trainArgs += "--exit_hint_enable"
+  $trainArgs += $ExitHint
+}
+Invoke-PythonArgs $trainArgs
 
 Write-Host "Using run: $runPath" -ForegroundColor Green
 
 # Save meta.json for traceability
 $createdAtIso = Get-Date -Format o
 $meta = @{
-  run_id              = $runId
-  variant             = $Variant
-  variant_safe        = $VariantSafe
-  created_at          = $createdAtIso
-  runs_root           = $RunsRoot
-  variant_dir         = $variantRunDir
-  cache_root          = $CacheRoot
-  cache_id            = $CacheIdSafe
-  cache_dir           = $variantCacheDir
-  data_root           = $DataRoot
-  device              = $Device
-  policy              = $Policy
-  segment_sec         = $SegmentSec
-  hop_sec             = $HopSec
-  n_mels              = $NMels
-  tap_blocks          = $TapBlocks
-  exit_hint_override  = $(if ($ExitHint -ne "") { $ExitHint } else { "yaml_default" })
-  run_clip_policy     = [bool]$RunClipPolicy
-  time_conf           = $TimeConf
-  time_stable_k       = $TimeStableK
-  time_min_windows    = $TimeMinWindows
-  eval_fixed_k_windows = $EvalFixedKWindows
-  time_margin         = $TimeMargin
+  run_id                        = $runId
+  variant                       = $Variant
+  variant_safe                  = $VariantSafe
+  created_at                    = $createdAtIso
+  runs_root                     = $RunsRoot
+  variant_dir                   = $variantRunDir
+  cache_root                    = $CacheRoot
+  cache_id                      = $CacheIdSafe
+  cache_dir                     = $variantCacheDir
+  data_root                     = $DataRoot
+  device                        = $Device
+  policy                        = $Policy
+  segment_sec                   = $SegmentSec
+  hop_sec                       = $HopSec
+  n_mels                        = $NMels
+  tap_blocks                    = $TapBlocks
+  input_mode                    = $InputMode
+  labels                        = $(if ($Labels -ne "") { $Labels } else { "auto_discover" })
+  min_keep_sec                  = $MinKeepSec
+  max_segments_per_file_default = $MaxSegmentsPerFileDefault
+  max_segments_per_label_json   = $MaxSegmentsPerLabelJson
+  split_unit                    = $SplitUnit
+  group_regex                   = $GroupRegex
+  force_rebuild                 = [bool]$ForceRebuild
+  segment_wavs_root             = $SegWavRoot
+  exit_hint_override            = $(if ($ExitHint -ne "") { $ExitHint } else { "yaml_default" })
+  run_clip_policy               = [bool]$RunClipPolicy
+  time_conf                     = $TimeConf
+  time_stable_k                 = $TimeStableK
+  time_min_windows              = $TimeMinWindows
+  eval_fixed_k_windows          = $EvalFixedKWindows
+  time_margin                   = $TimeMargin
 }
 New-Item -ItemType Directory -Path $runPath -ErrorAction SilentlyContinue | Out-Null
 $meta | ConvertTo-Json -Depth 8 | Out-File -FilePath (Join-Path $runPath "meta.json") -Encoding UTF8
 
 # --------------------- 4/10) Calibrate temperatures ---------------------
 Write-Host "`n[4/10] Calibrate temperatures..." -ForegroundColor Yellow
-Invoke-Python ('python -m training.calibrate --run_dir "{0}" --segments_csv "{1}" --features_root "{2}" --tap_blocks "{3}" --n_mels {4}' -f `
-  $runPath, $SegCsv, $FeatRoot, $TapBlocks, $NMels)
+Invoke-PythonArgs @(
+  "-m", "training.calibrate",
+  "--run_dir", $runPath,
+  "--segments_csv", $SegCsv,
+  "--features_root", $FeatRoot,
+  "--tap_blocks", $TapBlocks,
+  "--n_mels", ([string]$NMels)
+)
 
 # --------------------- 5/10) Select threshold (greedy path) ---------------------
 Write-Host "`n[5/10] Select threshold (tau)..." -ForegroundColor Yellow
-Invoke-Python ('python -m training.thresholds_offline --run_dir "{0}" --segments_csv "{1}" --features_root "{2}" --tap_blocks "{3}" --n_mels {4}' -f `
-  $runPath, $SegCsv, $FeatRoot, $TapBlocks, $NMels)
+Invoke-PythonArgs @(
+  "-m", "training.thresholds_offline",
+  "--run_dir", $runPath,
+  "--segments_csv", $SegCsv,
+  "--features_root", $FeatRoot,
+  "--tap_blocks", $TapBlocks,
+  "--n_mels", ([string]$NMels)
+)
 
 # --------------------- 6/10) Segment policy test ---------------------
 Write-Host "`n[6/10] Segment policy test..." -ForegroundColor Yellow
-Invoke-Python ('python -m scripts.policy_test --run_dir "{0}" --segments_csv "{1}" --features_root "{2}" --tap_blocks "{3}" --n_mels {4}' -f `
-  $runPath, $SegCsv, $FeatRoot, $TapBlocks, $NMels)
+Invoke-PythonArgs @(
+  "-m", "scripts.policy_test",
+  "--run_dir", $runPath,
+  "--segments_csv", $SegCsv,
+  "--features_root", $FeatRoot,
+  "--tap_blocks", $TapBlocks,
+  "--n_mels", ([string]$NMels)
+)
 
 # --------------------- Guard: current clip tester is greedy-only ---------------------
 if ($RunClipPolicy -and $Policy -ne "greedy") {
@@ -203,24 +342,56 @@ if ($RunClipPolicy -and $Policy -ne "greedy") {
 # --------------------- 6b/10) Clip policy test (optional) ---------------------
 if ($RunClipPolicy) {
   Write-Host "`n[6b/10] Clip policy test..." -ForegroundColor Yellow
-  Invoke-Python ('python -m scripts.clip_policy_test --run_dir "{0}" --segments_csv "{1}" --features_root "{2}" --device "{3}" --tap_blocks "{4}" --n_mels {5} --time_conf {6} --time_stable_k {7} --time_min_windows {8} --fixed_k_windows {9} --time_margin {10}' -f `
-    $runPath, $SegCsv, $FeatRoot, $Device, $TapBlocks, $NMels, $TimeConf, $TimeStableK, $TimeMinWindows, $EvalFixedKWindows, $TimeMargin)
+  Invoke-PythonArgs @(
+    "-m", "scripts.clip_policy_test",
+    "--run_dir", $runPath,
+    "--segments_csv", $SegCsv,
+    "--features_root", $FeatRoot,
+    "--device", $Device,
+    "--tap_blocks", $TapBlocks,
+    "--n_mels", ([string]$NMels),
+    "--time_conf", ([string]$TimeConf),
+    "--time_stable_k", ([string]$TimeStableK),
+    "--time_min_windows", ([string]$TimeMinWindows),
+    "--fixed_k_windows", ([string]$EvalFixedKWindows),
+    "--time_margin", ([string]$TimeMargin)
+  )
 }
 
 # --------------------- 7/10) Summarise run ---------------------
 Write-Host "`n[7/10] Summarise run..." -ForegroundColor Yellow
-Invoke-Python ('python -m scripts.summarize_run --run_dir "{0}" --segments_csv "{1}" --features_root "{2}" --tap_blocks "{3}" --n_mels {4}' -f `
-  $runPath, $SegCsv, $FeatRoot, $TapBlocks, $NMels)
+Invoke-PythonArgs @(
+  "-m", "scripts.summarize_run",
+  "--run_dir", $runPath,
+  "--segments_csv", $SegCsv,
+  "--features_root", $FeatRoot,
+  "--tap_blocks", $TapBlocks,
+  "--n_mels", ([string]$NMels)
+)
 
 # --------------------- 8/10) Analyse run ---------------------
 Write-Host "`n[8/10] Analyse run..." -ForegroundColor Yellow
-Invoke-Python ('python -m scripts.analyse_run --run_dir "{0}" --segments_csv "{1}" --features_root "{2}" --tap_blocks "{3}" --n_mels {4}' -f `
-  $runPath, $SegCsv, $FeatRoot, $TapBlocks, $NMels)
+Invoke-PythonArgs @(
+  "-m", "scripts.analyse_run",
+  "--run_dir", $runPath,
+  "--segments_csv", $SegCsv,
+  "--features_root", $FeatRoot,
+  "--tap_blocks", $TapBlocks,
+  "--n_mels", ([string]$NMels)
+)
 
 # --------------------- 9/10) Profile latency ---------------------
 Write-Host "`n[9/10] Profile latency..." -ForegroundColor Yellow
-Invoke-Python ('python -m scripts.profile_latency --run_dir "{0}" --segments_csv "{1}" --features_root "{2}" --variant "{3}" --device "{4}" --tap_blocks "{5}" --n_mels {6}' -f `
-  $runPath, $SegCsv, $FeatRoot, $Variant, $Device, $TapBlocks, $NMels)
+Invoke-PythonArgs @(
+  "-m", "scripts.profile_latency",
+  "--run_dir", $runPath,
+  "--segments_csv", $SegCsv,
+  "--features_root", $FeatRoot,
+  "--variant", $Variant,
+  "--device", $Device,
+  "--tap_blocks", $TapBlocks,
+  "--n_mels", ([string]$NMels)
+)
 
 # --------------------- Timing & logging ---------------------
 $pipelineEnd   = Get-Date
@@ -237,10 +408,10 @@ New-Item -ItemType Directory -Path $analysisDir -ErrorAction SilentlyContinue | 
 $runtimeCsv = Join-Path $analysisDir "pipeline_runtime.csv"
 
 if (-not (Test-Path $runtimeCsv)) {
-  "timestamp,variant,policy,segment_sec,hop_sec,device,cache_dir,runs_root,run_id,total_seconds,total_minutes,run_clip_policy,tap_blocks,exit_hint_override" | Out-File $runtimeCsv -Encoding UTF8
+  "timestamp,variant,policy,segment_sec,hop_sec,device,cache_dir,runs_root,run_id,total_seconds,total_minutes,run_clip_policy,tap_blocks,exit_hint_override,input_mode,split_unit,max_segments_per_file_default" | Out-File $runtimeCsv -Encoding UTF8
 }
 
-$csvLine = "{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10},{11},{12},{13}" -f `
+$csvLine = "{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10},{11},{12},{13},{14},{15},{16}" -f `
   $timestampIso, `
   $Variant, `
   $Policy, `
@@ -254,7 +425,10 @@ $csvLine = "{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10},{11},{12},{13}" -f `
   $totalMinutes, `
   [bool]$RunClipPolicy, `
   $TapBlocks, `
-  $(if ($ExitHint -ne "") { $ExitHint } else { "yaml_default" })
+  $(if ($ExitHint -ne "") { $ExitHint } else { "yaml_default" }), `
+  $InputMode, `
+  $SplitUnit, `
+  $MaxSegmentsPerFileDefault
 
 Add-Content -Path $runtimeCsv -Value $csvLine
 Write-Host "Pipeline runtime logged to: $runtimeCsv" -ForegroundColor DarkGray
@@ -271,3 +445,4 @@ powershell -ExecutionPolicy Bypass -File scripts\run_reports.ps1 `
 
 Write-Host "`n== Done. Artifacts at: $runPath ==" -ForegroundColor Cyan
 Write-Host "Cache used: $variantCacheDir" -ForegroundColor DarkGray
+Write-Host "Physical segment WAVs: $SegWavRoot" -ForegroundColor DarkGray

@@ -1,519 +1,793 @@
-# ASHADIP / NeuroAccuExit – Documentation Structure for `kexit-hint`
+# ASHADIP / NeuroAccuExit — Documentation Structure for Generic K-Exit / C-Class Greedy + Hint Pipeline
 
-This document defines the recommended documentation structure for the **`kexit-hint` branch**, which generalizes the historical `v0.1.6` code line into a **generic K-exit / C-class** audio early-exit pipeline and includes an optional **5-exit sequential hint-passing** path.
+This document defines the recommended documentation / thesis mini-book structure for the current `kexit-greedy-hint` research branch.
 
-The key distinction is:
+The current branch has moved beyond the older moth-only setting. It now supports:
 
-- **`v0.1.6` tag** = frozen historical **3-exit greedy baseline**
-- **`kexit-hint` branch** = reusable **K-exit / C-class** refactor validated on both **3 exits** and **5 exits**, with an additional **5-exit sequential hint-passing experiment**
-- **`kexit_greedy_no_hint`** = current best greedy 5-exit reference on this branch
-- **`kexit_greedy_hint`** = experimental 5-exit sequential hint-passing run on this branch
-
-This document should be used for the updated mini-book / Overleaf write-up of the refactored branch, not for the frozen historical baseline.
-
----
-
-## Chapter 1 – Introduction and Motivation
-
-**Goal:** Explain why the `kexit-hint` branch was created and what it changes.
-
-### Content to include
-
-- **Domain**
-  - acoustic classification of moth wingbeat audio
-  - binary classification: male vs female
-- **Motivation**
-  - the original code line was hardcoded for 3 exits
-  - later research required comparing 3-exit and 5-exit settings fairly
-  - a reusable K-exit implementation was needed to support future early-exit variants without rewriting the full stack
-  - later work also required testing whether **sequential exit-to-exit hint passing** could improve the 5-exit path
-- **High-level idea**
-  - raw audio → segmentation → log-mel features → dynamic K-exit TinyAudioCNN + ExitNet → calibration → greedy threshold selection → segment and clip policy evaluation
-- **Main contribution of the branch**
-  - successful refactor from a fixed 3-exit path to a generic **K-exit / C-class** path
-  - optional integration of a lightweight **sequential hint-passing** mechanism
+- dynamic **K-exit** inference
+- dynamic **C-class** classification
+- generic audio segmentation
+- physical 1-second segment-WAV export
+- greedy no-hint and greedy sequential hint-passing variants
+- 2-class moth validation
+- 10-class audio validation
 
 ---
 
+## Recommended document map
 
-## Files Updated in This Refactor
-
-Core code path updated for dynamic K-exit support and corrected hinted model reconstruction:
-
-- `adapters/audio_adapter.py`
-- `models/exit_net.py`
-- `training/train.py`
-- `training/eval.py`
-- `training/calibrate.py`
-- `training/thresholds_offline.py`
-- `scripts/policy_test.py`
-- `scripts/clip_policy_test.py`
-- `scripts/summarize_run.py`
-- `scripts/analyse_run.py`
-- `scripts/profile_latency.py`
-- `utils/model_factory.py`
-- `utils/profiling.py`
-- `scripts/run_full.ps1`
-- `scripts/run_reports.ps1`
-- `scripts/compare_variants.py`
-- `scripts/variants_to_latex.py`
-- `scripts/ondevice_to_latex.py`
-- `scripts/analysis_to_latex.py`
-
----
-## Chapter 2 – System Overview
-
-**Goal:** Give a top-down view of the new dynamic pipeline.
-
-### End-to-end pipeline
-
-1. raw WAV data in `data/male/` and `data/female/`
-2. `scripts/prep_segments.py`
-   - create `segments.csv`
-   - define train / val / test split
-3. `scripts/extract_features.py`
-   - compute log-mel `.npy` features
-   - update `feat_relpath`
-4. `data/datasets.py`
-   - build PyTorch datasets and loaders
-5. `adapters/audio_adapter.py`
-   - define dynamic `TinyAudioCNN` with configurable `tap_blocks`
-6. `models/exit_net.py`
-   - define generic `ExitNet` with one head per tap plus one final head
-   - optionally attach **sequential exit-to-exit hints**
-7. `utils/model_factory.py`
-   - build the correct non-hint or hint-enabled model from `config_used.yaml`
-8. `training/train.py`
-   - train dynamic K-exit model and save `ckpt/best.pt`
-9. `training/calibrate.py`
-   - fit per-exit temperatures and save `temperature.json`
-10. `training/thresholds_offline.py`
-   - select greedy `tau`
-   - save `thresholds.json`
-11. `scripts/policy_test.py`
-   - segment-level greedy policy evaluation
-12. `scripts/clip_policy_test.py`
-   - clip-wise full baseline and Depth×Time evaluation
-13. `scripts/summarize_run.py`
-   - consolidate artifacts into `summary.json`
-14. `scripts/analyse_run.py`
-   - confusion matrices, ROC, plots, analysis summary
-15. `scripts/profile_latency.py`
-   - on-device latency and FLOPs profiling
-16. `scripts/run_reports.ps1`
-   - regenerate per-run and cross-run reports / LaTeX tables
+| File | Purpose |
+|---|---|
+| `README.md` | Main repository-facing documentation, commands, main tables, and conclusions |
+| `DOC_STRUCTURE.md` | Long-form thesis/report structure and writing plan |
+| `APPENDIX.md` | Extended tables, per-class results, split counts, threshold details, and diagnostic notes |
+| `ASHADIP_8_run_comparison_tables.xlsx` | Spreadsheet copy of all parsed run tables |
 
 ---
 
-## Chapter 3 – Model Architecture
+# Chapter 1 — Introduction and motivation
 
-**Goal:** Explain the generic K-exit structure and the optional hint mechanism.
+## Purpose
 
-### 3.1 Dynamic backbone taps
+Explain why this branch exists.
 
-- `TinyAudioCNN` exposes configurable `tap_blocks`
-- validated settings:
-  - `tap_blocks=(1,3)` → 3 exits
-  - `tap_blocks=(1,2,3,4)` → 5 exits
+## Key points to include
 
-### 3.2 Generic ExitNet
+- The original pipeline was designed around a 3-exit moth binary classifier.
+- The new research direction required a generic audio pipeline that can handle:
+  - 2 classes or N classes
+  - 3 exits or 5 exits
+  - hint or no-hint inference
+  - full-clip and Depth×Time policies
+- The immediate research question became:
 
-- one classifier head per tap
-- one final classifier head
-- total exits = `len(tap_blocks) + 1`
+> Are the weak C-class results caused by a broken modified pipeline, or by the harder multiclass dataset?
 
-### 3.3 Optional sequential hint passing
-
-- each later exit can consume a small hint derived from the previous exit
-- hint source can be probabilities or logits
-- optional confidence / margin / entropy summary statistics can be included
-- hint passing is controlled from `model.exit_hint` in `configs/audio_moth.yaml`
-
-### 3.4 Important interpretation
-
-- the branch supports hint passing as an **optional architectural mechanism**
-- current results show it is **behaviorally meaningful**, but **not yet the best final greedy model**
+The controlled 8-run experiment answers this clearly: the pipeline is not broken because moth performance remains strong. The C-class task is genuinely harder.
 
 ---
 
-## Chapter 4 – Training, Calibration, and Thresholding
+# Chapter 2 — Dataset design
 
-**Goal:** Explain the training and greedy stopping workflow.
+## 2.1 Moth 2-class dataset
 
-### Include
+Classes:
 
-- weighted multi-exit training
-- temperature scaling per exit
-- greedy threshold selection (`tau`)
-- dynamic reconstruction of hint and no-hint models from `config_used.yaml`
-- consistent run metadata and reporting paths
+```text
+female
+male
+```
 
-### Important implementation note
+Purpose:
 
-The refactor updated the run/report scripts so that:
+- pipeline sanity check
+- direct comparison against previous moth results
+- proof that generic segmentation/export did not damage performance
 
-- tap configuration is recorded in metadata
-- hint and no-hint models are reconstructed consistently from `config_used.yaml`
-- reporting regenerates safely for both 3-exit and 5-exit runs
-- schema conflicts in old CSV logs fall back to `_kexit.csv` outputs instead of corrupting older files
+## 2.2 C-class 10-class dataset
+
+Classes:
+
+```text
+car_crash
+conversation
+engine_idling
+fireworks
+gun_shot
+rain
+road_traffic
+scream
+thunderstorm
+wind
+```
+
+Purpose:
+
+- harder generic audio classification test
+- multiclass validation of the K-exit/C-class refactor
+- realistic test of hint passing under class ambiguity
+
+## 2.3 Dataset summary table
+
+| Dataset        | Variant                  |   Classes |   Train files |   Val files |   Test files |   Train segs |   Val segs |   Test segs |   Total segs |   Test avg windows/clip |   Test median windows/clip |
+|:---------------|:-------------------------|----------:|--------------:|------------:|-------------:|-------------:|-----------:|------------:|-------------:|------------------------:|---------------------------:|
+| 2-class moth   | 3exit_2class_greedy      |         2 |            99 |          21 |           22 |         1646 |        246 |         325 |         2217 |                   14.77 |                        9.5 |
+| 2-class moth   | 3exit_2class_greedy_hint |         2 |            99 |          21 |           22 |         1646 |        246 |         325 |         2217 |                   14.77 |                        9.5 |
+| 2-class moth   | 5exit_2class_greedy      |         2 |            99 |          21 |           22 |         1646 |        246 |         325 |         2217 |                   14.77 |                        9.5 |
+| 2-class moth   | 5exit_2class_greedy_hint |         2 |            99 |          21 |           22 |         1646 |        246 |         325 |         2217 |                   14.77 |                        9.5 |
+| 10-class audio | 3exit_cclass_greedy      |        10 |           707 |         152 |          152 |         2713 |        566 |         608 |         3887 |                    4    |                        5   |
+| 10-class audio | 3exit_cclass_greedy_hint |        10 |           707 |         152 |          152 |         2713 |        566 |         608 |         3887 |                    4    |                        5   |
+| 10-class audio | 5exit_cclass_greedy      |        10 |           707 |         152 |          152 |         2713 |        566 |         608 |         3887 |                    4    |                        5   |
+| 10-class audio | 5exit_cclass_greedy_hint |        10 |           707 |         152 |          152 |         2713 |        566 |         608 |         3887 |                    4    |                        5   |
 
 ---
 
-## Chapter 5 – Evaluation Protocol
+# Chapter 3 — Generic preprocessing and segmentation
 
-**Goal:** Describe the three evaluation levels used in this branch.
+## 3.1 Recommended flow
 
-### 5.1 Per-exit test evaluation
+Use the following flow for reproducible research:
+
+```text
+raw parent audio
+→ clean/resample/bandpass parent audio
+→ split by parent file or group
+→ create logical 1-second segment rows
+→ export physical 1-second segment WAVs
+→ extract log-mel features from exported segment WAVs
+```
+
+## 3.2 Why this flow is preferred
+
+This flow preserves traceability:
+
+```text
+feature .npy → segment WAV → cleaned parent WAV → original parent file
+```
+
+It also prevents segment-level train/test leakage because the split is assigned at the parent file or group level before model evaluation.
+
+## 3.3 Modes to document
+
+| Mode | Purpose |
+|---|---|
+| `segment` | Raw long/short audio → cleaned audio → segment rows → physical segment WAVs → log-mel features |
+| `ready` | Already segmented clips → build manifest/splits → extract features |
+| `export_wavs` | Save physical 1-second WAV segments for reuse, auditing, and publication |
+
+## 3.4 Important CLI controls
+
+| Argument | Purpose |
+|---|---|
+| `-InputMode "segment"` | Segment raw parent audio |
+| `-SplitUnit "file"` | Split by parent file to reduce leakage |
+| `-MinKeepSec 0.25` | Keep very short event clips if at least 0.25s |
+| `-MaxSegmentsPerFileDefault` | Limit per-file segment contribution |
+| `-MaxSegmentsPerLabelJson` | Per-class cap using key=value format |
+| `-ForceRebuild` | Rebuild cache cleanly |
+| `-RunClipPolicy` | Run full-clip and Depth×Time evaluation |
+
+---
+
+# Chapter 4 — Model architecture
+
+## 4.1 Dynamic K-exit model
+
+The model derives:
+
+```text
+num_exits = len(tap_blocks) + 1
+```
+
+Validated configurations:
+
+| TapBlocks | Exits |
+|---|---:|
+| `1,3` | 3 |
+| `1,2,3,4` | 5 |
+
+## 4.2 Dynamic C-class output
+
+The classifier should infer the number of classes from the dataset / `segments.csv`.
+
+Avoid hardcoding:
+
+```yaml
+model:
+  num_classes: 2
+```
+
+For generic C-class runs, this should be removed or commented out.
+
+## 4.3 Sequential hint passing
+
+Hint passing is controlled from the CLI:
+
+```powershell
+-ExitHint "true"
+```
+
+or:
+
+```powershell
+-ExitHint "false"
+```
+
+The current evidence shows:
+
+- useful in compact 3-exit moth binary runs
+- harmful or unstable in current C-class runs
+- not yet beneficial for 5-exit C-class
+
+---
+
+# Chapter 5 — Training, calibration, and policy selection
+
+## 5.1 Multi-exit training
+
+Training uses dynamic loss weights:
+
+| Exit setting | Dynamic loss weights |
+|---|---|
+| 3 exits | `[0.3, 0.3, 1.0]` |
+| 5 exits | `[0.3, 0.3, 0.6, 0.8, 1.0]` |
+
+## 5.2 Calibration
+
+Each exit receives a fitted temperature in `temperature.json`.
+
+## 5.3 Greedy threshold selection
+
+The selected threshold `tau` is stored in `thresholds.json`.
+
+Threshold summary:
+
+| Dataset        | Variant                  |   Exits | Hint   |   Tau | Val macro F1   | Val acc   |
+|:---------------|:-------------------------|--------:|:-------|------:|:---------------|:----------|
+| 2-class moth   | 3exit_2class_greedy      |       3 | No     |  0.9  | 97.51%         | 97.56%    |
+| 2-class moth   | 3exit_2class_greedy_hint |       3 | Yes    |  0.95 | 98.35%         | 98.37%    |
+| 2-class moth   | 5exit_2class_greedy      |       5 | No     |  0.95 | 98.34%         | 98.37%    |
+| 2-class moth   | 5exit_2class_greedy_hint |       5 | Yes    |  0.9  | 96.67%         | 96.75%    |
+| 10-class audio | 3exit_cclass_greedy      |       3 | No     |  0.92 | 67.65%         | 71.38%    |
+| 10-class audio | 3exit_cclass_greedy_hint |       3 | Yes    |  0.85 | 70.53%         | 71.73%    |
+| 10-class audio | 5exit_cclass_greedy      |       5 | No     |  0.9  | 67.59%         | 71.73%    |
+| 10-class audio | 5exit_cclass_greedy_hint |       5 | Yes    |  0.95 | 66.28%         | 69.96%    |
+
+---
+
+# Chapter 6 — Evaluation protocol
+
+Use three evaluation levels.
+
+## 6.1 Per-exit test evaluation
 
 Report:
 
-- exit1 accuracy
-- exit2 accuracy
-- exit3 accuracy
-- exit4 accuracy
-- exit5 accuracy
+- exit accuracy
+- exit macro-F1
+- final-exit quality
 
-### 5.2 Segment-level greedy policy
+| Dataset        | Variant                  |   Exits | Hint   | Exit 1 acc   | Exit 1 macro F1   | Exit 2 acc   | Exit 2 macro F1   | Exit 3 acc   | Exit 3 macro F1   |
+|:---------------|:-------------------------|--------:|:-------|:-------------|:------------------|:-------------|:------------------|:-------------|:------------------|
+| 2-class moth   | 3exit_2class_greedy      |       3 | No     | 84.00%       | 79.44%            | 93.54%       | 91.18%            | 98.46%       | 97.90%            |
+| 2-class moth   | 3exit_2class_greedy_hint |       3 | Yes    | 84.62%       | 80.38%            | 94.46%       | 92.72%            | 99.38%       | 99.14%            |
+| 2-class moth   | 5exit_2class_greedy      |       5 | No     | 83.38%       | 78.81%            | 85.54%       | 82.36%            | 96.00%       | 94.68%            |
+| 2-class moth   | 5exit_2class_greedy_hint |       5 | Yes    | 83.38%       | 78.81%            | 86.15%       | 82.77%            | 94.77%       | 93.15%            |
+| 10-class audio | 3exit_cclass_greedy      |       3 | No     | 29.28%       | 21.29%            | 61.51%       | 56.79%            | 69.74%       | 64.74%            |
+| 10-class audio | 3exit_cclass_greedy_hint |       3 | Yes    | 22.70%       | 16.52%            | 53.29%       | 48.89%            | 61.68%       | 57.44%            |
+| 10-class audio | 5exit_cclass_greedy      |       5 | No     | 21.38%       | 14.90%            | 42.60%       | 35.56%            | 58.39%       | 51.89%            |
+| 10-class audio | 5exit_cclass_greedy_hint |       5 | Yes    | 21.05%       | 15.04%            | 40.13%       | 34.20%            | 56.74%       | 51.71%            |
+
+## 6.2 Segment-level greedy policy
 
 Report:
 
 - policy accuracy
-- avg exit depth
+- average exit depth
 - exit mix
 - flip-any rate
-- avg flip count
+- average flip count
 - exit consistency
 
-### 5.3 Clip-level evaluation
+| Dataset        | Variant                  |   Exits | Hint   | Policy acc   |   Avg exit depth | Flip-any rate   |   Avg flip count | Exit consistency   |   Tau |   N segments |
+|:---------------|:-------------------------|--------:|:-------|:-------------|-----------------:|:----------------|-----------------:|:-------------------|------:|-------------:|
+| 2-class moth   | 3exit_2class_greedy      |       3 | No     | 98.15%       |            1.862 | 17.23%          |            0.194 | 99.69%             |  0.9  |          325 |
+| 2-class moth   | 3exit_2class_greedy_hint |       3 | Yes    | 99.38%       |            1.911 | 16.31%          |            0.172 | 100.00%            |  0.95 |          325 |
+| 2-class moth   | 5exit_2class_greedy      |       5 | No     | 97.85%       |            2.462 | 20.31%          |            0.252 | 99.69%             |  0.95 |          325 |
+| 2-class moth   | 5exit_2class_greedy_hint |       5 | Yes    | 96.92%       |            2.36  | 19.38%          |            0.243 | 99.69%             |  0.9  |          325 |
+| 10-class audio | 3exit_cclass_greedy      |       3 | No     | 69.90%       |            2.873 | 71.38%          |            0.895 | 99.34%             |  0.92 |          608 |
+| 10-class audio | 3exit_cclass_greedy_hint |       3 | Yes    | 61.68%       |            2.87  | 84.38%          |            1.086 | 100.00%            |  0.85 |          608 |
+| 10-class audio | 5exit_cclass_greedy      |       5 | No     | 68.75%       |            4.612 | 81.91%          |            1.352 | 99.67%             |  0.9  |          608 |
+| 10-class audio | 5exit_cclass_greedy_hint |       5 | Yes    | 64.31%       |            4.748 | 83.22%          |            1.339 | 100.00%            |  0.95 |          608 |
 
-Two modes:
+## 6.3 Clip-level evaluation
 
-- **full-clip baseline**
+Report both:
+
+- **Full-clip baseline**
 - **Depth×Time early stopping**
 
-Report:
-
-- clip accuracy
-- processed/used-window segment accuracy
-- avg windows used
-- windows saved (%)
-- avg compute units
-- avg depth per used window
-- compute saved (%)
-- flip-rate
-- exit consistency
+| Dataset        | Variant                  |   Exits | Hint   | Clip mode   | Clip acc   | Segment acc used   |   Avg windows used |   Avg windows total | Windows saved %   |   Avg compute units | Compute saved %   |   Avg depth/used window | Flip rate   | Exit consistency   |   N clips |
+|:---------------|:-------------------------|--------:|:-------|:------------|:-----------|:-------------------|-------------------:|--------------------:|:------------------|--------------------:|:------------------|------------------------:|:------------|:-------------------|----------:|
+| 2-class moth   | 3exit_2class_greedy      |       3 | No     | Full clip   | 100.00%    | 98.15%             |             14.77  |               14.77 | 0.00%             |              27.5   | 0.00%             |                   1.862 | 17.23%      | 99.69%             |        22 |
+| 2-class moth   | 3exit_2class_greedy      |       3 | No     | Depth×Time  | 100.00%    | 97.73%             |              2     |               14.77 | 86.46%            |               4.818 | 82.48%            |                   2.409 | 36.36%      | 100.00%            |        22 |
+| 2-class moth   | 3exit_2class_greedy_hint |       3 | Yes    | Full clip   | 100.00%    | 99.38%             |             14.77  |               14.77 | 0.00%             |              28.23  | 0.00%             |                   1.911 | 16.31%      | 100.00%            |        22 |
+| 2-class moth   | 3exit_2class_greedy_hint |       3 | Yes    | Depth×Time  | 100.00%    | 100.00%            |              2     |               14.77 | 86.46%            |               4.864 | 82.77%            |                   2.432 | 36.36%      | 100.00%            |        22 |
+| 2-class moth   | 5exit_2class_greedy      |       5 | No     | Full clip   | 100.00%    | 97.85%             |             14.77  |               14.77 | 0.00%             |              36.36  | 0.00%             |                   2.462 | 20.31%      | 99.69%             |        22 |
+| 2-class moth   | 5exit_2class_greedy      |       5 | No     | Depth×Time  | 100.00%    | 97.78%             |              2.045 |               14.77 | 86.15%            |               6.455 | 82.25%            |                   3.156 | 40.00%      | 97.78%             |        22 |
+| 2-class moth   | 5exit_2class_greedy_hint |       5 | Yes    | Full clip   | 100.00%    | 96.92%             |             14.77  |               14.77 | 0.00%             |              34.86  | 0.00%             |                   2.36  | 19.38%      | 99.69%             |        22 |
+| 2-class moth   | 5exit_2class_greedy_hint |       5 | Yes    | Depth×Time  | 100.00%    | 97.87%             |              2.136 |               14.77 | 85.54%            |               7.136 | 79.53%            |                   3.34  | 40.43%      | 100.00%            |        22 |
+| 10-class audio | 3exit_cclass_greedy      |       3 | No     | Full clip   | 81.58%     | 69.90%             |              4     |                4    | 0.00%             |              11.49  | 0.00%             |                   2.873 | 71.38%      | 99.34%             |       152 |
+| 10-class audio | 3exit_cclass_greedy      |       3 | No     | Depth×Time  | 81.58%     | 65.59%             |              2.638 |                4    | 34.05%            |               7.546 | 34.34%            |                   2.86  | 72.07%      | 99.50%             |       152 |
+| 10-class audio | 3exit_cclass_greedy_hint |       3 | Yes    | Full clip   | 78.29%     | 61.68%             |              4     |                4    | 0.00%             |              11.48  | 0.00%             |                   2.87  | 84.38%      | 100.00%            |       152 |
+| 10-class audio | 3exit_cclass_greedy_hint |       3 | Yes    | Depth×Time  | 78.29%     | 61.20%             |              2.967 |                4    | 25.82%            |               8.467 | 26.25%            |                   2.854 | 82.48%      | 100.00%            |       152 |
+| 10-class audio | 5exit_cclass_greedy      |       5 | No     | Full clip   | 78.95%     | 68.75%             |              4     |                4    | 0.00%             |              18.45  | 0.00%             |                   4.612 | 81.91%      | 99.67%             |       152 |
+| 10-class audio | 5exit_cclass_greedy      |       5 | No     | Depth×Time  | 78.95%     | 65.57%             |              2.809 |                4    | 29.77%            |              12.93  | 29.89%            |                   4.604 | 80.80%      | 99.53%             |       152 |
+| 10-class audio | 5exit_cclass_greedy_hint |       5 | Yes    | Full clip   | 73.68%     | 64.31%             |              4     |                4    | 0.00%             |              18.99  | 0.00%             |                   4.748 | 83.22%      | 100.00%            |       152 |
+| 10-class audio | 5exit_cclass_greedy_hint |       5 | Yes    | Depth×Time  | 73.03%     | 61.69%             |              2.73  |                4    | 31.74%            |              12.88  | 32.21%            |                   4.716 | 81.69%      | 100.00%            |       152 |
 
 ---
 
-## Chapter 6 – Validated Run Settings
+# Chapter 7 — Reproducibility commands
 
-**Goal:** Record the main validated experiments in a reusable way.
-
-### 6.1 3-exit reference on this branch
+## Common variables
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\run_full.ps1 `
-  -Variant "kexit_3exit_ref" `
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+
+$MOTH_LABELS="female,male"
+
+$CCLASS_LABELS="car_crash,conversation,engine_idling,fireworks,gun_shot,rain,road_traffic,scream,thunderstorm,wind"
+
+$CCLASS_CAPS="gun_shot=0,scream=0,car_crash=0,fireworks=8,rain=5,wind=5,road_traffic=5,engine_idling=5,conversation=5,thunderstorm=5"
+```
+
+## 8-run command set
+
+### 3exit_2class_greedy
+
+```powershell
+.\scripts\run_full.ps1 `
+  -DataRoot "data\moth_sounds" `
+  -CacheRoot "data_caches" `
+  -Config "configs\audio_moth.yaml" `
+  -RunsRoot "runs" `
+  -Variant "3exit_2class_greedy" `
   -Policy "greedy" `
   -Device "cpu" `
+  -InputMode "segment" `
+  -Labels $MOTH_LABELS `
+  -SegmentSec 1.0 `
+  -HopSec 0.5 `
+  -MinKeepSec 0.25 `
+  -MaxSegmentsPerFileDefault 0 `
+  -SplitUnit "file" `
   -TapBlocks "1,3" `
+  -ExitHint "false" `
+  -ForceRebuild `
   -RunClipPolicy
 ```
 
-### 6.2 5-exit greedy no-hint
+### 3exit_2class_greedy_hint
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\run_full.ps1 `
-  -Variant "kexit_greedy_no_hint" `
+.\scripts\run_full.ps1 `
+  -DataRoot "data\moth_sounds" `
+  -CacheRoot "data_caches" `
+  -Config "configs\audio_moth.yaml" `
+  -RunsRoot "runs" `
+  -Variant "3exit_2class_greedy_hint" `
   -Policy "greedy" `
   -Device "cpu" `
-  -TapBlocks "1,2,3,4" `
-  -RunClipPolicy `
-  -TimeConf 0.95 `
-  -TimeStableK 2 `
-  -TimeMinWindows 2 `
-  -EvalFixedKWindows 3 `
-  -TimeMargin 0.0
+  -InputMode "segment" `
+  -Labels $MOTH_LABELS `
+  -SegmentSec 1.0 `
+  -HopSec 0.5 `
+  -MinKeepSec 0.25 `
+  -MaxSegmentsPerFileDefault 0 `
+  -SplitUnit "file" `
+  -TapBlocks "1,3" `
+  -ExitHint "true" `
+  -ForceRebuild `
+  -RunClipPolicy
 ```
 
-### 6.3 5-exit greedy hint passing
+### 5exit_2class_greedy
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\run_full.ps1 `
-  -Variant "kexit_greedy_hint" `
+.\scripts\run_full.ps1 `
+  -DataRoot "data\moth_sounds" `
+  -CacheRoot "data_caches" `
+  -Config "configs\audio_moth.yaml" `
+  -RunsRoot "runs" `
+  -Variant "5exit_2class_greedy" `
   -Policy "greedy" `
   -Device "cpu" `
+  -InputMode "segment" `
+  -Labels $MOTH_LABELS `
+  -SegmentSec 1.0 `
+  -HopSec 0.5 `
+  -MinKeepSec 0.25 `
+  -MaxSegmentsPerFileDefault 0 `
+  -SplitUnit "file" `
   -TapBlocks "1,2,3,4" `
-  -RunClipPolicy `
-  -TimeConf 0.95 `
-  -TimeStableK 2 `
-  -TimeMinWindows 2 `
-  -EvalFixedKWindows 3 `
-  -TimeMargin 0.0
+  -ExitHint "false" `
+  -ForceRebuild `
+  -RunClipPolicy
 ```
 
----
+### 5exit_2class_greedy_hint
 
-## Chapter 7 – Main Results
+```powershell
+.\scripts\run_full.ps1 `
+  -DataRoot "data\moth_sounds" `
+  -CacheRoot "data_caches" `
+  -Config "configs\audio_moth.yaml" `
+  -RunsRoot "runs" `
+  -Variant "5exit_2class_greedy_hint" `
+  -Policy "greedy" `
+  -Device "cpu" `
+  -InputMode "segment" `
+  -Labels $MOTH_LABELS `
+  -SegmentSec 1.0 `
+  -HopSec 0.5 `
+  -MinKeepSec 0.25 `
+  -MaxSegmentsPerFileDefault 0 `
+  -SplitUnit "file" `
+  -TapBlocks "1,2,3,4" `
+  -ExitHint "true" `
+  -ForceRebuild `
+  -RunClipPolicy
+```
 
-**Goal:** Present the validated 5-exit no-hint vs 5-exit hint comparison clearly.
+### 3exit_cclass_greedy
 
-### 7.1 Per-exit test accuracy
+```powershell
+.\scripts\run_full.ps1 `
+  -DataRoot "data2" `
+  -CacheRoot "data_caches" `
+  -Config "configs\audio_moth.yaml" `
+  -RunsRoot "runs" `
+  -Variant "3exit_cclass_greedy" `
+  -Policy "greedy" `
+  -Device "cpu" `
+  -InputMode "segment" `
+  -Labels $CCLASS_LABELS `
+  -SegmentSec 1.0 `
+  -HopSec 0.5 `
+  -MinKeepSec 0.25 `
+  -MaxSegmentsPerFileDefault 5 `
+  -MaxSegmentsPerLabelJson $CCLASS_CAPS `
+  -SplitUnit "file" `
+  -TapBlocks "1,3" `
+  -ExitHint "false" `
+  -ForceRebuild `
+  -RunClipPolicy
+```
 
-| Metric | Greedy No Hint | Greedy Hint Passing | Better |
-|---|---:|---:|---|
-| Exit1 accuracy | 0.8400 | 0.8215 | No hint |
-| Exit2 accuracy | 0.8400 | 0.8677 | Hint |
-| Exit3 accuracy | 0.9600 | 0.9292 | No hint |
-| Exit4 accuracy | 0.9846 | 0.9723 | No hint |
-| Exit5 accuracy | 0.9877 | 0.9692 | No hint |
+### 3exit_cclass_greedy_hint
 
-### 7.2 Segment-level greedy policy
+```powershell
+.\scripts\run_full.ps1 `
+  -DataRoot "data2" `
+  -CacheRoot "data_caches" `
+  -Config "configs\audio_moth.yaml" `
+  -RunsRoot "runs" `
+  -Variant "3exit_cclass_greedy_hint" `
+  -Policy "greedy" `
+  -Device "cpu" `
+  -InputMode "segment" `
+  -Labels $CCLASS_LABELS `
+  -SegmentSec 1.0 `
+  -HopSec 0.5 `
+  -MinKeepSec 0.25 `
+  -MaxSegmentsPerFileDefault 5 `
+  -MaxSegmentsPerLabelJson $CCLASS_CAPS `
+  -SplitUnit "file" `
+  -TapBlocks "1,3" `
+  -ExitHint "true" `
+  -ForceRebuild `
+  -RunClipPolicy
+```
 
-| Metric | Greedy No Hint | Greedy Hint Passing | Better |
-|---|---:|---:|---|
-| Policy accuracy | 0.9846 | 0.9723 | No hint |
-| Avg exit depth | 2.449 | 3.105 | No hint |
-| Flip-any rate | 0.2215 | 0.2246 | No hint |
-| Avg flip count | 0.2954 | 0.2954 | Tie |
-| Exit consistency | 0.9969 | 0.9969 | Tie |
+### 5exit_cclass_greedy
 
-### 7.3 Full-clip baseline
+```powershell
+.\scripts\run_full.ps1 `
+  -DataRoot "data2" `
+  -CacheRoot "data_caches" `
+  -Config "configs\audio_moth.yaml" `
+  -RunsRoot "runs" `
+  -Variant "5exit_cclass_greedy" `
+  -Policy "greedy" `
+  -Device "cpu" `
+  -InputMode "segment" `
+  -Labels $CCLASS_LABELS `
+  -SegmentSec 1.0 `
+  -HopSec 0.5 `
+  -MinKeepSec 0.25 `
+  -MaxSegmentsPerFileDefault 5 `
+  -MaxSegmentsPerLabelJson $CCLASS_CAPS `
+  -SplitUnit "file" `
+  -TapBlocks "1,2,3,4" `
+  -ExitHint "false" `
+  -ForceRebuild `
+  -RunClipPolicy
+```
 
-| Setting | Clip acc | Processed-win acc | First-3 diag | Avg compute units | Avg depth per used window |
-|---|---:|---:|---:|---:|---:|
-| 5-exit no hint | 1.0000 | 0.9846 | 0.9692 | 36.182 | 2.449 |
-| 5-exit hint | 1.0000 | 0.9723 | 0.9385 | 45.864 | 3.105 |
+### 5exit_cclass_greedy_hint
 
-### 7.4 Depth×Time
-
-| Metric | Greedy No Hint | Greedy Hint Passing | Better |
-|---|---:|---:|---|
-| Clip accuracy | 1.0000 | 1.0000 | Tie |
-| Used-window segment accuracy | 0.9778 | 0.9375 | No hint |
-| Avg windows used | 2.045 | 2.182 | No hint |
-| Windows saved (%) | 86.15 | 85.23 | No hint |
-| Avg compute units | 7.045 | 8.909 | No hint |
-| Avg depth per used window | 3.444 | 4.083 | No hint |
-| Compute saved (%) | 80.53 | 80.57 | Tie |
-| Flip-rate | 0.4222 | 0.5208 | No hint |
-| Exit consistency | 1.0000 | 1.0000 | Tie |
-
----
-
-## Chapter 8 – Interpretation
-
-**Goal:** State clearly what the comparison means.
-
-### Main conclusions
-
-1. The refactor is successful.
-   - the same pipeline now runs both 3-exit and 5-exit settings
-   - hint and no-hint reconstruction both work end-to-end
-
-2. The current best 5-exit greedy system is the **no-hint** version.
-   - better segment-policy accuracy
-   - lower average exit depth
-   - better Depth×Time used-window accuracy
-   - fewer windows used
-   - lower flip-rate
-
-3. The hint mechanism is still behaviorally meaningful.
-   - segment-policy `exit2` usage increased from **0.1323** to **0.3877**
-   - per-exit `exit2` test accuracy improved from **0.8400** to **0.8677**
-
-4. Hint passing is not yet the better final method.
-   - it became deeper and more expensive
-   - it did not beat the no-hint greedy baseline overall
-
-5. The strongest current advantage of 5 exits still comes from deeper exits.
-   - `exit4 = 0.9846`
-   - `exit5 = 0.9877`
-
-### Recommended reviewer-safe interpretation
-
-> We do not claim that the current greedy hint version is the best final model. We keep it because it tests a real architectural idea: whether passing information from one exit to the next can improve intermediate decision quality and make earlier exits more useful. Our results show that hint passing clearly changes exit behavior and improves exit2, but it does not yet improve the overall greedy accuracy-efficiency trade-off.
-
----
-
-## Chapter 9 – Current Scope
-
-**Goal:** State clearly what is included and excluded.
-
-### Included in this branch
-
-- greedy segment policy
-- greedy clip-wise Depth×Time policy
-- dynamic K-exit architecture
-- 3-exit and 5-exit validation
-- optional sequential exit-to-exit hint passing
-- dynamic profiling and reporting
-- binary classification
-
-### Not yet solved
-
-- EA policy tuning for the K-exit branch
-- a hint-passing configuration that clearly beats the no-hint greedy baseline
-- multiclass experiments
-- a 5-exit time policy that clearly beats the 3-exit baseline in clip-level efficiency
-
----
-
-## Chapter 10 – Limitations and Outlook
-
-**Goal:** State clearly what this branch does and does not yet solve.
-
-### Why this branch matters
-
-This branch establishes:
-
-- a reusable implementation foundation for future early-exit work
-- a fair 3-exit vs 5-exit comparison framework
-- a concrete no-hint vs hint comparison for the greedy 5-exit setting
-- a clean bridge from the historical `v0.1.6` baseline to later K-exit, EA, and hint-based variants
-
-### Best current recommendation
-
-- **historical baseline:** `v0.1.6`
-- **best current greedy 5-exit reference:** `kexit_greedy_no_hint`
-- **experimental architectural branch:** `kexit_greedy_hint`
-- **main development/documentation branch:** `kexit-hint`
-
----
-
-## How to Use This Document
-
-Use this file as the master structure for the updated branch-level documentation / thesis mini-book.
-
-Keep the distinction clear:
-
-- `v0.1.6` = historical frozen 3-exit greedy baseline
-- `kexit-hint` = current generic K-exit branch built on top of the earlier refactor work
-- `kexit_greedy_no_hint` = current best greedy 5-exit reference
-- `kexit_greedy_hint` = experimental 5-exit sequential hint-passing run
-
-When the implementation changes, update both:
-
-- the code
-- this structure file
-
-so the documentation remains aligned with the actual validated pipeline and findings.
+```powershell
+.\scripts\run_full.ps1 `
+  -DataRoot "data2" `
+  -CacheRoot "data_caches" `
+  -Config "configs\audio_moth.yaml" `
+  -RunsRoot "runs" `
+  -Variant "5exit_cclass_greedy_hint" `
+  -Policy "greedy" `
+  -Device "cpu" `
+  -InputMode "segment" `
+  -Labels $CCLASS_LABELS `
+  -SegmentSec 1.0 `
+  -HopSec 0.5 `
+  -MinKeepSec 0.25 `
+  -MaxSegmentsPerFileDefault 5 `
+  -MaxSegmentsPerLabelJson $CCLASS_CAPS `
+  -SplitUnit "file" `
+  -TapBlocks "1,2,3,4" `
+  -ExitHint "true" `
+  -ForceRebuild `
+  -RunClipPolicy
+```
 
 
 ---
 
-## Chapter 11 – Additional Comparison Tables from Workbook Draft
+# Chapter 8 — Main findings
 
-This chapter converts the workbook draft tables into paper-ready and repo-ready forms with corrected names and calculated difference columns.
+## 8.1 Moth result
 
-### 11.1 Recommended naming
+The moth binary task remains strong:
 
-Use the following final names in the thesis / repo notes:
+```text
+All 2-class variants reached 100% full-clip accuracy.
+All 2-class variants reached 100% Depth×Time clip accuracy.
+```
 
-1. **Segment-level greedy policy comparison**
-2. **Per-exit test accuracy comparison**
-3. **Exit mix comparison (segment policy and Depth×Time)**
-4. **Depth×Time comparison: no-hint vs hint passing**
-5. **Full-clip vs Depth×Time accuracy-efficiency tradeoff**
+This validates the new generic preprocessing/export pipeline.
 
-These names are more precise than the original labels and match the actual evaluation targets.
+## 8.2 C-class result
 
-### 11.2 Segment-level greedy policy comparison
+The best C-class setting is:
 
-| Metric | 3exit No-Hint | 3exit Hint | Δ (Hint−No-Hint) | 5exit No-Hint | 5exit Hint | Δ (Hint−No-Hint) |
-|---|---:|---:|---:|---:|---:|---:|
-| Policy accuracy | 0.9754 | 0.9908 | +0.0154 | 0.9908 | 0.9723 | -0.0185 |
-| Avg exit depth | 1.982 | 1.895 | -0.0870 | 2.637 | 2.465 | -0.1720 |
-| Flip-any rate | 0.1785 | 0.1908 | +0.0123 | 0.1908 | 0.2123 | +0.0215 |
-| Avg flip count | 0.2031 | 0.2154 | +0.0123 | 0.2338 | 0.2492 | +0.0154 |
-| Exit consistency | 1.0000 | 1.0000 | +0.0000 | 1.0000 | 0.9908 | -0.0092 |
+```text
+3exit_cclass_greedy
+```
 
-### 11.3 Per-exit test accuracy comparison
+with:
 
-| Metric | 3exit No-Hint | 3exit Hint | Δ (Hint−No-Hint) | 5exit No-Hint | 5exit Hint | Δ (Hint−No-Hint) |
-|---|---:|---:|---:|---:|---:|---:|
-| Exit1 accuracy | 0.8338 | 0.8369 | +0.0031 | 0.8369 | 0.8308 | -0.0061 |
-| Exit2 accuracy | 0.9385 | 0.9662 | +0.0277 | 0.8892 | 0.8646 | -0.0246 |
-| Exit3 accuracy | 0.9754 | 0.9908 | +0.0154 | 0.9723 | 0.9231 | -0.0492 |
-| Exit4 accuracy | — | — | — | 0.9754 | 0.9538 | -0.0216 |
-| Exit5 accuracy | — | — | — | 0.9908 | 0.9692 | -0.0216 |
+```text
+Segment policy accuracy: 69.90%
+Full-clip accuracy:      81.58%
+Depth×Time accuracy:    81.58%
+Compute saved:          34.34%
+```
 
-### 11.4 Exit mix comparison (segment policy and Depth×Time)
+## 8.3 Hint effect
 
-#### 3-exit exit mix
+| Dataset        |   Exits | Metric                     |   No hint |   Hint |   Delta Hint-No |
+|:---------------|--------:|:---------------------------|----------:|-------:|----------------:|
+| 2-class moth   |       3 | Segment policy acc         |     0.982 |  0.994 |           0.012 |
+| 2-class moth   |       3 | Full-clip acc              |     1     |  1     |           0     |
+| 2-class moth   |       3 | Depth×Time clip acc        |     1     |  1     |           0     |
+| 2-class moth   |       3 | Depth×Time compute saved % |    82.48  | 82.77  |           0.29  |
+| 2-class moth   |       3 | Avg exit depth             |     1.862 |  1.911 |           0.049 |
+| 2-class moth   |       5 | Segment policy acc         |     0.978 |  0.969 |          -0.009 |
+| 2-class moth   |       5 | Full-clip acc              |     1     |  1     |           0     |
+| 2-class moth   |       5 | Depth×Time clip acc        |     1     |  1     |           0     |
+| 2-class moth   |       5 | Depth×Time compute saved % |    82.25  | 79.53  |          -2.719 |
+| 2-class moth   |       5 | Avg exit depth             |     2.462 |  2.36  |          -0.102 |
+| 10-class audio |       3 | Segment policy acc         |     0.699 |  0.617 |          -0.082 |
+| 10-class audio |       3 | Full-clip acc              |     0.816 |  0.783 |          -0.033 |
+| 10-class audio |       3 | Depth×Time clip acc        |     0.816 |  0.783 |          -0.033 |
+| 10-class audio |       3 | Depth×Time compute saved % |    34.34  | 26.25  |          -8.098 |
+| 10-class audio |       3 | Avg exit depth             |     2.873 |  2.87  |          -0.003 |
+| 10-class audio |       5 | Segment policy acc         |     0.688 |  0.643 |          -0.044 |
+| 10-class audio |       5 | Full-clip acc              |     0.789 |  0.737 |          -0.053 |
+| 10-class audio |       5 | Depth×Time clip acc        |     0.789 |  0.73  |          -0.059 |
+| 10-class audio |       5 | Depth×Time compute saved % |    29.89  | 32.21  |           2.327 |
+| 10-class audio |       5 | Avg exit depth             |     4.612 |  4.748 |           0.137 |
 
-| Exit | 3exit No-Hint Segment | 3exit Hint Segment | Δ | 3exit No-Hint Depth×Time | 3exit Hint Depth×Time | Δ |
-|---|---:|---:|---:|---:|---:|---:|
-| e1 | 0.3631 | 0.3846 | +0.0215 | 0.0889 | 0.0909 | +0.0020 |
-| e2 | 0.2923 | 0.3354 | +0.0431 | 0.2000 | 0.3409 | +0.1409 |
-| e3 | 0.3446 | 0.2800 | -0.0646 | 0.7111 | 0.5680 | -0.1431 |
+Interpretation:
 
-#### 5-exit exit mix
+- Hint helps `3exit_2class_greedy_hint`.
+- Hint hurts both 3-exit and 5-exit C-class runs.
+- The current C-class hint design needs further work.
 
-| Exit | 5exit No-Hint Segment | 5exit Hint Segment | Δ | 5exit No-Hint Depth×Time | 5exit Hint Depth×Time | Δ |
-|---|---:|---:|---:|---:|---:|---:|
-| e1 | 0.3569 | 0.3723 | +0.0154 | 0.0889 | 0.0870 | -0.0019 |
-| e2 | 0.0308 | 0.1354 | +0.1046 | 0.0000 | 0.0652 | +0.0652 |
-| e3 | 0.3538 | 0.2677 | -0.0861 | 0.3778 | 0.3043 | -0.0735 |
-| e4 | 0.1354 | 0.1046 | -0.0308 | 0.3111 | 0.2826 | -0.0285 |
-| e5 | 0.1231 | 0.1200 | -0.0031 | 0.2222 | 0.2609 | +0.0387 |
+## 8.4 3-exit vs 5-exit effect
 
-### 11.5 Depth×Time comparison: no-hint vs hint passing
+| Dataset        | Hint   | Metric                     |   3 exits |   5 exits |   Delta 5-3 |
+|:---------------|:-------|:---------------------------|----------:|----------:|------------:|
+| 2-class moth   | No     | Segment policy acc         |     0.982 |     0.978 |      -0.003 |
+| 2-class moth   | No     | Full-clip acc              |     1     |     1     |       0     |
+| 2-class moth   | No     | Depth×Time clip acc        |     1     |     1     |       0     |
+| 2-class moth   | No     | Depth×Time compute saved % |    82.48  |    82.25  |      -0.229 |
+| 2-class moth   | No     | Avg exit depth             |     1.862 |     2.462 |       0.6   |
+| 2-class moth   | Yes    | Segment policy acc         |     0.994 |     0.969 |      -0.025 |
+| 2-class moth   | Yes    | Full-clip acc              |     1     |     1     |       0     |
+| 2-class moth   | Yes    | Depth×Time clip acc        |     1     |     1     |       0     |
+| 2-class moth   | Yes    | Depth×Time compute saved % |    82.77  |    79.53  |      -3.239 |
+| 2-class moth   | Yes    | Avg exit depth             |     1.911 |     2.36  |       0.449 |
+| 10-class audio | No     | Segment policy acc         |     0.699 |     0.688 |      -0.012 |
+| 10-class audio | No     | Full-clip acc              |     0.816 |     0.789 |      -0.026 |
+| 10-class audio | No     | Depth×Time clip acc        |     0.816 |     0.789 |      -0.026 |
+| 10-class audio | No     | Depth×Time compute saved % |    34.34  |    29.89  |      -4.459 |
+| 10-class audio | No     | Avg exit depth             |     2.873 |     4.612 |       1.738 |
+| 10-class audio | Yes    | Segment policy acc         |     0.617 |     0.643 |       0.026 |
+| 10-class audio | Yes    | Full-clip acc              |     0.783 |     0.737 |      -0.046 |
+| 10-class audio | Yes    | Depth×Time clip acc        |     0.783 |     0.73  |      -0.053 |
+| 10-class audio | Yes    | Depth×Time compute saved % |    26.25  |    32.21  |       5.967 |
+| 10-class audio | Yes    | Avg exit depth             |     2.87  |     4.748 |       1.878 |
 
-| Metric | 3exit No-Hint | 3exit Hint | Δ (Hint−No-Hint) | 5exit No-Hint | 5exit Hint | Δ (Hint−No-Hint) |
-|---|---:|---:|---:|---:|---:|---:|
-| Used-window segment accuracy | 0.9778 | 1.0000 | +0.0222 | 0.9778 | 0.9783 | +0.0005 |
-| Avg depth per used window | 2.622 | 2.477 | -0.1450 | 3.578 | 3.565 | -0.0130 |
-| Clip accuracy | 1.0000 | 1.0000 | +0.0000 | 1.0000 | 1.0000 | +0.0000 |
-| Avg windows used | 2.045 / 14.773 | 2.000 / 14.773 | -0.045 / 14.773 | 2.045 / 14.773 | 2.091 / 14.773 | +0.046 / 14.773 |
-| Windows saved | 86.15% | 86.46% | +0.31 pp | 86.15% | 85.85% | -0.30 pp |
-| Compute saved | 81.68% | 82.31% | +0.63 pp | 80.53% | 79.53% | -1.00 pp |
-| Avg compute units | 5.364 | 4.955 | -0.4090 | 7.318 | 7.455 | +0.1370 |
-| Flip-rate | 0.4000 | 0.3864 | -0.0136 | 0.4222 | 0.4565 | +0.0343 |
-| Exit consistency | 1.0000 | 1.0000 | +0.0000 | 1.0000 | 1.0000 | +0.0000 |
+Interpretation:
 
-### 11.6 Full-clip vs Depth×Time accuracy-efficiency tradeoff
+- 5 exits do not currently improve C-class.
+- C-class 5-exit models mostly defer to later exits.
+- The extra depth increases compute without a clear accuracy benefit.
 
-| Metric | 3exit NH Full | 3exit NH Depth×Time | Δ (DT−Full) | 5exit NH Full | 5exit NH Depth×Time | Δ (DT−Full) | 3exit Hint Full | 3exit Hint Depth×Time | Δ (DT−Full) | 5exit Hint Full | 5exit Hint Depth×Time | Δ (DT−Full) |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| Used-window segment accuracy | 0.9754 | 0.9778 | +0.0024 | 0.9908 | 0.9778 | -0.0130 | 0.9908 | 1.0000 | +0.0092 | 0.9723 | 0.9783 | +0.0060 |
-| Clip accuracy | 1.0000 | 1.0000 | +0.0000 | 1.0000 | 1.0000 | +0.0000 | 1.0000 | 1.0000 | +0.0000 | 1.0000 | 1.0000 | +0.0000 |
-| Avg depth per used window | 1.982 | 2.622 | +0.640 | 2.637 | 3.578 | +0.941 | 1.895 | 2.477 | +0.582 | 2.465 | 3.565 | +1.100 |
-| Avg windows used | 14.773 / 14.773 | 2.045 / 14.773 | -12.728 / 14.773 | 14.773 / 14.773 | 2.045 / 14.773 | -12.728 / 14.773 | 14.773 / 14.773 | 2.000 / 14.773 | -12.773 / 14.773 | 14.773 / 14.773 | 2.091 / 14.773 | -12.682 / 14.773 |
-| Windows saved | 0.00% | 86.15% | +86.15 pp | 0.00% | 86.15% | +86.15 pp | 0.00% | 86.46% | +86.46 pp | 0.00% | 85.85% | +85.85 pp |
-| Compute saved | 0.00% | 81.68% | +81.68 pp | 0.00% | 80.53% | +80.53 pp | 0.00% | 82.31% | +82.31 pp | 0.00% | 79.53% | +79.53 pp |
-| Avg compute units | 29.273 | 5.364 | -23.909 | 38.955 | 7.318 | -31.637 | 28.000 | 4.955 | -23.045 | 36.409 | 7.455 | -28.954 |
-| Flip-rate | 0.1785 | 0.4000 | +0.2215 | 0.1908 | 0.4222 | +0.2314 | 0.1908 | 0.3864 | +0.1956 | 0.2123 | 0.4565 | +0.2442 |
-| Exit consistency | 1.0000 | 1.0000 | +0.0000 | 0.9969 | 1.0000 | +0.0031 | 1.0000 | 1.0000 | +0.0000 | 0.9908 | 1.0000 | +0.0092 |
+---
 
-### 11.7 Coverage of evaluation
+# Chapter 9 — Exit-routing behaviour
 
-### Are all evaluation aspects covered?
+## 9.1 Segment-policy exit mix
 
-You covered the **core evaluation space well**. The five proposed tables are useful and, after renaming and filling the difference columns, they capture the most important views of the results:
+| Dataset        | Variant                  |   Exits | Hint   | e1     | e2     | e3     | e4     | e5     |
+|:---------------|:-------------------------|--------:|:-------|:-------|:-------|:-------|:-------|:-------|
+| 2-class moth   | 3exit_2class_greedy      |       3 | No     | 39.38% | 35.08% | 25.54% | 0.00%  | 0.00%  |
+| 2-class moth   | 3exit_2class_greedy_hint |       3 | Yes    | 36.31% | 36.31% | 27.38% | 0.00%  | 0.00%  |
+| 2-class moth   | 5exit_2class_greedy      |       5 | No     | 36.31% | 6.46%  | 39.38% | 10.46% | 7.38%  |
+| 2-class moth   | 5exit_2class_greedy_hint |       5 | Yes    | 38.46% | 13.85% | 29.23% | 10.15% | 8.31%  |
+| 10-class audio | 3exit_cclass_greedy      |       3 | No     | 0.00%  | 12.66% | 87.34% | 0.00%  | 0.00%  |
+| 10-class audio | 3exit_cclass_greedy_hint |       3 | Yes    | 0.00%  | 12.99% | 87.01% | 0.00%  | 0.00%  |
+| 10-class audio | 5exit_cclass_greedy      |       5 | No     | 0.00%  | 2.96%  | 11.18% | 7.57%  | 78.29% |
+| 10-class audio | 5exit_cclass_greedy_hint |       5 | Yes    | 0.00%  | 1.97%  | 8.55%  | 2.14%  | 87.34% |
 
-1. **Segment-level greedy policy comparison** — suitable name  
-2. **Per-exit test accuracy comparison** — suitable name  
-3. **Exit mix comparison (segment policy and Depth×Time)** — better than just “Exit Mix”  
-4. **Depth×Time comparison: no-hint vs hint passing** — clearer than “Greedy-Depth×Time No-Hint or Hint Passing”  
-5. **Full-clip vs Depth×Time accuracy-efficiency tradeoff** — better than “Full Clip vs Depth * Time-Based Accuracy vs Efficiency Tradeoff”
+## 9.2 Full-clip exit mix
 
-The only important correction is that your original draft of Table 5 did **not** include the **5exit_greedy_hint** block. That row group should be included, otherwise the tradeoff analysis is incomplete.
+| Dataset        | Variant                  |   Exits | Hint   | Clip mode   | e1     | e2     | e3     | e4     | e5     |
+|:---------------|:-------------------------|--------:|:-------|:------------|:-------|:-------|:-------|:-------|:-------|
+| 2-class moth   | 3exit_2class_greedy      |       3 | No     | Full clip   | 39.38% | 35.08% | 25.54% | 0.00%  | 0.00%  |
+| 2-class moth   | 3exit_2class_greedy_hint |       3 | Yes    | Full clip   | 36.31% | 36.31% | 27.38% | 0.00%  | 0.00%  |
+| 2-class moth   | 5exit_2class_greedy      |       5 | No     | Full clip   | 36.31% | 6.46%  | 39.38% | 10.46% | 7.38%  |
+| 2-class moth   | 5exit_2class_greedy_hint |       5 | Yes    | Full clip   | 38.46% | 13.85% | 29.23% | 10.15% | 8.31%  |
+| 10-class audio | 3exit_cclass_greedy      |       3 | No     | Full clip   | 0.00%  | 12.66% | 87.34% | 0.00%  | 0.00%  |
+| 10-class audio | 3exit_cclass_greedy_hint |       3 | Yes    | Full clip   | 0.00%  | 12.99% | 87.01% | 0.00%  | 0.00%  |
+| 10-class audio | 5exit_cclass_greedy      |       5 | No     | Full clip   | 0.00%  | 2.96%  | 11.18% | 7.57%  | 78.29% |
+| 10-class audio | 5exit_cclass_greedy_hint |       5 | Yes    | Full clip   | 0.00%  | 1.97%  | 8.55%  | 2.14%  | 87.34% |
 
-### Optional additions
+## 9.3 Depth×Time exit mix
 
-The current five tables are enough for `README.md` and `DOC_STRUCTURE.md`. If you want one more table later, the most useful optional addition would be:
+| Dataset        | Variant                  |   Exits | Hint   | Clip mode   | e1     | e2     | e3     | e4     | e5     |
+|:---------------|:-------------------------|--------:|:-------|:------------|:-------|:-------|:-------|:-------|:-------|
+| 2-class moth   | 3exit_2class_greedy      |       3 | No     | Depth×Time  | 11.36% | 36.36% | 52.27% | 0.00%  | 0.00%  |
+| 2-class moth   | 3exit_2class_greedy_hint |       3 | Yes    | Depth×Time  | 9.09%  | 38.64% | 52.27% | 0.00%  | 0.00%  |
+| 2-class moth   | 5exit_2class_greedy      |       5 | No     | Depth×Time  | 8.89%  | 6.67%  | 53.33% | 22.22% | 8.89%  |
+| 2-class moth   | 5exit_2class_greedy_hint |       5 | Yes    | Depth×Time  | 8.51%  | 10.64% | 36.17% | 27.66% | 17.02% |
+| 10-class audio | 3exit_cclass_greedy      |       3 | No     | Depth×Time  | 0.00%  | 13.97% | 86.03% | 0.00%  | 0.00%  |
+| 10-class audio | 3exit_cclass_greedy_hint |       3 | Yes    | Depth×Time  | 0.00%  | 14.63% | 85.37% | 0.00%  | 0.00%  |
+| 10-class audio | 5exit_cclass_greedy      |       5 | No     | Depth×Time  | 0.00%  | 4.22%  | 10.30% | 6.32%  | 79.16% |
+| 10-class audio | 5exit_cclass_greedy_hint |       5 | Yes    | Depth×Time  | 0.00%  | 2.89%  | 8.43%  | 2.89%  | 85.78% |
 
-- **Calibration / threshold summary**  
-  Columns could include: temperatures, selected `tau`, and maybe ECE.
+Interpretation:
 
-That is useful for appendix/thesis detail, but it is **not required** for the main README.
+- Moth runs use early exits meaningfully.
+- C-class 3-exit models mostly use exit 3.
+- C-class 5-exit models mostly use exit 5.
+- The early exits are not yet confident enough for difficult C-class prediction.
 
+---
 
-### 11.8 Interpretation of the difference tables
+# Chapter 10 — C-class per-class behaviour
 
-The difference columns reinforce the main corrected story. In the compact setting, **3exit_greedy_hint** improves segment policy accuracy by **+0.0154**, improves exit2 and exit3 quality, lowers average exit depth, reduces Depth×Time compute by **-0.409**, and slightly improves both windows saved and compute saved. This is consistent with the conclusion that hint passing works well in the compact regime.
+## 10.1 Full-clip per-class F1
 
-In the deeper setting, **5exit_greedy_hint** does not improve the current greedy design. Its segment policy accuracy decreases by **-0.0185**, later exits become weaker, and Depth×Time compute increases by **+0.137** while compute saved drops by **-1.00 pp**. The deeper hint setting therefore remains a limitation rather than a success case in the present branch.
+| Class         | 3exit_cclass_greedy F1   |   3exit_cclass_greedy support | 3exit_cclass_greedy_hint F1   |   3exit_cclass_greedy_hint support | 5exit_cclass_greedy F1   |   5exit_cclass_greedy support | 5exit_cclass_greedy_hint F1   |   5exit_cclass_greedy_hint support |
+|:--------------|:-------------------------|------------------------------:|:------------------------------|-----------------------------------:|:-------------------------|------------------------------:|:------------------------------|-----------------------------------:|
+| car_crash     | 70.59%                   |                            14 | 73.33%                        |                                 14 | 69.23%                   |                            14 | 75.86%                        |                                 14 |
+| conversation  | 95.65%                   |                            12 | 95.65%                        |                                 12 | 95.65%                   |                            12 | 95.65%                        |                                 12 |
+| engine_idling | 82.35%                   |                            10 | 46.15%                        |                                 10 | 46.15%                   |                            10 | 33.33%                        |                                 10 |
+| fireworks     | 0.00%                    |                             2 | 0.00%                         |                                  2 | 0.00%                    |                             2 | 0.00%                         |                                  2 |
+| gun_shot      | 90.00%                   |                            28 | 91.53%                        |                                 28 | 94.74%                   |                            28 | 90.57%                        |                                 28 |
+| rain          | 66.67%                   |                            15 | 58.33%                        |                                 15 | 57.14%                   |                            15 | 60.87%                        |                                 15 |
+| road_traffic  | 90.00%                   |                            18 | 84.21%                        |                                 18 | 85.71%                   |                            18 | 66.67%                        |                                 18 |
+| scream        | 87.80%                   |                            23 | 85.00%                        |                                 23 | 93.33%                   |                            23 | 93.33%                        |                                 23 |
+| thunderstorm  | 40.00%                   |                            15 | 66.67%                        |                                 15 | 51.61%                   |                            15 | 40.00%                        |                                 15 |
+| wind          | 100.00%                  |                            15 | 85.71%                        |                                 15 | 89.66%                   |                            15 | 73.17%                        |                                 15 |
 
-The tradeoff table also shows that Depth×Time early stopping is valuable across all four runs, since it consistently reduces windows used and compute relative to the full-clip baseline. However, the best deployment-oriented configuration remains **3exit_greedy_hint**, while the best deep-capacity no-hint reference remains **5exit_greedy**.
+## 10.2 Interpretation
+
+Strong classes:
+
+- `conversation`
+- `gun_shot`
+- `scream`
+- `wind` in the 3-exit no-hint run
+
+Weak classes:
+
+- `fireworks`
+- `engine_idling`
+- `thunderstorm`
+- `rain` in some variants
+
+Reasonable explanation:
+
+- `fireworks` has very low support.
+- Rain/thunderstorm/wind share acoustic structure.
+- Road traffic and engine idling can overlap.
+- Event classes such as gunshot/scream are easier when clearly represented.
+
+---
+
+# Chapter 11 — Profiling and deployment view
+
+| Dataset        | Variant                  |   Exits | Hint   |   Expected MFLOPs |   Full MFLOPs | Compute saving %   | Latency mean ms   | Latency p50 ms   |
+|:---------------|:-------------------------|--------:|:-------|------------------:|--------------:|:-------------------|:------------------|:-----------------|
+| 2-class moth   | 3exit_2class_greedy      |       3 | No     |             20.39 |         51.63 | 60.51%             | —                 | —                |
+| 2-class moth   | 3exit_2class_greedy_hint |       3 | Yes    |             21.51 |         51.63 | 58.33%             | —                 | —                |
+| 2-class moth   | 5exit_2class_greedy      |       5 | No     |             15.68 |         51.63 | 69.63%             | —                 | —                |
+| 2-class moth   | 5exit_2class_greedy_hint |       5 | Yes    |             15.18 |         51.63 | 70.59%             | —                 | —                |
+| 10-class audio | 3exit_cclass_greedy      |       3 | No     |             47.43 |         51.63 | 8.14%              | —                 | —                |
+| 10-class audio | 3exit_cclass_greedy_hint |       3 | Yes    |             47.32 |         51.63 | 8.35%              | —                 | —                |
+| 10-class audio | 5exit_cclass_greedy      |       5 | No     |             45.1  |         51.63 | 12.65%             | —                 | —                |
+| 10-class audio | 5exit_cclass_greedy_hint |       5 | Yes    |             47.55 |         51.63 | 7.89%              | —                 | —                |
+
+Interpretation:
+
+- Moth models save substantially more expected MFLOPs because early exits are more confident.
+- C-class models save less expected MFLOPs because they defer to deeper exits.
+- This reinforces that the C-class problem is harder and needs better early-exit training.
+
+---
+
+# Chapter 12 — Limitations
+
+Document the following limitations clearly:
+
+1. C-class is not yet fully optimized.
+2. Current hint passing is not robust for 10-class audio.
+3. 5-exit C-class mostly exits late.
+4. `fireworks` has weak support and poor F1.
+5. ROC/AUC is currently binary-only.
+6. Fixed segment caps are useful but not enough; sampler-level balancing is still needed.
+7. The bandpass setting `[100,3000]` may be moth-oriented and may not be ideal for every C-class sound.
+
+---
+
+# Chapter 13 — Future scope
+
+Recommended future research directions:
+
+## 13.1 Data balancing
+
+- Add `WeightedRandomSampler`.
+- Add source-file balancing.
+- Report class-balanced macro-F1.
+- Avoid letting long clips dominate training.
+
+## 13.2 C-class preprocessing
+
+- Try wider bandpass or no bandpass.
+- Compare 1s vs 2s vs 3s windows.
+- Add augmentation for weak classes.
+- Revisit caps for `fireworks`.
+
+## 13.3 Hint passing
+
+- Add confidence-gated hints.
+- Pass hints only when margin is high.
+- Compare probability hints vs logit hints.
+- Try entropy/margin summary statistics.
+- Reduce hint dimension or regularize hint projection.
+
+## 13.4 Early-exit training
+
+- Tune loss weights for C-class.
+- Try KD from final exit to early exits.
+- Try class-balanced auxiliary exit losses.
+- Add calibration-aware early-exit training.
+
+## 13.5 Evaluation
+
+- Add multiclass ROC/AUC.
+- Add macro-F1 and weighted-F1 to all summary scripts.
+- Add per-class confusion analysis.
+- Add repeated-seed evaluation for robustness.
+
+---
+
+# Chapter 14 — Recommended final conclusion
+
+Use the following wording in the thesis/report:
+
+> The generic K-exit/C-class audio early-exit pipeline is validated because it preserves the strong moth binary results while extending the system to a harder 10-class audio dataset. The main C-class baseline is currently `3exit_cclass_greedy`, which achieves the best clip-level and segment-level trade-off among the tested C-class variants. Sequential hint passing remains promising, as it improves compact 3-exit moth performance, but the current hint formulation does not yet generalize to the harder 10-class dataset. Future work should focus on class-balanced training, stronger early-exit supervision, and confidence-gated hint passing for multiclass audio.
