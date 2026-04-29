@@ -12,6 +12,15 @@ param(
   [double]$SegmentSec = 1.0,
   [double]$HopSec     = 0.5,
   [int]$NMels         = 64,
+  [int]$SampleRate    = 16000,
+  [double]$SilenceDbfs = -40,
+  # Use "100,3000" for moth-style filtering, "50,7600" for wider C-class filtering,
+  # "none" to disable bandpass, or "config" to let scripts/prep_segments.py read YAML.
+  [string]$Bandpass   = "100,3000",
+  [int]$NFFT          = 1024,
+  [int]$WinMs         = 25,
+  [int]$FeatHopMs     = 10,
+  [switch]$NoCMVN,
 
   # Generic K-exit control
   # 3 exits -> "1,3"
@@ -89,6 +98,29 @@ function ConvertTo-Id([double]$x) {
   return ($x.ToString("0.###") -replace '\.', 'p')
 }
 
+function Is-BandpassDisabledOrConfig([string]$bp) {
+  if ($null -eq $bp) { return $true }
+  $b = $bp.Trim().ToLower()
+  return ($b -eq "" -or $b -eq "none" -or $b -eq "null" -or $b -eq "false" -or $b -eq "off" -or $b -eq "config")
+}
+
+function Get-BandpassId([string]$bp) {
+  if ($null -eq $bp) { return "bpConfig" }
+  $b = $bp.Trim()
+  if ($b.ToLower() -eq "config" -or $b -eq "") { return "bpConfig" }
+  if ($b.ToLower() -in @("none", "null", "false", "off")) { return "bpNone" }
+  return "bp" + (($b -replace '\s+', '') -replace ',', '-')
+}
+
+function Split-Bandpass([string]$bp) {
+  if (Is-BandpassDisabledOrConfig $bp) { return @() }
+  $items = @($bp.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" })
+  if ($items.Count -ne 2) {
+    throw "Bandpass must be 'low,high', 'none', or 'config'. Got: $bp"
+  }
+  return $items
+}
+
 # --------------------- Validate / normalize ExitHint ---------------------
 if ($ExitHint -ne "") {
   $eh = $ExitHint.Trim().ToLower()
@@ -126,7 +158,8 @@ if ([string]::IsNullOrWhiteSpace($CacheId)) {
   $capId = $(if ($MaxSegmentsPerFileDefault -gt 0) { "cap$MaxSegmentsPerFileDefault" } else { "capAll" })
   $modeId = $InputMode
   $splitId = $SplitUnit
-  $CacheId = "mode$modeId" + "_seg$segId" + "_hop$hopId" + "_bp100-3000" + "_mels$NMels" + "_tap$tapId" + "_$capId" + "_split$splitId"
+  $bpId = Get-BandpassId $Bandpass
+  $CacheId = "mode$modeId" + "_seg$segId" + "_hop$hopId" + "_$bpId" + "_mels$NMels" + "_tap$tapId" + "_$capId" + "_split$splitId"
 }
 
 $CacheIdSafe     = ($CacheId -replace '[^A-Za-z0-9_-]', '_')
@@ -160,6 +193,11 @@ Write-Host "  Device          = $Device"          -ForegroundColor DarkGray
 Write-Host "  SegmentSec      = $SegmentSec"      -ForegroundColor DarkGray
 Write-Host "  HopSec          = $HopSec"          -ForegroundColor DarkGray
 Write-Host "  NMels           = $NMels"           -ForegroundColor DarkGray
+Write-Host "  SampleRate      = $SampleRate"      -ForegroundColor DarkGray
+Write-Host "  SilenceDbfs     = $SilenceDbfs"     -ForegroundColor DarkGray
+Write-Host "  Bandpass        = $Bandpass"        -ForegroundColor DarkGray
+Write-Host "  NFFT/Win/HopMs  = $NFFT/$WinMs/$FeatHopMs" -ForegroundColor DarkGray
+Write-Host "  CMVN            = $(-not [bool]$NoCMVN)" -ForegroundColor DarkGray
 Write-Host "  TapBlocks       = $TapBlocks"       -ForegroundColor DarkGray
 Write-Host "  InputMode       = $InputMode"       -ForegroundColor DarkGray
 Write-Host "  Labels          = $(if ($Labels -ne '') { $Labels } else { 'auto-discover' })" -ForegroundColor DarkGray
@@ -190,11 +228,10 @@ else {
     "-m", "scripts.prep_segments",
     "--root", $DataRoot,
     "--cache", $variantCacheDir,
-    "--sr", "16000",
+    "--sr", ([string]$SampleRate),
     "--segment_sec", ([string]$SegmentSec),
     "--hop", ([string]$HopSec),
-    "--silence_dbfs", "-40",
-    "--bandpass", "100", "3000",
+    "--silence_dbfs", ([string]$SilenceDbfs),
     "--config", $Config,
     "--input_mode", $InputMode,
     "--min_keep_sec", ([string]$MinKeepSec),
@@ -202,6 +239,13 @@ else {
     "--split_unit", $SplitUnit,
     "--export_segment_wavs"
   )
+
+  $bpItems = Split-Bandpass $Bandpass
+  if ($bpItems.Count -eq 2) {
+    $prepArgs += "--bandpass"
+    $prepArgs += $bpItems[0]
+    $prepArgs += $bpItems[1]
+  }
 
   if ($Labels.Trim() -ne "") {
     $labelItems = @($Labels.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" })
@@ -232,12 +276,14 @@ else {
     "-m", "scripts.extract_features",
     "--cache", $variantCacheDir,
     "--n_mels", ([string]$NMels),
-    "--n_fft", "1024",
-    "--win_ms", "25",
-    "--hop_ms", "10",
-    "--cmvn",
+    "--n_fft", ([string]$NFFT),
+    "--win_ms", ([string]$WinMs),
+    "--hop_ms", ([string]$FeatHopMs),
     "--pad_short"
   )
+  if (-not $NoCMVN) {
+    $featureArgs += "--cmvn"
+  }
   Invoke-PythonArgs $featureArgs
 }
 
@@ -280,6 +326,13 @@ $meta = @{
   segment_sec                   = $SegmentSec
   hop_sec                       = $HopSec
   n_mels                        = $NMels
+  sample_rate                   = $SampleRate
+  silence_dbfs                  = $SilenceDbfs
+  bandpass                      = $Bandpass
+  n_fft                         = $NFFT
+  win_ms                        = $WinMs
+  feat_hop_ms                   = $FeatHopMs
+  cmvn                          = [bool](-not $NoCMVN)
   tap_blocks                    = $TapBlocks
   input_mode                    = $InputMode
   labels                        = $(if ($Labels -ne "") { $Labels } else { "auto_discover" })
@@ -408,10 +461,10 @@ New-Item -ItemType Directory -Path $analysisDir -ErrorAction SilentlyContinue | 
 $runtimeCsv = Join-Path $analysisDir "pipeline_runtime.csv"
 
 if (-not (Test-Path $runtimeCsv)) {
-  "timestamp,variant,policy,segment_sec,hop_sec,device,cache_dir,runs_root,run_id,total_seconds,total_minutes,run_clip_policy,tap_blocks,exit_hint_override,input_mode,split_unit,max_segments_per_file_default" | Out-File $runtimeCsv -Encoding UTF8
+  "timestamp,variant,policy,segment_sec,hop_sec,device,cache_dir,runs_root,run_id,total_seconds,total_minutes,run_clip_policy,tap_blocks,exit_hint_override,input_mode,split_unit,max_segments_per_file_default,sample_rate,silence_dbfs,bandpass,n_fft,win_ms,feat_hop_ms,cmvn" | Out-File $runtimeCsv -Encoding UTF8
 }
 
-$csvLine = "{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10},{11},{12},{13},{14},{15},{16}" -f `
+$csvLine = "{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10},{11},{12},{13},{14},{15},{16},{17},{18},{19},{20},{21},{22},{23}" -f `
   $timestampIso, `
   $Variant, `
   $Policy, `
@@ -428,7 +481,14 @@ $csvLine = "{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10},{11},{12},{13},{14},{15
   $(if ($ExitHint -ne "") { $ExitHint } else { "yaml_default" }), `
   $InputMode, `
   $SplitUnit, `
-  $MaxSegmentsPerFileDefault
+  $MaxSegmentsPerFileDefault, `
+  $SampleRate, `
+  $SilenceDbfs, `
+  $Bandpass, `
+  $NFFT, `
+  $WinMs, `
+  $FeatHopMs, `
+  [bool](-not $NoCMVN)
 
 Add-Content -Path $runtimeCsv -Value $csvLine
 Write-Host "Pipeline runtime logged to: $runtimeCsv" -ForegroundColor DarkGray

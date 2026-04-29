@@ -88,6 +88,38 @@ def load_yaml(path: str) -> dict:
         return yaml.safe_load(f) or {}
 
 
+def _normalise_bandpass_value(value):
+    """Return [low, high] or None. Accepts YAML lists, strings, null/none/off."""
+    if value is None:
+        return None
+
+    if isinstance(value, str):
+        raw = value.strip()
+        if raw.lower() in {"", "none", "null", "false", "off", "0"}:
+            return None
+        raw = raw.replace(";", ",")
+        parts = [p.strip() for p in raw.split(",") if p.strip()]
+        if len(parts) != 2:
+            raise ValueError(
+                f"Invalid bandpass value: {value}. Use [low, high], 'low,high', or null."
+            )
+        return [float(parts[0]), float(parts[1])]
+
+    if isinstance(value, (list, tuple)):
+        if len(value) == 0:
+            return None
+        if len(value) != 2:
+            raise ValueError(
+                f"Invalid bandpass list: {value}. Use exactly two values or null."
+            )
+        return [float(value[0]), float(value[1])]
+
+    if value is False:
+        return None
+
+    raise ValueError(f"Invalid bandpass value: {value}")
+
+
 def _parse_json_map(text: str) -> Dict[str, int]:
     """
     Robust parser for per-label segment caps.
@@ -195,8 +227,10 @@ def two_stage_parse():
     seg_default = float(audio_cfg.get("segment_sec", 1.0))
     hop_default = float(audio_cfg.get("segment_hop", 0.5))
     silence_default = float(audio_cfg.get("silence_dbfs", -40))
-    bp_default = audio_cfg.get("bandpass", [100, 3000])
-    if not (isinstance(bp_default, (list, tuple)) and len(bp_default) == 2):
+    try:
+        bp_default = _normalise_bandpass_value(audio_cfg.get("bandpass", [100, 3000]))
+    except Exception as e:
+        warnings.warn(f"Invalid audio.bandpass in config ({e}); falling back to [100, 3000].")
         bp_default = [100, 3000]
 
     p = argparse.ArgumentParser()
@@ -208,7 +242,12 @@ def two_stage_parse():
     p.add_argument("--segment_sec", type=float, default=seg_default)
     p.add_argument("--hop", type=float, default=hop_default)
     p.add_argument("--silence_dbfs", type=float, default=silence_default)
-    p.add_argument("--bandpass", nargs=2, type=float, default=bp_default)
+    p.add_argument(
+        "--bandpass",
+        nargs="*",
+        default=bp_default,
+        help="Optional bandpass as two values, e.g. --bandpass 50 7600. Omit to use YAML. Use YAML null to disable.",
+    )
 
     p.add_argument("--seed", type=int, default=seed_default)
     p.add_argument("--train_frac", type=float, default=train_default)
@@ -284,6 +323,7 @@ def two_stage_parse():
         p.add_argument("--no_stratify", dest="stratify", action="store_false")
 
     args = p.parse_args(rest)
+    args.bandpass = _normalise_bandpass_value(args.bandpass)
     args.max_segments_per_label = _parse_json_map(args.max_segments_per_label_json)
     args._cfg = cfg
     return args
@@ -441,7 +481,8 @@ def build_candidate_segments(manifest: pd.DataFrame, clean_root: Path, args) -> 
                 max_keep = label_cap(label, args.max_segments_per_file_default, args.max_segments_per_label)
                 starts = select_evenly_spaced_starts(valid_starts, max_keep)
 
-        for s in starts:
+        max_keep_effective = label_cap(label, args.max_segments_per_file_default, args.max_segments_per_label)
+        for local_segment_index, s in enumerate(starts):
             seg_rows.append({
                 "wav_relpath": parent_rel,                  # parent key for clip grouping
                 "clean_relpath": parent_rel,
@@ -452,6 +493,9 @@ def build_candidate_segments(manifest: pd.DataFrame, clean_root: Path, args) -> 
                 "duration": float(args.segment_sec),
                 "split_key": split_key,
                 "input_mode": str(args.input_mode),
+                "segment_index_parent": int(local_segment_index),
+                "segments_before_cap": int(len(valid_starts) if args.input_mode == "segment" and n >= win else len(starts)),
+                "max_segments_per_file_effective": int(max_keep_effective),
             })
 
     if dropped_short:
@@ -670,7 +714,20 @@ def main():
     # Backward-compatible filename for older scripts/docs.
     manifest.to_csv(cache / "moths_manifest.csv", index=False)
     manifest.to_csv(cache / "audio_inventory.csv", index=False)
+    (
+        manifest.groupby("label")
+        .agg(
+            files=("label", "size"),
+            min_sec=("duration", "min"),
+            median_sec=("duration", "median"),
+            mean_sec=("duration", "mean"),
+            max_sec=("duration", "max"),
+        )
+        .reset_index()
+        .to_csv(cache / "audio_inventory_by_label.csv", index=False)
+    )
     print_inventory_summary(manifest)
+    print(f"Bandpass: {args.bandpass if args.bandpass else 'disabled'}")
 
     seg_df = build_candidate_segments(manifest, clean_root, args)
     seg_df, seg_counts, key_counts = split_by_key(
@@ -688,11 +745,26 @@ def main():
     # Keep stable column order while preserving any future extra columns.
     preferred = [
         "orig_relpath", "clean_relpath", "wav_relpath", "segment_wav_relpath",
-        "label", "split", "split_key", "parent_start", "start", "duration", "input_mode"
+        "label", "split", "split_key", "parent_start", "start", "duration", "input_mode",
+        "segment_index_parent", "segments_before_cap", "max_segments_per_file_effective"
     ]
     other = [c for c in seg_df.columns if c not in preferred]
     seg_df = seg_df[preferred + other]
     seg_df.to_csv(cache / "segments.csv", index=False)
+    (
+        seg_df.groupby(["split", "label"])
+        .size()
+        .rename("count")
+        .reset_index()
+        .to_csv(cache / "segments_by_split_label.csv", index=False)
+    )
+    (
+        seg_df.groupby(["label"])
+        .size()
+        .rename("count")
+        .reset_index()
+        .to_csv(cache / "segments_by_label.csv", index=False)
+    )
 
     print("\n=== Segmentation summary ===")
     print("Split keys:", key_counts)
