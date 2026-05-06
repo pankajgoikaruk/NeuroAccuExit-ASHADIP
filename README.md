@@ -1,3 +1,390 @@
+# ASHADIP / NeuroAccuExit — `kexit_cclass_greedy_v2` Documentation Update
+
+This update records the current **C-class prepared/grouped dataset experiments** and the latest refined-data audit for branch:
+
+```text
+kexit_cclass_greedy_v2
+```
+
+The branch now represents a more research-correct C-class evaluation path using:
+
+- prepared `train/val/test/<class>` audio folders,
+- `InputMode="ready"`,
+- metadata-aware parent/source clip grouping,
+- wider C-class audio bandpass `[50, 7600]`,
+- 3-exit and 5-exit greedy policies,
+- no-hint and sequential hint-passing comparisons,
+- full-clip and Depth×Time clip-policy evaluation.
+
+---
+
+## Current reviewer-safe status
+
+The most important point is that the **latest refined dataset was intended to contain 11 classes**, including:
+
+```text
+rain_thunderstorm
+```
+
+However, the available refined-run logs show a mismatch:
+
+```text
+CLI labels: car_crash,conversation,engine_idling,fireworks,gun_shot,rain,rain_thunderstorm,road_traffic,scream,thunderstorm,wind
+Effective inventory labels: car_crash,conversation,engine_idling,fireworks,gun_shot,rain,road_traffic,scream,thunderstorm,wind
+Effective num_classes: 10
+```
+
+Therefore, the current `*_refined11_grouped` logs should **not yet be reported as valid 11-class results**. They are useful diagnostic runs, but the final 11-class comparison must be rerun after confirming that `rain_thunderstorm` appears in:
+
+```text
+Labels: [..., rain_thunderstorm, ...]
+num_classes: 11
+segments: train=2453, val=462, test=418
+```
+
+---
+
+## Main current conclusion
+
+The lower C-class performance is **not simply because the code is broken**. The grouped ready-mode pipeline is now more scientifically honest because it reconstructs source/parent clip grouping instead of treating every 1-second WAV as an independent clip. This makes clip-policy evaluation meaningful again.
+
+The strongest currently reportable prepared/grouped C-class result is:
+
+```text
+3exit_cclass_greedy_hint_prepared_grouped
+```
+
+It achieved:
+
+```text
+Segment policy accuracy: 68.16%
+Full-clip accuracy:      84.56%
+Depth×Time accuracy:    84.56%
+Compute saved:          22.40%
+```
+
+This is an important change from the earlier raw 10-class C-class result, where no-hint was stronger. Under the stricter prepared/grouped dataset, **3-exit hint passing becomes useful**.
+
+---
+
+## Table V2.1 — Documentation state and branch status
+
+| Item | Status | Research meaning |
+|---|---|---|
+| Branch | `kexit_cclass_greedy_v2` | Current branch for prepared/grouped C-class experiments |
+| Dataset mode | `InputMode="ready"` | Uses already prepared `train/val/test/<class>` folders |
+| Grouping | Metadata-aware source grouping | Clip policy groups windows by parent/source clip |
+| Bandpass | `50,7600` | Better suited to non-moth general audio than `100,3000` |
+| Valid prepared/grouped comparison | 10-class | Current fully comparable prepared/grouped result set |
+| Intended refined comparison | 11-class | Requires rerun because effective logs still show 10 classes |
+| Main valid winner so far | `3exit_cclass_greedy_hint_prepared_grouped` | Best prepared/grouped full-clip and Depth×Time result |
+
+---
+
+## Table V2.2 — Intended refined 11-class metadata counts
+
+After adding/refining data, the intended prepared dataset should contain 11 balanced classes.
+
+| Split | Classes | Clips per class | Expected total clips |
+|---|---:|---:|---:|
+| Train | 11 | 223 | 2453 |
+| Val | 11 | 42 | 462 |
+| Test | 11 | 38 | 418 |
+| Total | 11 | — | 3333 |
+
+Expected classes:
+
+```text
+car_crash
+conversation
+engine_idling
+fireworks
+gun_shot
+rain
+rain_thunderstorm
+road_traffic
+scream
+thunderstorm
+wind
+```
+
+---
+
+## Table V2.3 — Refined-run label audit
+
+| Check | Expected for true 11-class run | Observed in available refined logs | Status |
+|---|---:|---:|---|
+| CLI label list | 11 labels | 11 labels in command header | Partially correct |
+| Inventory label list | 11 labels | 10 labels | Not correct |
+| `rain_thunderstorm` in inventory | Yes | No | Missing |
+| `num_classes` in JSON | 11 | 10 | Not correct |
+| Train segments | 2453 | 2230 | Not correct |
+| Val segments | 462 | 420 | Not correct |
+| Test segments | 418 | 380 | Not correct |
+| Scientific validity as 11-class result | Valid | Not valid yet | Rerun needed |
+
+**Conclusion:** the new refined results should be treated as **effective 10-class diagnostic runs**, not final 11-class findings.
+
+---
+
+## Table V2.4 — Valid prepared/grouped 10-class comparison
+
+These are the current valid prepared/grouped results using metadata-aware ready mode.
+
+| Variant | Exits | Hint | Segment policy acc | Full-clip acc | Depth×Time acc | Avg windows used / total | Windows saved | Compute saved | Main interpretation |
+|---|---:|---|---:|---:|---:|---:|---:|---:|---|
+| `3exit_cclass_greedy_prepared_grouped` | 3 | No | 55.79% | 66.44% | 66.44% | 1.973 / 2.550 | 22.63% | 22.01% | Weak baseline; exit2 stronger than final exit |
+| `3exit_cclass_greedy_hint_prepared_grouped` | 3 | Yes | 68.16% | **84.56%** | **84.56%** | 1.980 / 2.550 | 22.37% | **22.40%** | Best current prepared/grouped result |
+| `5exit_cclass_greedy_prepared_grouped` | 5 | No | 61.58% | 75.17% | 75.17% | 1.987 / 2.550 | 22.11% | 21.99% | Improves over 3-exit no-hint but worse than 3-exit hint |
+| `5exit_cclass_greedy_hint_prepared_grouped` | 5 | Yes | 68.42% | 79.87% | 79.19% | 1.960 / 2.550 | 23.16% | **23.53%** | Saves slightly more compute but lower clip accuracy than 3-exit hint |
+
+---
+
+## Table V2.5 — Prepared/grouped segment-policy details
+
+| Variant | Policy acc | Avg exit depth | Exit mix | Flip-any rate | Avg flip count | Exit consistency | Tau | Val macro-F1 | Val acc |
+|---|---:|---:|---|---:|---:|---:|---:|---:|---:|
+| `3exit_cclass_greedy_prepared_grouped` | 55.79% | 2.511 | e1=8.68%, e2=31.58%, e3=59.74% | 70.00% | — | 93.42% | 0.70 | 65.14% | 65.95% |
+| `3exit_cclass_greedy_hint_prepared_grouped` | 68.16% | 2.808 | e1=0.53%, e2=18.16%, e3=81.32% | 67.63% | 0.884 | 99.47% | 0.90 | 71.56% | 72.14% |
+| `5exit_cclass_greedy_prepared_grouped` | 61.58% | 4.547 | e1=0.00%, e2=7.63%, e3=10.26%, e4=1.84%, e5=80.26% | 69.74% | — | 99.74% | 0.95 | 66.95% | 67.14% |
+| `5exit_cclass_greedy_hint_prepared_grouped` | 68.42% | 4.474 | e1=0.79%, e2=8.42%, e3=10.00%, e4=4.21%, e5=76.58% | 66.32% | — | 99.47% | 0.95 | 74.23% | 74.05% |
+
+`—` means the exact value was not available from the accessible pasted logs.
+
+---
+
+## Table V2.6 — Full-clip vs Depth×Time details
+
+| Variant | Clip mode | Clip acc | Segment acc used | Avg windows used | Avg windows total | Windows saved | Avg compute units | Compute saved | Avg depth/window | Flip rate | Exit consistency |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `3exit_cclass_greedy_prepared_grouped` | Full clip | 66.44% | 55.79% | 2.550 | 2.550 | 0.00% | 6.403 | 0.00% | 2.511 | 70.00% | 93.42% |
+| `3exit_cclass_greedy_prepared_grouped` | Depth×Time | 66.44% | 57.14% | 1.973 | 2.550 | 22.63% | 4.993 | 22.01% | 2.531 | 71.77% | 93.54% |
+| `3exit_cclass_greedy_hint_prepared_grouped` | Full clip | **84.56%** | 68.16% | 2.550 | 2.550 | 0.00% | 7.161 | 0.00% | 2.808 | 67.63% | 99.47% |
+| `3exit_cclass_greedy_hint_prepared_grouped` | Depth×Time | **84.56%** | 71.86% | 1.980 | 2.550 | 22.37% | 5.557 | 22.40% | 2.807 | 70.51% | 99.66% |
+| `5exit_cclass_greedy_prepared_grouped` | Full clip | 75.17% | 61.58% | 2.550 | 2.550 | 0.00% | 11.597 | 0.00% | 4.547 | 69.74% | 99.74% |
+| `5exit_cclass_greedy_prepared_grouped` | Depth×Time | 75.17% | — | 1.987 | 2.550 | 22.11% | 9.047 | 21.99% | 4.554 | 71.62% | 99.66% |
+| `5exit_cclass_greedy_hint_prepared_grouped` | Full clip | 79.87% | 68.42% | 2.550 | 2.550 | 0.00% | 11.409 | 0.00% | 4.474 | 66.32% | 99.47% |
+| `5exit_cclass_greedy_hint_prepared_grouped` | Depth×Time | 79.19% | — | 1.960 | 2.550 | 23.16% | 8.725 | 23.53% | 4.452 | 67.81% | 99.66% |
+
+---
+
+## Table V2.7 — Refined diagnostic runs available so far
+
+These runs are useful diagnostically, but should not be described as final 11-class results because effective processing still shows `num_classes=10`.
+
+| Variant | Exits | Hint | Effective classes | Segment policy acc | Full-clip acc | Depth×Time acc | Main use |
+|---|---:|---|---:|---:|---:|---:|---|
+| `3exit_cclass_greedy_refined11_grouped` | 3 | No | 10 | 71.32% | 83.33% | 83.97% | Diagnostic only; missing `rain_thunderstorm` |
+| `3exit_cclass_greedy_hint_refined11_grouped` | 3 | Yes | 10 | 73.68% | 80.77% | Not fully extracted | Diagnostic only; missing `rain_thunderstorm` |
+| `5exit_cclass_greedy_refined11_grouped` | 5 | No | 10 | 71.05% | 79.49% | 79.49% | Diagnostic only; missing `rain_thunderstorm` |
+| `5exit_cclass_greedy_hint_refined11_grouped` | 5 | Yes | 10 | 72.37% | 82.05% | Not fully extracted | Diagnostic only; missing `rain_thunderstorm` |
+
+---
+
+## Research findings from the current v2 work
+
+### 1. Ready-mode grouped evaluation is now meaningful
+
+The grouped ready-mode fix is essential because it prevents each 1-second prepared WAV from being treated as a separate clip. This restores meaningful full-clip and Depth×Time evaluation.
+
+### 2. The stricter prepared dataset changes the hint-passing story
+
+In the older raw 10-class run, hint passing reduced C-class performance. In the stricter prepared/grouped result, the best model is now `3exit_cclass_greedy_hint_prepared_grouped`.
+
+This means the current conclusion should be updated:
+
+> Hint passing is not universally helpful, but under the prepared/grouped C-class evaluation, the compact 3-exit hint model currently gives the best clip-level result.
+
+### 3. 5 exits are still not clearly better
+
+The 5-exit prepared/grouped models mostly use late exits, especially exit 5. They can improve over weak 3-exit no-hint baselines, but they do not beat 3-exit hint at clip level.
+
+### 4. Depth×Time is still useful
+
+Depth×Time saves about **22–24% compute** in the prepared/grouped C-class setup while preserving or nearly preserving clip accuracy.
+
+### 5. The intended 11-class experiment must be rerun
+
+Because `rain_thunderstorm` is missing from effective logs, the refined dataset cannot yet be reported as a valid 11-class experiment.
+
+---
+
+## Correct rerun commands for final 11-class comparison
+
+Use dynamic label detection from the prepared training folders.
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+
+$DATA_ROOT="prepared_data2\final_dataset"
+$CCLASS_LABELS=((Get-ChildItem -Directory "$DATA_ROOT\train" | Sort-Object Name).Name -join ",")
+
+Write-Host "Detected labels:"
+Write-Host $CCLASS_LABELS
+```
+
+Before training, verify this prints:
+
+```text
+car_crash,conversation,engine_idling,fireworks,gun_shot,rain,rain_thunderstorm,road_traffic,scream,thunderstorm,wind
+```
+
+### 3exit no-hint
+
+```powershell
+.\scripts\run_full.ps1 `
+  -DataRoot $DATA_ROOT `
+  -CacheRoot "data_caches" `
+  -Config "configs\audio_cclass_ready.yaml" `
+  -RunsRoot "runs" `
+  -Variant "3exit_cclass_greedy_refined11_grouped" `
+  -Policy "greedy" `
+  -Device "cpu" `
+  -InputMode "ready" `
+  -Labels $CCLASS_LABELS `
+  -SegmentSec 1.0 `
+  -HopSec 0.5 `
+  -SampleRate 16000 `
+  -SilenceDbfs -50 `
+  -Bandpass "50,7600" `
+  -NMels 64 `
+  -TapBlocks "1,3" `
+  -ExitHint "false" `
+  -ForceRebuild `
+  -RunClipPolicy `
+  -TimeMinWindows 1
+```
+
+### 3exit hint
+
+```powershell
+.\scripts\run_full.ps1 `
+  -DataRoot $DATA_ROOT `
+  -CacheRoot "data_caches" `
+  -Config "configs\audio_cclass_ready.yaml" `
+  -RunsRoot "runs" `
+  -Variant "3exit_cclass_greedy_hint_refined11_grouped" `
+  -Policy "greedy" `
+  -Device "cpu" `
+  -InputMode "ready" `
+  -Labels $CCLASS_LABELS `
+  -SegmentSec 1.0 `
+  -HopSec 0.5 `
+  -SampleRate 16000 `
+  -SilenceDbfs -50 `
+  -Bandpass "50,7600" `
+  -NMels 64 `
+  -TapBlocks "1,3" `
+  -ExitHint "true" `
+  -ForceRebuild `
+  -RunClipPolicy `
+  -TimeMinWindows 1
+```
+
+### 5exit no-hint
+
+```powershell
+.\scripts\run_full.ps1 `
+  -DataRoot $DATA_ROOT `
+  -CacheRoot "data_caches" `
+  -Config "configs\audio_cclass_ready.yaml" `
+  -RunsRoot "runs" `
+  -Variant "5exit_cclass_greedy_refined11_grouped" `
+  -Policy "greedy" `
+  -Device "cpu" `
+  -InputMode "ready" `
+  -Labels $CCLASS_LABELS `
+  -SegmentSec 1.0 `
+  -HopSec 0.5 `
+  -SampleRate 16000 `
+  -SilenceDbfs -50 `
+  -Bandpass "50,7600" `
+  -NMels 64 `
+  -TapBlocks "1,2,3,4" `
+  -ExitHint "false" `
+  -ForceRebuild `
+  -RunClipPolicy `
+  -TimeMinWindows 1
+```
+
+### 5exit hint
+
+```powershell
+.\scripts\run_full.ps1 `
+  -DataRoot $DATA_ROOT `
+  -CacheRoot "data_caches" `
+  -Config "configs\audio_cclass_ready.yaml" `
+  -RunsRoot "runs" `
+  -Variant "5exit_cclass_greedy_hint_refined11_grouped" `
+  -Policy "greedy" `
+  -Device "cpu" `
+  -InputMode "ready" `
+  -Labels $CCLASS_LABELS `
+  -SegmentSec 1.0 `
+  -HopSec 0.5 `
+  -SampleRate 16000 `
+  -SilenceDbfs -50 `
+  -Bandpass "50,7600" `
+  -NMels 64 `
+  -TapBlocks "1,2,3,4" `
+  -ExitHint "true" `
+  -ForceRebuild `
+  -RunClipPolicy `
+  -TimeMinWindows 1
+```
+
+---
+
+## Must-pass checklist before reporting final 11-class results
+
+The next run is valid only if the terminal shows:
+
+```text
+Labels: ['car_crash', 'conversation', 'engine_idling', 'fireworks', 'gun_shot', 'rain', 'rain_thunderstorm', 'road_traffic', 'scream', 'thunderstorm', 'wind']
+num_classes: 11
+Segments: {'train': 2453, 'val': 462, 'test': 418}
+```
+
+If the terminal again shows only 10 labels or `num_classes: 10`, do not report it as an 11-class result.
+
+---
+
+## Recommended next research step
+
+Do **not** change architecture again until the 11-class ingestion issue is fixed and the four final commands above are rerun.
+
+After that, the next implementation work should be:
+
+1. early stopping based on validation macro-F1,
+2. `ReduceLROnPlateau`,
+3. best-epoch checkpoint reporting,
+4. class/source-aware sampling if needed,
+5. confidence-gated hint passing,
+6. stronger auxiliary loss or knowledge distillation for early exits.
+
+---
+
+## Git update commands for branch `kexit_cclass_greedy_v2`
+
+After replacing the three documentation files:
+
+```powershell
+git checkout kexit_cclass_greedy_v2
+git status
+
+git add README.md DOC_STRUCTURE.md APPENDIX.md
+git commit -m "docs: update kexit cclass greedy v2 findings"
+git push origin kexit_cclass_greedy_v2
+```
+
+---
+
+
+
+---
+
+# Historical / Previous 8-Run Documentation
+
 # ASHADIP / NeuroAccuExit — Generic K-Exit, C-Class Greedy + Hint Audio Pipeline
 
 This branch documents the current **generic K-exit / C-class audio early-exit pipeline** for ASHADIP. It extends the earlier moth-only greedy/hint work into a reusable pipeline that can run:

@@ -314,6 +314,16 @@ def two_stage_parse():
         action="store_true",
         help="Delete existing clean/features/segment_wavs/CSV artifacts inside the cache before rebuilding.",
     )
+    p.add_argument(
+        "--ready_metadata_dir",
+        type=str,
+        default="",
+        help=(
+            "Optional metadata directory for ready-mode datasets. "
+            "If omitted, prep_segments auto-detects root/metadata or root.parent/metadata. "
+            "Expected files: train.csv, val.csv, test.csv with final_path/source_file_id/start_sec."
+        ),
+    )
 
     if strat_default:
         p.add_argument("--stratify", dest="stratify", action="store_true", default=True)
@@ -329,12 +339,53 @@ def two_stage_parse():
     return args
 
 
-def list_label_dirs(root: Path, explicit_labels: Optional[Sequence[str]] = None) -> List[str]:
+SPLIT_NAMES = ("train", "val", "test")
+
+
+def is_ready_split_root(root: Path) -> bool:
+    """Return True for prepared datasets laid out as root/train/class/*.wav etc."""
+    return any((root / split).is_dir() for split in SPLIT_NAMES)
+
+
+def list_label_dirs(
+    root: Path,
+    explicit_labels: Optional[Sequence[str]] = None,
+    input_mode: str = "segment",
+) -> List[str]:
+    """Discover labels for both raw class folders and ready train/val/test folders."""
+    ready_split = str(input_mode).lower() == "ready" and is_ready_split_root(root)
+
     if explicit_labels:
         labels = [str(x).strip() for x in explicit_labels if str(x).strip()]
-        missing = [lab for lab in labels if not (root / lab).is_dir()]
-        if missing:
-            raise SystemExit(f"These label folders were not found under {root}: {missing}")
+        if ready_split:
+            missing = []
+            for lab in labels:
+                present = any((root / split / lab).is_dir() for split in SPLIT_NAMES)
+                if not present:
+                    missing.append(lab)
+            if missing:
+                raise SystemExit(
+                    f"These label folders were not found under any train/val/test split in {root}: {missing}"
+                )
+        else:
+            missing = [lab for lab in labels if not (root / lab).is_dir()]
+            if missing:
+                raise SystemExit(f"These label folders were not found under {root}: {missing}")
+        return labels
+
+    if ready_split:
+        found = set()
+        for split in SPLIT_NAMES:
+            split_dir = root / split
+            if not split_dir.is_dir():
+                continue
+            found.update(
+                p.name for p in split_dir.iterdir()
+                if p.is_dir() and not p.name.startswith(".")
+            )
+        labels = sorted(found)
+        if not labels:
+            raise SystemExit(f"No class folders found under train/val/test splits in {root}")
         return labels
 
     labels = sorted([p.name for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")])
@@ -351,6 +402,121 @@ def iter_audio_files(label_dir: Path) -> Iterable[Path]:
             continue
         if p.suffix.lower() in SUPPORTED_EXTS:
             yield p
+
+
+def _norm_path_text(value: object) -> str:
+    return str(value or "").replace("\\", "/").strip()
+
+
+def find_ready_metadata_dir(root: Path, explicit: str = "") -> Optional[Path]:
+    """Find prepared_data2/metadata for ready-mode datasets, if available."""
+    candidates: List[Path] = []
+    if explicit:
+        candidates.append(Path(explicit))
+    candidates.extend([
+        root / "metadata",
+        root.parent / "metadata",
+        root.parent.parent / "metadata",
+    ])
+    for cand in candidates:
+        if cand and cand.exists() and cand.is_dir():
+            has_split_csv = all((cand / f"{split}.csv").exists() for split in SPLIT_NAMES)
+            if has_split_csv:
+                return cand
+    return None
+
+
+def _resolve_ready_final_path(root: Path, final_path_value: object, split: str, label: str, segment_id: str) -> Path:
+    """Resolve metadata final_path robustly across Windows/Linux and relative roots."""
+    raw = _norm_path_text(final_path_value)
+    candidates: List[Path] = []
+
+    if raw:
+        p = Path(raw)
+        candidates.append(p)
+        if not p.is_absolute():
+            candidates.append(Path.cwd() / p)
+            candidates.append(root.parent.parent / p)
+            candidates.append(root.parent / p)
+        parts = list(Path(raw).parts)
+        norm_parts = [str(x).replace("\\", "/") for x in parts]
+        for i, part in enumerate(norm_parts):
+            if part in SPLIT_NAMES and i + 2 < len(norm_parts):
+                candidates.append(root.joinpath(*norm_parts[i:]))
+                break
+        candidates.append(root / split / label / Path(raw).name)
+
+    if segment_id:
+        candidates.append(root / split / label / f"{segment_id}.wav")
+
+    seen = set()
+    for cand in candidates:
+        try:
+            key = str(cand.resolve())
+        except Exception:
+            key = str(cand)
+        if key in seen:
+            continue
+        seen.add(key)
+        if cand.exists():
+            return cand
+
+    if raw:
+        return root / split / label / Path(raw).name
+    return root / split / label / f"{segment_id}.wav"
+
+
+def load_ready_metadata_rows(root: Path, args, labels: Sequence[str]) -> Tuple[List[dict], Optional[Path]]:
+    """Load source-aware prepared dataset metadata for ready mode."""
+    meta_dir = find_ready_metadata_dir(root, getattr(args, "ready_metadata_dir", ""))
+    if meta_dir is None:
+        return [], None
+
+    allowed_labels = set(str(x) for x in labels)
+    rows: List[dict] = []
+    for split in SPLIT_NAMES:
+        csv_path = meta_dir / f"{split}.csv"
+        df = pd.read_csv(csv_path)
+        required = {"segment_id", "label", "source_file_id", "final_path", "split"}
+        missing = sorted(required - set(df.columns))
+        if missing:
+            raise SystemExit(f"Ready metadata file {csv_path} missing required columns: {missing}")
+
+        for rec in df.to_dict(orient="records"):
+            label = str(rec.get("label", "")).strip()
+            if label not in allowed_labels:
+                continue
+            rec_split = str(rec.get("split", split)).strip().lower()
+            if rec_split not in SPLIT_NAMES:
+                rec_split = split
+            segment_id = str(rec.get("segment_id", "")).strip()
+            src_path = _resolve_ready_final_path(root, rec.get("final_path", ""), rec_split, label, segment_id)
+            if not src_path.exists():
+                warnings.warn(f"Ready metadata references missing final_path; skipping: {src_path}")
+                continue
+
+            source_file_id = str(rec.get("source_file_id", "") or "").strip()
+            source_path = str(rec.get("source_path", "") or "").strip()
+            if not source_file_id:
+                source_file_id = f"{label}__{hashlib.md5(_norm_path_text(source_path or segment_id).encode('utf-8')).hexdigest()[:12]}"
+
+            out = dict(rec)
+            out.update({
+                "src_path": src_path,
+                "label": label,
+                "predefined_split": rec_split,
+                "source_file_id": source_file_id,
+                "source_id": source_file_id,
+                "group_id": source_file_id,
+                "source_file": source_path,
+                "raw_file": source_path,
+                "parent_file": source_path,
+                "ready_metadata_dir": str(meta_dir),
+                "ready_metadata_used": True,
+            })
+            rows.append(out)
+
+    return rows, meta_dir
 
 
 def _safe_token(text: str, max_len: int = 32) -> str:
@@ -387,8 +553,19 @@ def get_group_key(orig_relpath: str, group_regex: str = "") -> str:
     return rel
 
 
-def clean_audio_file(src: Path, label: str, root: Path, clean_root: Path, args) -> Optional[dict]:
-    orig_relpath = os.path.relpath(src, root).replace("\\", "/")
+def clean_audio_file(
+    src: Path,
+    label: str,
+    root: Path,
+    clean_root: Path,
+    args,
+    predefined_split: Optional[str] = None,
+    ready_meta: Optional[dict] = None,
+) -> Optional[dict]:
+    try:
+        orig_relpath = os.path.relpath(src, root).replace("\\", "/")
+    except ValueError:
+        orig_relpath = _norm_path_text(src)
     y, sr = safe_read_audio(src, dtype="float32")
     if y is None or sr is None:
         return None
@@ -409,12 +586,12 @@ def clean_audio_file(src: Path, label: str, root: Path, clean_root: Path, args) 
     if peak > 0:
         y = (0.8913 * y / peak).astype(np.float32)
 
-    out = clean_root / "parents" / label / stable_wav_name(label, orig_relpath)
+    out = clean_root / "parents" / (predefined_split or "unsplit") / label / stable_wav_name(label, orig_relpath)
     out.parent.mkdir(parents=True, exist_ok=True)
     sf.write(out, y, sr)
 
     clean_relpath = os.path.relpath(out, clean_root).replace("\\", "/")
-    return {
+    row = {
         "filepath": str(out),
         "clean_relpath": clean_relpath,
         "label": label,
@@ -423,7 +600,31 @@ def clean_audio_file(src: Path, label: str, root: Path, clean_root: Path, args) 
         "orig_relpath": orig_relpath,
         "orig_ext": src.suffix.lower(),
         "orig_sr": int(sr),
+        "predefined_split": predefined_split or "",
     }
+
+    if ready_meta:
+        source_file_id = str(ready_meta.get("source_file_id", "") or "").strip()
+        source_path = str(ready_meta.get("source_path", "") or ready_meta.get("source_file", "") or "").strip()
+        row.update({
+            "segment_id": str(ready_meta.get("segment_id", "") or ""),
+            "source_file_id": source_file_id,
+            "source_id": str(ready_meta.get("source_id", source_file_id) or source_file_id),
+            "group_id": str(ready_meta.get("group_id", source_file_id) or source_file_id),
+            "source_file": source_path,
+            "raw_file": str(ready_meta.get("raw_file", source_path) or source_path),
+            "parent_file": str(ready_meta.get("parent_file", source_path) or source_path),
+            "source_path": source_path,
+            "final_path": str(ready_meta.get("final_path", "") or ""),
+            "segment_index": ready_meta.get("segment_index", ""),
+            "start_sec": ready_meta.get("start_sec", ""),
+            "end_sec": ready_meta.get("end_sec", ""),
+            "selection_rank": ready_meta.get("selection_rank", ""),
+            "selection_method": ready_meta.get("selection_method", ""),
+            "ready_metadata_used": bool(ready_meta.get("ready_metadata_used", True)),
+            "ready_metadata_dir": str(ready_meta.get("ready_metadata_dir", "") or ""),
+        })
+    return row
 
 
 def select_evenly_spaced_starts(starts: List[int], max_keep: int) -> List[int]:
@@ -447,7 +648,20 @@ def build_candidate_segments(manifest: pd.DataFrame, clean_root: Path, args) -> 
         parent_path = clean_root / parent_rel
         label = str(r["label"])
         orig_relpath = str(r["orig_relpath"]).replace("\\", "/")
-        split_key = orig_relpath if args.split_unit == "file" else get_group_key(orig_relpath, args.group_regex)
+        predefined_split = str(r.get("predefined_split", "") or "").strip().lower()
+
+        if args.input_mode == "ready" and str(r.get("source_file_id", "") or "").strip():
+            group_id = str(r.get("group_id", "") or r.get("source_file_id", "")).strip()
+            logical_wav_relpath = f"ready_group/{label}/{group_id}.wav"
+            split_key = group_id
+        else:
+            group_id = orig_relpath if args.split_unit == "file" else get_group_key(orig_relpath, args.group_regex)
+            logical_wav_relpath = parent_rel
+            split_key = orig_relpath if args.split_unit == "file" else get_group_key(orig_relpath, args.group_regex)
+
+        source_file = str(r.get("source_file", "") or r.get("source_path", "") or "")
+        raw_file = str(r.get("raw_file", "") or source_file)
+        parent_file = str(r.get("parent_file", "") or source_file)
 
         y, sr = sf.read(parent_path, dtype="float32")
         y = to_mono(y)
@@ -483,17 +697,49 @@ def build_candidate_segments(manifest: pd.DataFrame, clean_root: Path, args) -> 
 
         max_keep_effective = label_cap(label, args.max_segments_per_file_default, args.max_segments_per_label)
         for local_segment_index, s in enumerate(starts):
+            if args.input_mode == "ready":
+                clean_parent_start = 0.0
+                try:
+                    original_start = float(r.get("start_sec", 0.0) or 0.0)
+                except Exception:
+                    original_start = 0.0
+                try:
+                    segment_index_value = int(float(r.get("segment_index", local_segment_index) or local_segment_index))
+                except Exception:
+                    segment_index_value = int(local_segment_index)
+            else:
+                clean_parent_start = float(s / sr)
+                original_start = float(s / sr)
+                segment_index_value = int(local_segment_index)
+
             seg_rows.append({
-                "wav_relpath": parent_rel,                  # parent key for clip grouping
-                "clean_relpath": parent_rel,
+                "wav_relpath": logical_wav_relpath,          # logical parent key for clip grouping
+                "clean_relpath": parent_rel,                 # actual cleaned WAV used for export
                 "orig_relpath": orig_relpath,
                 "label": label,
-                "parent_start": float(s / sr),
-                "start": 0.0,                               # features come from exported segment WAV
+                "parent_start": clean_parent_start,
+                "start": original_start,                     # original parent time; used by clip_policy_test sorting
                 "duration": float(args.segment_sec),
                 "split_key": split_key,
+                "group_id": group_id,
+                "source_file_id": str(r.get("source_file_id", "") or group_id),
+                "source_id": str(r.get("source_id", "") or group_id),
+                "source_file": source_file,
+                "raw_file": raw_file,
+                "parent_file": parent_file,
+                "source_path": str(r.get("source_path", "") or source_file),
+                "final_path": str(r.get("final_path", "") or ""),
+                "segment_id": str(r.get("segment_id", "") or ""),
+                "original_start_sec": original_start,
+                "original_end_sec": r.get("end_sec", ""),
+                "selection_rank": r.get("selection_rank", ""),
+                "selection_method": r.get("selection_method", ""),
+                "ready_metadata_used": bool(r.get("ready_metadata_used", False)),
+                "ready_metadata_dir": str(r.get("ready_metadata_dir", "") or ""),
+                "predefined_split": predefined_split,
+                "parent_duration_sec": dur_sec,
                 "input_mode": str(args.input_mode),
-                "segment_index_parent": int(local_segment_index),
+                "segment_index_parent": segment_index_value,
                 "segments_before_cap": int(len(valid_starts) if args.input_mode == "segment" and n >= win else len(starts)),
                 "max_segments_per_file_effective": int(max_keep_effective),
             })
@@ -686,17 +932,55 @@ def main():
         remove_cache_artifacts(cache)
 
     clean_root.mkdir(parents=True, exist_ok=True)
-    labels = list_label_dirs(root, args.labels)
+    ready_split_root = args.input_mode == "ready" and is_ready_split_root(root)
+    labels = list_label_dirs(root, args.labels, input_mode=args.input_mode)
 
     rows = []
     skipped = []
-    for label in labels:
-        for src in iter_audio_files(root / label):
-            row = clean_audio_file(src, label, root, clean_root, args)
-            if row is None:
-                skipped.append(str(src))
-                continue
-            rows.append(row)
+
+    if ready_split_root:
+        print("[prep_segments] Ready-mode split dataset detected: using existing train/val/test folders.")
+
+        metadata_rows, metadata_dir = load_ready_metadata_rows(root, args, labels)
+        if metadata_rows:
+            print(f"[prep_segments] Ready metadata detected: {metadata_dir}")
+            print("[prep_segments] Using source_file_id/source_path/start_sec metadata for clip grouping.")
+            for rec in metadata_rows:
+                src = Path(rec["src_path"])
+                label = str(rec["label"])
+                split = str(rec["predefined_split"])
+                row = clean_audio_file(src, label, root, clean_root, args, predefined_split=split, ready_meta=rec)
+                if row is None:
+                    skipped.append(str(src))
+                    continue
+                rows.append(row)
+        else:
+            print("[prep_segments] No ready metadata found; falling back to one ready WAV = one clip group.")
+            for split in SPLIT_NAMES:
+                split_dir = root / split
+                if not split_dir.is_dir():
+                    continue
+                for label in labels:
+                    label_dir = split_dir / label
+                    if not label_dir.is_dir():
+                        warnings.warn(f"Label folder missing for split={split}: {label_dir}")
+                        continue
+                    for src in iter_audio_files(label_dir):
+                        row = clean_audio_file(src, label, root, clean_root, args, predefined_split=split)
+                        if row is None:
+                            skipped.append(str(src))
+                            continue
+                        rows.append(row)
+    else:
+        if args.input_mode == "ready":
+            print("[prep_segments] Ready mode without train/val/test folders: will create a leakage-safe split from class folders.")
+        for label in labels:
+            for src in iter_audio_files(root / label):
+                row = clean_audio_file(src, label, root, clean_root, args)
+                if row is None:
+                    skipped.append(str(src))
+                    continue
+                rows.append(row)
 
     if skipped:
         print(f"\nSkipped {len(skipped)} unreadable files (showing up to 10):")
@@ -730,23 +1014,37 @@ def main():
     print(f"Bandpass: {args.bandpass if args.bandpass else 'disabled'}")
 
     seg_df = build_candidate_segments(manifest, clean_root, args)
-    seg_df, seg_counts, key_counts = split_by_key(
-        seg_df,
-        train_frac=float(args.train_frac),
-        val_frac=float(args.val_frac),
-        test_frac=float(args.test_frac),
-        seed=int(args.seed),
-        stratify=bool(args.stratify),
-        key_col="split_key",
-    )
+
+    if ready_split_root:
+        seg_df = seg_df.copy()
+        seg_df["split"] = seg_df["predefined_split"].astype(str).str.lower()
+        bad_splits = sorted(set(seg_df["split"].unique()) - set(SPLIT_NAMES))
+        if bad_splits:
+            raise SystemExit(f"Invalid predefined splits in ready dataset: {bad_splits}")
+        seg_counts = seg_df["split"].value_counts().to_dict()
+        key_counts = seg_df[["split_key", "split"]].drop_duplicates()["split"].value_counts().to_dict()
+    else:
+        seg_df, seg_counts, key_counts = split_by_key(
+            seg_df,
+            train_frac=float(args.train_frac),
+            val_frac=float(args.val_frac),
+            test_frac=float(args.test_frac),
+            seed=int(args.seed),
+            stratify=bool(args.stratify),
+            key_col="split_key",
+        )
 
     seg_df = export_segments(seg_df, cache, clean_root, args)
 
     # Keep stable column order while preserving any future extra columns.
     preferred = [
         "orig_relpath", "clean_relpath", "wav_relpath", "segment_wav_relpath",
-        "label", "split", "split_key", "parent_start", "start", "duration", "input_mode",
-        "segment_index_parent", "segments_before_cap", "max_segments_per_file_effective"
+        "label", "split", "split_key", "group_id", "source_file_id", "source_id",
+        "source_file", "raw_file", "parent_file", "source_path", "final_path", "segment_id",
+        "predefined_split", "parent_start", "start", "original_start_sec", "original_end_sec",
+        "duration", "parent_duration_sec", "input_mode", "segment_index_parent",
+        "selection_rank", "selection_method", "ready_metadata_used", "ready_metadata_dir",
+        "segments_before_cap", "max_segments_per_file_effective"
     ]
     other = [c for c in seg_df.columns if c not in preferred]
     seg_df = seg_df[preferred + other]
@@ -765,6 +1063,25 @@ def main():
         .reset_index()
         .to_csv(cache / "segments_by_label.csv", index=False)
     )
+    if "source_file_id" in seg_df.columns:
+        (
+            seg_df.groupby(["split", "label"])
+            .agg(
+                segments=("label", "size"),
+                sources=("source_file_id", "nunique"),
+                avg_segments_per_source=("source_file_id", lambda s: float(len(s) / max(s.nunique(), 1))),
+            )
+            .reset_index()
+            .to_csv(cache / "segments_by_split_label_source.csv", index=False)
+        )
+        (
+            seg_df.groupby(["split", "label", "source_file_id"])
+            .size()
+            .rename("segments")
+            .reset_index()
+            .sort_values(["split", "label", "segments"], ascending=[True, True, False])
+            .to_csv(cache / "segments_by_source.csv", index=False)
+        )
 
     print("\n=== Segmentation summary ===")
     print("Split keys:", key_counts)

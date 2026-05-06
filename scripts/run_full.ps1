@@ -36,8 +36,9 @@ param(
 
   # Unified preprocessing / segmentation controls
   # InputMode:
-  #   segment -> raw mixed-length audio is cleaned and segmented
-  #   ready   -> already clipped audio is cleaned and exported as fixed-length segment WAVs
+  #   segment -> raw mixed-length audio is cleaned, split, segmented, then exported
+  #   ready   -> already clipped audio is cleaned/exported; if DataRoot has
+  #              train/val/test/<class> folders, those splits are preserved
   [ValidateSet("segment", "ready")]
   [string]$InputMode = "segment",
 
@@ -200,6 +201,9 @@ Write-Host "  NFFT/Win/HopMs  = $NFFT/$WinMs/$FeatHopMs" -ForegroundColor DarkGr
 Write-Host "  CMVN            = $(-not [bool]$NoCMVN)" -ForegroundColor DarkGray
 Write-Host "  TapBlocks       = $TapBlocks"       -ForegroundColor DarkGray
 Write-Host "  InputMode       = $InputMode"       -ForegroundColor DarkGray
+if ($InputMode -eq "ready") {
+  Write-Host "  Ready layout    = train/val/test/<class> preserved when present" -ForegroundColor DarkGray
+}
 Write-Host "  Labels          = $(if ($Labels -ne '') { $Labels } else { 'auto-discover' })" -ForegroundColor DarkGray
 Write-Host "  MinKeepSec      = $MinKeepSec"      -ForegroundColor DarkGray
 Write-Host "  MaxSeg/File     = $MaxSegmentsPerFileDefault" -ForegroundColor DarkGray

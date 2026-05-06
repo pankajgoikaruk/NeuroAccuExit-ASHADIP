@@ -1,3 +1,167 @@
+# Documentation Structure Update — `kexit_cclass_greedy_v2`
+
+This section updates the report/thesis structure for the current prepared/grouped C-class stage.
+
+## Updated writing position
+
+The project should now be written as a sequence of increasingly stricter evaluations:
+
+| Stage | Dataset / setting | Status | Purpose |
+|---|---|---|---|
+| Stage 1 | 2-class moth | Validated | Proves the generic K-exit pipeline does not break the original task |
+| Stage 2 | Raw 10-class C-class | Validated earlier | Shows the harder multiclass setting and initial hint limitations |
+| Stage 3 | Prepared/grouped 10-class | Current valid result | More honest source-aware and clip-aware C-class evaluation |
+| Stage 4 | Refined 11-class | Pending rerun | Intended final refined dataset, but current effective logs still show 10 classes |
+
+---
+
+## Updated chapter plan
+
+### Chapter 1 — Motivation
+
+Explain the move from moth-only binary classification to generic audio event classification.
+
+### Chapter 2 — Dataset evolution
+
+Include three dataset states:
+
+1. **Original moth binary dataset**
+2. **10-class C-class audio dataset**
+3. **Prepared/refined dataset with intended 11 classes**
+
+For the intended 11-class dataset, clearly state that final model reporting requires the run logs to show `num_classes=11` and `rain_thunderstorm` in the effective inventory.
+
+### Chapter 3 — Preprocessing and grouping
+
+Emphasise the corrected ready-mode grouping behaviour:
+
+```text
+prepared 1-second WAVs from the same source_file_id
+→ grouped back into one logical parent/source clip
+→ meaningful full-clip and Depth×Time evaluation
+```
+
+This is a key methodological contribution because it makes the prepared dataset evaluation more realistic.
+
+### Chapter 4 — Model variants
+
+Report the four prepared/grouped C-class variants:
+
+```text
+3exit_cclass_greedy_prepared_grouped
+3exit_cclass_greedy_hint_prepared_grouped
+5exit_cclass_greedy_prepared_grouped
+5exit_cclass_greedy_hint_prepared_grouped
+```
+
+Then separately discuss the intended refined 11-class variants, but only after rerun validation.
+
+### Chapter 5 — Results
+
+Recommended result order:
+
+1. Moth binary sanity check
+2. Raw 10-class C-class baseline
+3. Prepared/grouped 10-class result
+4. Refined 11-class label-audit result
+5. Final 11-class results after rerun
+
+---
+
+## Main thesis/report claims to use now
+
+### Claim 1 — Pipeline validity
+
+The generic pipeline remains valid because the original moth task still performs strongly.
+
+### Claim 2 — Prepared/grouped evaluation is stricter
+
+The prepared/grouped dataset is more research-correct because source-level grouping avoids treating every 1-second prepared WAV as an independent clip.
+
+### Claim 3 — Hint passing is condition-dependent
+
+Earlier raw C-class experiments suggested hint passing was harmful. Under the prepared/grouped evaluation, the best current result is the compact 3-exit hint model.
+
+### Claim 4 — 5 exits are not yet clearly beneficial
+
+The 5-exit models still tend to rely heavily on late exits and do not beat the 3-exit hint model at clip level.
+
+### Claim 5 — Final 11-class reporting is pending
+
+The current refined logs are not yet valid 11-class runs because `rain_thunderstorm` is absent from the effective inventory and `num_classes` remains 10.
+
+---
+
+## Recommended tables for the final paper/thesis
+
+| Table | Title | File location |
+|---|---|---|
+| 1 | Dataset evolution summary | README + Appendix |
+| 2 | Prepared/grouped split summary | README + Appendix |
+| 3 | Label audit for refined 11-class attempt | README + Appendix |
+| 4 | Prepared/grouped segment-policy comparison | README + Appendix |
+| 5 | Prepared/grouped full-clip vs Depth×Time comparison | README + Appendix |
+| 6 | Hint vs no-hint comparison | Appendix |
+| 7 | 3-exit vs 5-exit comparison | Appendix |
+| 8 | Per-class F1 and confusion behaviour | Appendix |
+| 9 | Final 11-class result table after rerun | Appendix |
+| 10 | Future scope and ablation plan | DOC_STRUCTURE |
+
+---
+
+## Prepared/grouped result summary for Chapter 5
+
+| Variant | Segment policy acc | Full-clip acc | Depth×Time acc | Compute saved | Conclusion |
+|---|---:|---:|---:|---:|---|
+| `3exit_cclass_greedy_prepared_grouped` | 55.79% | 66.44% | 66.44% | 22.01% | Weak baseline; final exit not strongest |
+| `3exit_cclass_greedy_hint_prepared_grouped` | 68.16% | **84.56%** | **84.56%** | 22.40% | Best valid prepared/grouped result |
+| `5exit_cclass_greedy_prepared_grouped` | 61.58% | 75.17% | 75.17% | 21.99% | Late-exit heavy |
+| `5exit_cclass_greedy_hint_prepared_grouped` | 68.42% | 79.87% | 79.19% | **23.53%** | Good efficiency, lower accuracy than 3-exit hint |
+
+---
+
+## Updated conclusion wording
+
+Use this wording in the report:
+
+> The prepared/grouped C-class experiments show that the stricter source-aware evaluation changes the behaviour of the system. The compact 3-exit hint-passing model achieves the best current prepared/grouped clip-level accuracy, while Depth×Time preserves this accuracy with approximately 22% compute saving. However, the intended 11-class refined experiment is not yet reportable because the effective preprocessing logs still show 10 classes and omit `rain_thunderstorm`. The next required step is to fix the class ingestion issue and rerun the four refined 11-class experiments before making final claims.
+
+---
+
+## Future-scope writing points
+
+1. **Class ingestion validation**
+   - Add a hard failure if CLI labels and effective inventory labels differ.
+   - Print missing and extra labels before training.
+
+2. **Training stability**
+   - Add early stopping.
+   - Add best-epoch checkpoint reporting.
+   - Add `ReduceLROnPlateau`.
+
+3. **Multiclass hint passing**
+   - Confidence-gated hints.
+   - Entropy/margin thresholding.
+   - Hint dropout or hint regularization.
+
+4. **Early-exit quality**
+   - Stronger auxiliary losses.
+   - Final-exit distillation into early exits.
+   - Per-exit class-balanced losses.
+
+5. **Evaluation robustness**
+   - Repeat with multiple seeds.
+   - Report macro-F1 as the primary C-class metric.
+   - Add one-vs-rest multiclass AUC.
+
+---
+
+
+
+---
+
+# Previous Documentation Structure
+
 # ASHADIP / NeuroAccuExit — Documentation Structure for Generic K-Exit / C-Class Greedy + Hint Pipeline
 
 This document defines the recommended documentation / thesis mini-book structure for the current `kexit-greedy-hint` research branch.

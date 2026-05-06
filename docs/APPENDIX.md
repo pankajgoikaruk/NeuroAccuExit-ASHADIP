@@ -1,3 +1,162 @@
+# Appendix Update — `kexit_cclass_greedy_v2`
+
+This appendix update should be read before the older 8-run appendix tables.
+
+---
+
+# A0. Latest branch-level audit
+
+| Item | Value |
+|---|---|
+| Branch | `kexit_cclass_greedy_v2` |
+| Current valid setting | Prepared/grouped 10-class C-class |
+| Intended next setting | Refined 11-class C-class |
+| New class | `rain_thunderstorm` |
+| Current issue | Refined logs still process only 10 effective labels |
+| Action required | Fix label ingestion and rerun 4 refined variants |
+
+---
+
+# A1. Intended 11-class split counts
+
+| Class | Train | Val | Test |
+|---|---:|---:|---:|
+| car_crash | 223 | 42 | 38 |
+| conversation | 223 | 42 | 38 |
+| engine_idling | 223 | 42 | 38 |
+| fireworks | 223 | 42 | 38 |
+| gun_shot | 223 | 42 | 38 |
+| rain | 223 | 42 | 38 |
+| rain_thunderstorm | 223 | 42 | 38 |
+| road_traffic | 223 | 42 | 38 |
+| scream | 223 | 42 | 38 |
+| thunderstorm | 223 | 42 | 38 |
+| wind | 223 | 42 | 38 |
+| **Total** | **2453** | **462** | **418** |
+
+---
+
+# A2. Effective label audit from available refined logs
+
+| Field | Expected | Observed | Interpretation |
+|---|---:|---:|---|
+| CLI labels | 11 | 11 | Command was intended correctly |
+| Inventory labels | 11 | 10 | Effective preprocessing missed one class |
+| Missing class | None | `rain_thunderstorm` | Must fix before final reporting |
+| `num_classes` | 11 | 10 | Model/evaluation still effective-10 |
+| Train segments | 2453 | 2230 | 10 × 223 |
+| Val segments | 462 | 420 | 10 × 42 |
+| Test segments | 418 | 380 | 10 × 38 |
+
+---
+
+# A3. Prepared/grouped 10-class result table
+
+| Variant | Exits | Hint | Policy acc | Full clip acc | Depth×Time acc | Windows saved | Compute saved | Exit behaviour |
+|---|---:|---|---:|---:|---:|---:|---:|---|
+| `3exit_cclass_greedy_prepared_grouped` | 3 | No | 55.79% | 66.44% | 66.44% | 22.63% | 22.01% | Uses e2/e3; final exit not strongest |
+| `3exit_cclass_greedy_hint_prepared_grouped` | 3 | Yes | 68.16% | **84.56%** | **84.56%** | 22.37% | 22.40% | Best current valid prepared/grouped model |
+| `5exit_cclass_greedy_prepared_grouped` | 5 | No | 61.58% | 75.17% | 75.17% | 22.11% | 21.99% | Mostly e5 |
+| `5exit_cclass_greedy_hint_prepared_grouped` | 5 | Yes | 68.42% | 79.87% | 79.19% | **23.16%** | **23.53%** | Better efficiency, lower accuracy than 3-exit hint |
+
+---
+
+# A4. Segment-policy details
+
+| Variant | Policy acc | Avg exit depth | Exit mix | Flip-any rate | Exit consistency |
+|---|---:|---:|---|---:|---:|
+| `3exit_cclass_greedy_prepared_grouped` | 55.79% | 2.511 | e1=8.68%, e2=31.58%, e3=59.74% | 70.00% | 93.42% |
+| `3exit_cclass_greedy_hint_prepared_grouped` | 68.16% | 2.808 | e1=0.53%, e2=18.16%, e3=81.32% | 67.63% | 99.47% |
+| `5exit_cclass_greedy_prepared_grouped` | 61.58% | 4.547 | e1=0.00%, e2=7.63%, e3=10.26%, e4=1.84%, e5=80.26% | 69.74% | 99.74% |
+| `5exit_cclass_greedy_hint_prepared_grouped` | 68.42% | 4.474 | e1=0.79%, e2=8.42%, e3=10.00%, e4=4.21%, e5=76.58% | 66.32% | 99.47% |
+
+---
+
+# A5. Clip-policy details
+
+| Variant | Mode | Clip acc | Segment acc | Avg windows | Windows saved | Avg compute | Compute saved | Flip rate | Exit consistency |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `3exit_cclass_greedy_prepared_grouped` | Full | 66.44% | 55.79% | 2.550 / 2.550 | 0.00% | 6.403 | 0.00% | 70.00% | 93.42% |
+| `3exit_cclass_greedy_prepared_grouped` | Depth×Time | 66.44% | 57.14% | 1.973 / 2.550 | 22.63% | 4.993 | 22.01% | 71.77% | 93.54% |
+| `3exit_cclass_greedy_hint_prepared_grouped` | Full | 84.56% | 68.16% | 2.550 / 2.550 | 0.00% | 7.161 | 0.00% | 67.63% | 99.47% |
+| `3exit_cclass_greedy_hint_prepared_grouped` | Depth×Time | 84.56% | 71.86% | 1.980 / 2.550 | 22.37% | 5.557 | 22.40% | 70.51% | 99.66% |
+| `5exit_cclass_greedy_prepared_grouped` | Full | 75.17% | 61.58% | 2.550 / 2.550 | 0.00% | 11.597 | 0.00% | 69.74% | 99.74% |
+| `5exit_cclass_greedy_prepared_grouped` | Depth×Time | 75.17% | — | 1.987 / 2.550 | 22.11% | 9.047 | 21.99% | 71.62% | 99.66% |
+| `5exit_cclass_greedy_hint_prepared_grouped` | Full | 79.87% | 68.42% | 2.550 / 2.550 | 0.00% | 11.409 | 0.00% | 66.32% | 99.47% |
+| `5exit_cclass_greedy_hint_prepared_grouped` | Depth×Time | 79.19% | — | 1.960 / 2.550 | 23.16% | 8.725 | 23.53% | 67.81% | 99.66% |
+
+---
+
+# A6. Hint vs no-hint deltas on prepared/grouped 10-class
+
+| Exits | Metric | No hint | Hint | Delta |
+|---:|---|---:|---:|---:|
+| 3 | Segment policy acc | 55.79% | 68.16% | **+12.37pp** |
+| 3 | Full-clip acc | 66.44% | 84.56% | **+18.12pp** |
+| 3 | Depth×Time acc | 66.44% | 84.56% | **+18.12pp** |
+| 3 | Compute saved | 22.01% | 22.40% | +0.39pp |
+| 5 | Segment policy acc | 61.58% | 68.42% | **+6.84pp** |
+| 5 | Full-clip acc | 75.17% | 79.87% | **+4.70pp** |
+| 5 | Depth×Time acc | 75.17% | 79.19% | **+4.02pp** |
+| 5 | Compute saved | 21.99% | 23.53% | +1.54pp |
+
+---
+
+# A7. 3-exit vs 5-exit deltas on prepared/grouped 10-class
+
+| Hint | Metric | 3 exits | 5 exits | Delta 5-3 |
+|---|---|---:|---:|---:|
+| No | Segment policy acc | 55.79% | 61.58% | +5.79pp |
+| No | Full-clip acc | 66.44% | 75.17% | +8.73pp |
+| No | Depth×Time acc | 66.44% | 75.17% | +8.73pp |
+| No | Compute saved | 22.01% | 21.99% | -0.02pp |
+| Yes | Segment policy acc | 68.16% | 68.42% | +0.26pp |
+| Yes | Full-clip acc | **84.56%** | 79.87% | -4.69pp |
+| Yes | Depth×Time acc | **84.56%** | 79.19% | -5.37pp |
+| Yes | Compute saved | 22.40% | **23.53%** | +1.13pp |
+
+---
+
+# A8. Diagnostic refined-run table, not final 11-class
+
+| Variant | Policy acc | Full clip acc | Depth×Time acc | Note |
+|---|---:|---:|---:|---|
+| `3exit_cclass_greedy_refined11_grouped` | 71.32% | 83.33% | 83.97% | Effective 10-class only |
+| `3exit_cclass_greedy_hint_refined11_grouped` | 73.68% | 80.77% | — | Effective 10-class only |
+| `5exit_cclass_greedy_refined11_grouped` | 71.05% | 79.49% | 79.49% | Effective 10-class only |
+| `5exit_cclass_greedy_hint_refined11_grouped` | 72.37% | 82.05% | — | Effective 10-class only |
+
+These values can be used to debug the model behaviour, but not as final refined 11-class evidence.
+
+---
+
+# A9. Final 11-class reporting template
+
+After the corrected rerun, fill this table.
+
+| Variant | Exits | Hint | Effective classes | Policy acc | Full-clip acc | Depth×Time acc | Compute saved | Best? |
+|---|---:|---|---:|---:|---:|---:|---:|---|
+| `3exit_cclass_greedy_refined11_grouped` | 3 | No | 11 | TBD | TBD | TBD | TBD | TBD |
+| `3exit_cclass_greedy_hint_refined11_grouped` | 3 | Yes | 11 | TBD | TBD | TBD | TBD | TBD |
+| `5exit_cclass_greedy_refined11_grouped` | 5 | No | 11 | TBD | TBD | TBD | TBD | TBD |
+| `5exit_cclass_greedy_hint_refined11_grouped` | 5 | Yes | 11 | TBD | TBD | TBD | TBD | TBD |
+
+---
+
+# A10. Research-safe interpretation
+
+The safest interpretation is:
+
+> The prepared/grouped evaluation is now meaningful and shows that compact 3-exit hint passing currently gives the best valid prepared/grouped C-class clip accuracy. However, the newly intended 11-class refined experiment requires one more corrected rerun because the available logs show only 10 effective classes. The final claim should therefore be delayed until `rain_thunderstorm` is confirmed in inventory, `num_classes=11`, and the split counts match 2453/462/418.
+
+---
+
+
+
+---
+
+# Previous Extended 8-Run Appendix
+
 # Appendix — Extended Tables for 8-Run Generic K-Exit / C-Class Study
 
 This appendix contains the extended result tables for the controlled 8-run study:
