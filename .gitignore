@@ -55,3 +55,7 @@ analysis/
 *.pt
 *.pth
 __pycache__/
+
+# Local datasets / prepared datasets - do not commit
+new_data/
+prepared_data2/
