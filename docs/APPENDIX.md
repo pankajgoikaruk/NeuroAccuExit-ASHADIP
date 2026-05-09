@@ -1,3 +1,438 @@
+
+# Appendix — Multi-label Early-exit Audio Baseline v0.1
+
+This appendix provides the detailed result record for:
+
+```text
+kexit_cclass_greedy_multi-label_v0.1_threshold_tuned
+```
+
+---
+
+## ML-A1. Branch and artifact status
+
+| Item | Value |
+|---|---|
+| Working branch | `kexit_cclass_greedy_multi-label` |
+| Recommended snapshot | `kexit_cclass_greedy_multi-label_v0.1_threshold_tuned` |
+| Task | Multi-label audio tagging |
+| Labels | 10 |
+| Input | 1-second log-mel audio windows |
+| Model family | TinyAudioCNN + ExitNet |
+| Compared variants | 3-exit no-hint, 5-exit no-hint |
+| Thresholding | Fixed 0.5 and tuned per-label thresholds |
+| Status | End-to-end baseline complete |
+
+---
+
+## ML-A2. Label list
+
+|   ID | Label         |
+|-----:|:--------------|
+|    0 | car_crash     |
+|    1 | conversation  |
+|    2 | engine_idling |
+|    3 | fireworks     |
+|    4 | gun_shot      |
+|    5 | rain          |
+|    6 | road_traffic  |
+|    7 | scream        |
+|    8 | thunderstorm  |
+|    9 | wind          |
+
+---
+
+## ML-A3. Clean seed split counts after excluding `.m4a`
+
+| split   |   total |   car_crash |   conversation |   engine_idling |   fireworks |   gun_shot |   rain |   road_traffic |   scream |   thunderstorm |   wind |
+|:--------|--------:|------------:|---------------:|----------------:|------------:|-----------:|-------:|---------------:|---------:|---------------:|-------:|
+| train   |     724 |          64 |             57 |              32 |          57 |        155 |     66 |             80 |      106 |             38 |     69 |
+| val     |     155 |          14 |             12 |               7 |          12 |         33 |     14 |             17 |       23 |              8 |     15 |
+| test    |     156 |          14 |             12 |               7 |          13 |         33 |     15 |             17 |       22 |              8 |     15 |
+
+---
+
+## ML-A4. Synthetic mixture settings
+
+| Setting | Value |
+|---|---:|
+| Number of labels per synthetic clip | 2 |
+| Train mixtures | 1000 |
+| Val mixtures | 200 |
+| Test mixtures | 200 |
+| Sample rate | 16000 Hz |
+| Clip duration | 1.0 s |
+| Gain range | -6 dB to 0 dB |
+| Seed | 42 |
+| Leakage rule | Each synthetic split uses only clean seed files from the same split |
+
+---
+
+## ML-A5. Synthetic positive label counts
+
+| label         |   positive_count |
+|:--------------|-----------------:|
+| car_crash     |              276 |
+| conversation  |              293 |
+| engine_idling |              301 |
+| fireworks     |              256 |
+| gun_shot      |              248 |
+| rain          |              284 |
+| road_traffic  |              288 |
+| scream        |              289 |
+| thunderstorm  |              267 |
+| wind          |              298 |
+
+---
+
+## ML-A6. Combined manifest counts
+
+| split   |   rows |
+|:--------|-------:|
+| train   |   1724 |
+| val     |    355 |
+| test    |    356 |
+| total   |   2435 |
+
+---
+
+## ML-A7. Feature extraction summary
+
+| Item | Value |
+|---|---:|
+| Total feature rows | 2435 |
+| Clean rows | 1035 |
+| Synthetic rows | 1400 |
+| Train rows | 1724 |
+| Validation rows | 355 |
+| Test rows | 356 |
+| Loaded x shape | `[batch, 1, 64, 101]` |
+| Loaded y shape | `[batch, 10]` |
+
+---
+
+## ML-A8. Label-positive counts after feature extraction
+
+| label         |   positive_count |
+|:--------------|-----------------:|
+| car_crash     |              368 |
+| conversation  |              374 |
+| engine_idling |              347 |
+| fireworks     |              338 |
+| gun_shot      |              469 |
+| rain          |              379 |
+| road_traffic  |              402 |
+| scream        |              440 |
+| thunderstorm  |              321 |
+| wind          |              397 |
+
+---
+
+## ML-A9. Training setup
+
+| variant                 | tap_blocks   |   exits | loss_weights              |   best_epoch |   best_val_final_macro_f1 |
+|:------------------------|:-------------|--------:|:--------------------------|-------------:|--------------------------:|
+| multilabel_3exit_nohint | 1,3          |       3 | [0.3, 0.3, 1.0]           |           27 |                    0.5469 |
+| multilabel_5exit_nohint | 1,2,3,4      |       5 | [0.3, 0.3, 0.6, 0.8, 1.0] |           37 |                    0.5438 |
+
+---
+
+## ML-A10. All exit-level metrics
+
+| model        |   num_exits |   exit | split   | threshold_mode   |   macro_f1 |   micro_f1 | samples_f1   |   exact_match |   hamming_loss | avg_true_labels   | avg_pred_labels   |
+|:-------------|------------:|-------:|:--------|:-----------------|-----------:|-----------:|:-------------|--------------:|---------------:|:------------------|:------------------|
+| 3exit_nohint |           3 |      1 | val     | fixed_0p5        |     0      |     0      |              |        0      |         0.1563 |                   |                   |
+| 3exit_nohint |           3 |      1 | val     | tuned            |     0.4038 |     0.3848 |              |        0.0197 |         0.3566 |                   |                   |
+| 3exit_nohint |           3 |      1 | test    | fixed_0p5        |     0      |     0      | 0.0000       |        0      |         0.1562 |                   |                   |
+| 3exit_nohint |           3 |      1 | test    | tuned            |     0.3802 |     0.3561 |              |        0.0112 |         0.3809 |                   |                   |
+| 3exit_nohint |           3 |      2 | val     | fixed_0p5        |     0.2755 |     0.3719 |              |        0.1775 |         0.1285 |                   |                   |
+| 3exit_nohint |           3 |      2 | val     | tuned            |     0.5448 |     0.5174 |              |        0.169  |         0.2076 |                   |                   |
+| 3exit_nohint |           3 |      2 | test    | fixed_0p5        |     0.3024 |     0.4091 | 0.3408       |        0.191  |         0.1242 |                   |                   |
+| 3exit_nohint |           3 |      2 | test    | tuned            |     0.557  |     0.5278 |              |        0.1601 |         0.198  |                   |                   |
+| 3exit_nohint |           3 |      3 | val     | fixed_0p5        |     0.5469 |     0.5924 |              |        0.2986 |         0.1062 |                   |                   |
+| 3exit_nohint |           3 |      3 | val     | tuned            |     0.6563 |     0.645  |              |        0.2817 |         0.1231 |                   |                   |
+| 3exit_nohint |           3 |      3 | test    | fixed_0p5        |     0.5319 |     0.592  | 0.5598       |        0.3034 |         0.1065 | 1.5618            | 1.0478            |
+| 3exit_nohint |           3 |      3 | test    | tuned            |     0.6301 |     0.6361 | 0.6576       |        0.2725 |         0.1247 | 1.5618            | 1.8652            |
+| 5exit_nohint |           5 |      1 | val     | fixed_0p5        |     0.0152 |     0.0178 |              |        0.0141 |         0.1552 |                   |                   |
+| 5exit_nohint |           5 |      1 | val     | tuned            |     0.4225 |     0.3877 |              |        0.0113 |         0.3524 |                   |                   |
+| 5exit_nohint |           5 |      1 | test    | fixed_0p5        |     0.0068 |     0.0072 | 0.0056       |        0.0056 |         0.1556 |                   |                   |
+| 5exit_nohint |           5 |      1 | test    | tuned            |     0.3879 |     0.3619 |              |        0.0028 |         0.3635 |                   |                   |
+| 5exit_nohint |           5 |      2 | val     | fixed_0p5        |     0.2388 |     0.329  |              |        0.1746 |         0.1321 |                   |                   |
+| 5exit_nohint |           5 |      2 | val     | tuned            |     0.5179 |     0.4896 |              |        0.1324 |         0.2273 |                   |                   |
+| 5exit_nohint |           5 |      2 | test    | fixed_0p5        |     0.2411 |     0.3476 | 0.2739       |        0.1601 |         0.1287 |                   |                   |
+| 5exit_nohint |           5 |      2 | test    | tuned            |     0.502  |     0.4722 |              |        0.1067 |         0.2242 |                   |                   |
+| 5exit_nohint |           5 |      3 | val     | fixed_0p5        |     0.3593 |     0.4436 |              |        0.2254 |         0.1208 |                   |                   |
+| 5exit_nohint |           5 |      3 | val     | tuned            |     0.5823 |     0.5608 |              |        0.1944 |         0.1792 |                   |                   |
+| 5exit_nohint |           5 |      3 | test    | fixed_0p5        |     0.3708 |     0.466  | 0.3928       |        0.1994 |         0.1191 |                   |                   |
+| 5exit_nohint |           5 |      3 | test    | tuned            |     0.5723 |     0.5563 |              |        0.191  |         0.1747 |                   |                   |
+| 5exit_nohint |           5 |      4 | val     | fixed_0p5        |     0.5079 |     0.5535 |              |        0.2845 |         0.1104 |                   |                   |
+| 5exit_nohint |           5 |      4 | val     | tuned            |     0.6342 |     0.6251 |              |        0.2732 |         0.1287 |                   |                   |
+| 5exit_nohint |           5 |      4 | test    | fixed_0p5        |     0.5135 |     0.5686 | 0.5325       |        0.2697 |         0.1104 |                   |                   |
+| 5exit_nohint |           5 |      4 | test    | tuned            |     0.6281 |     0.6291 | 0.6475       |        0.309  |         0.1258 | 1.5618            | 1.8315            |
+| 5exit_nohint |           5 |      5 | val     | fixed_0p5        |     0.5438 |     0.5827 |              |        0.3042 |         0.1045 |                   |                   |
+| 5exit_nohint |           5 |      5 | val     | tuned            |     0.6571 |     0.6599 |              |        0.3577 |         0.1132 |                   |                   |
+| 5exit_nohint |           5 |      5 | test    | fixed_0p5        |     0.5302 |     0.5852 | 0.5545       |        0.3062 |         0.1067 | 1.5618            | 1.0112            |
+| 5exit_nohint |           5 |      5 | test    | tuned            |     0.6152 |     0.6454 | 0.6639       |        0.3343 |         0.1157 | 1.5618            | 1.7022            |
+
+---
+
+## ML-A11. Final-exit comparison
+
+| model        |   num_exits |   exit | threshold_mode   |   macro_f1 |   micro_f1 |   samples_f1 |   exact_match |   hamming_loss |   avg_true_labels |   avg_pred_labels |
+|:-------------|------------:|-------:|:-----------------|-----------:|-----------:|-------------:|--------------:|---------------:|------------------:|------------------:|
+| 3exit_nohint |           3 |      3 | fixed_0p5        |     0.5319 |     0.592  |       0.5598 |        0.3034 |         0.1065 |            1.5618 |            1.0478 |
+| 3exit_nohint |           3 |      3 | tuned            |     0.6301 |     0.6361 |       0.6576 |        0.2725 |         0.1247 |            1.5618 |            1.8652 |
+| 5exit_nohint |           5 |      5 | fixed_0p5        |     0.5302 |     0.5852 |       0.5545 |        0.3062 |         0.1067 |            1.5618 |            1.0112 |
+| 5exit_nohint |           5 |      5 | tuned            |     0.6152 |     0.6454 |       0.6639 |        0.3343 |         0.1157 |            1.5618 |            1.7022 |
+
+---
+
+## ML-A12. Best tuned exit per model
+
+| model        |   num_exits |   exit | threshold_mode   |   macro_f1 |   micro_f1 |   samples_f1 |   exact_match |   hamming_loss |   avg_true_labels |   avg_pred_labels |
+|:-------------|------------:|-------:|:-----------------|-----------:|-----------:|-------------:|--------------:|---------------:|------------------:|------------------:|
+| 3exit_nohint |           3 |      3 | tuned            |     0.6301 |     0.6361 |       0.6576 |        0.2725 |         0.1247 |            1.5618 |            1.8652 |
+| 5exit_nohint |           5 |      4 | tuned            |     0.6281 |     0.6291 |       0.6475 |        0.309  |         0.1258 |            1.5618 |            1.8315 |
+
+---
+
+## ML-A13. Final-exit per-label fixed-vs-tuned metrics
+
+| model        | label         |   threshold |   support |   fixed_precision |   fixed_recall |   fixed_f1 |   fixed_pred_pos |   tuned_precision |   tuned_recall |   tuned_f1 |   delta_f1 |   delta_recall |   delta_precision |
+|:-------------|:--------------|------------:|----------:|------------------:|---------------:|-----------:|-----------------:|------------------:|---------------:|-----------:|-----------:|---------------:|------------------:|
+| 3exit_nohint | car_crash     |        0.43 |        47 |            0.6327 |         0.6596 |     0.6458 |               49 |            0.5818 |         0.6809 |     0.6275 |    -0.0183 |         0.0213 |           -0.0509 |
+| 3exit_nohint | conversation  |        0.34 |        60 |            1      |         0.9    |     0.9474 |               54 |            0.9322 |         0.9167 |     0.9244 |    -0.023  |         0.0167 |           -0.0678 |
+| 3exit_nohint | engine_idling |        0.21 |        49 |            0.7895 |         0.3061 |     0.4412 |               19 |            0.4844 |         0.6327 |     0.5487 |     0.1075 |         0.3266 |           -0.3051 |
+| 3exit_nohint | fireworks     |        0.09 |        52 |            0.75   |         0.3462 |     0.4737 |               24 |            0.3761 |         0.7885 |     0.5093 |     0.0356 |         0.4423 |           -0.3739 |
+| 3exit_nohint | gun_shot      |        0.23 |        76 |            0.84   |         0.5526 |     0.6667 |               50 |            0.7746 |         0.7237 |     0.7483 |     0.0816 |         0.1711 |           -0.0654 |
+| 3exit_nohint | rain          |        0.05 |        52 |            1      |         0.0769 |     0.1429 |                4 |            0.6176 |         0.8077 |     0.7    |     0.5571 |         0.7308 |           -0.3824 |
+| 3exit_nohint | road_traffic  |        0.36 |        63 |            0.5882 |         0.4762 |     0.5263 |               51 |            0.5513 |         0.6825 |     0.6099 |     0.0836 |         0.2063 |           -0.0369 |
+| 3exit_nohint | scream        |        0.47 |        57 |            0.9259 |         0.8772 |     0.9009 |               54 |            0.8929 |         0.8772 |     0.885  |    -0.0159 |         0      |           -0.033  |
+| 3exit_nohint | thunderstorm  |        0.24 |        49 |            1      |         0.0408 |     0.0784 |                2 |            0.2609 |         0.2449 |     0.2526 |     0.1742 |         0.2041 |           -0.7391 |
+| 3exit_nohint | wind          |        0.54 |        51 |            0.4394 |         0.5686 |     0.4957 |               66 |            0.4655 |         0.5294 |     0.4954 |    -0.0003 |        -0.0392 |            0.0261 |
+| 5exit_nohint | car_crash     |        0.23 |        47 |            0.6316 |         0.5106 |     0.5647 |               38 |            0.4932 |         0.766  |     0.6    |     0.0353 |         0.2554 |           -0.1384 |
+| 5exit_nohint | conversation  |        0.3  |        60 |            0.9815 |         0.8833 |     0.9298 |               54 |            0.9655 |         0.9333 |     0.9492 |     0.0194 |         0.05   |           -0.016  |
+| 5exit_nohint | engine_idling |        0.3  |        49 |            0.75   |         0.3673 |     0.4932 |               24 |            0.4872 |         0.3878 |     0.4318 |    -0.0614 |         0.0205 |           -0.2628 |
+| 5exit_nohint | fireworks     |        0.19 |        52 |            0.8421 |         0.3077 |     0.4507 |               19 |            0.5167 |         0.5962 |     0.5536 |     0.1029 |         0.2885 |           -0.3254 |
+| 5exit_nohint | gun_shot      |        0.21 |        76 |            0.7458 |         0.5789 |     0.6519 |               59 |            0.6786 |         0.75   |     0.7125 |     0.0606 |         0.1711 |           -0.0672 |
+| 5exit_nohint | rain          |        0.25 |        52 |            0.88   |         0.4231 |     0.5714 |               25 |            0.8571 |         0.8077 |     0.8317 |     0.2603 |         0.3846 |           -0.0229 |
+| 5exit_nohint | road_traffic  |        0.18 |        63 |            0.5    |         0.1429 |     0.2222 |               18 |            0.4725 |         0.6825 |     0.5584 |     0.3362 |         0.5396 |           -0.0275 |
+| 5exit_nohint | scream        |        0.57 |        57 |            0.7971 |         0.9649 |     0.873  |               69 |            0.806  |         0.9474 |     0.871  |    -0.002  |        -0.0175 |            0.0089 |
+| 5exit_nohint | thunderstorm  |        0.46 |        49 |            0      |         0      |     0      |                6 |            0.2727 |         0.0612 |     0.1    |     0.1    |         0.0612 |            0.2727 |
+| 5exit_nohint | wind          |        0.33 |        51 |            0.5625 |         0.5294 |     0.5455 |               48 |            0.4595 |         0.6667 |     0.544  |    -0.0015 |         0.1373 |           -0.103  |
+
+---
+
+## ML-A14. Tuned thresholds
+
+| model        |   num_exits |   final_exit | label         |   threshold |
+|:-------------|------------:|-------------:|:--------------|------------:|
+| 3exit_nohint |           3 |            3 | car_crash     |        0.43 |
+| 3exit_nohint |           3 |            3 | conversation  |        0.34 |
+| 3exit_nohint |           3 |            3 | engine_idling |        0.21 |
+| 3exit_nohint |           3 |            3 | fireworks     |        0.09 |
+| 3exit_nohint |           3 |            3 | gun_shot      |        0.23 |
+| 3exit_nohint |           3 |            3 | rain          |        0.05 |
+| 3exit_nohint |           3 |            3 | road_traffic  |        0.36 |
+| 3exit_nohint |           3 |            3 | scream        |        0.47 |
+| 3exit_nohint |           3 |            3 | thunderstorm  |        0.24 |
+| 3exit_nohint |           3 |            3 | wind          |        0.54 |
+| 5exit_nohint |           5 |            5 | car_crash     |        0.23 |
+| 5exit_nohint |           5 |            5 | conversation  |        0.3  |
+| 5exit_nohint |           5 |            5 | engine_idling |        0.3  |
+| 5exit_nohint |           5 |            5 | fireworks     |        0.19 |
+| 5exit_nohint |           5 |            5 | gun_shot      |        0.21 |
+| 5exit_nohint |           5 |            5 | rain          |        0.25 |
+| 5exit_nohint |           5 |            5 | road_traffic  |        0.18 |
+| 5exit_nohint |           5 |            5 | scream        |        0.57 |
+| 5exit_nohint |           5 |            5 | thunderstorm  |        0.46 |
+| 5exit_nohint |           5 |            5 | wind          |        0.33 |
+
+---
+
+## ML-A15. Research finding notes
+
+### Fixed threshold under-predicts positives
+
+The fixed `0.5` threshold produced average predicted label counts of `1.0478` for 3-exit and `1.0112` for 5-exit, while the true test average was `1.5618`. This means the models were conservative and missed labels.
+
+### Tuning improves F1 by increasing recall
+
+Threshold tuning increased average predicted labels to `1.8652` for the 3-exit model and `1.7022` for the 5-exit model. This explains the improvement in macro-F1 and micro-F1, but also explains the increase in hamming loss.
+
+### 5-exit Exit 4 is important
+
+Exit 4 of the 5-exit model reached tuned macro-F1 `0.6281`, compared with final Exit 5 tuned macro-F1 `0.6152`. This means the best macro-F1 exit in the 5-exit model is not the deepest exit.
+
+### Thunderstorm remains unresolved
+
+Thunderstorm improved after threshold tuning but remained weak:
+
+```text
+3-exit thunderstorm F1: 0.0784 → 0.2526
+5-exit thunderstorm F1: 0.0000 → 0.1000
+```
+
+This should be treated as a dataset/training issue, not only a threshold issue.
+
+---
+
+## ML-A16. Commands
+
+
+## Reproducibility commands
+
+### 1) Rename clean seed audio files
+
+```powershell
+python scripts\rename_wavs_by_class.py `
+  --root "multilabel_data\clean_seed" `
+  --digits 4 `
+  --skip_already_named `
+  --apply
+```
+
+### 2) Build clean seed manifest, excluding `.m4a`
+
+```powershell
+python scripts\build_multilabel_seed_manifest.py `
+  --root "multilabel_data\clean_seed" `
+  --out "multilabel_data\metadata\clean_seed_manifest.csv" `
+  --labels_json "multilabel_data\metadata\labels.json" `
+  --audio_exts ".wav,.flac,.mp3,.ogg" `
+  --seed 42
+```
+
+### 3) Create synthetic multi-label mixtures
+
+```powershell
+python scripts\create_synthetic_multilabel_mixtures.py `
+  --seed_manifest "multilabel_data\metadata\clean_seed_manifest.csv" `
+  --labels_json "multilabel_data\metadata\labels.json" `
+  --out_audio_root "multilabel_data\synthetic_mixed\audio" `
+  --out_manifest "multilabel_data\metadata\synthetic_mixed_manifest.csv" `
+  --combined_out "multilabel_data\metadata\multilabel_train_manifest.csv" `
+  --num_train 1000 `
+  --num_val 200 `
+  --num_test 200 `
+  --mix_size_min 2 `
+  --mix_size_max 2 `
+  --sample_rate 16000 `
+  --clip_sec 1.0 `
+  --seed 42
+```
+
+### 4) Extract log-mel features
+
+```powershell
+python scripts\extract_multilabel_features.py `
+  --manifest "multilabel_data\metadata\multilabel_train_manifest.csv" `
+  --labels_json "multilabel_data\metadata\labels.json" `
+  --out_cache "multilabel_cache" `
+  --sample_rate 16000 `
+  --clip_sec 1.0 `
+  --n_mels 64 `
+  --n_fft 1024 `
+  --win_ms 25 `
+  --hop_ms 10 `
+  --cmvn
+```
+
+### 5) Sanity-check the multi-label dataset loader
+
+```powershell
+python -c "from data.datasets_multilabel import make_multilabel_loaders; dl_tr, dl_va, dl_te, labels = make_multilabel_loaders('multilabel_cache/metadata/multilabel_features_manifest.csv', 'multilabel_cache/features', 'multilabel_data/metadata/labels.json', batch_size=8, num_workers=0, seed=42); x,y = next(iter(dl_tr)); print('labels=', labels); print('x shape=', x.shape); print('y shape=', y.shape); print('y[0]=', y[0])"
+```
+
+Expected shape:
+
+```text
+x shape = torch.Size([8, 1, 64, 101])
+y shape = torch.Size([8, 10])
+```
+
+### 6) Train 3-exit no-hint multi-label baseline
+
+```powershell
+python -m training.train_multilabel `
+  --manifest "multilabel_cache\metadata\multilabel_features_manifest.csv" `
+  --features_root "multilabel_cache\features" `
+  --labels_json "multilabel_data\metadata\labels.json" `
+  --runs_root "runs_multilabel" `
+  --variant "multilabel_3exit_nohint" `
+  --tap_blocks "1,3" `
+  --epochs 40 `
+  --batch_size 64 `
+  --lr 0.001 `
+  --threshold 0.5 `
+  --device cpu
+```
+
+### 7) Train 5-exit no-hint multi-label baseline
+
+```powershell
+python -m training.train_multilabel `
+  --manifest "multilabel_cache\metadata\multilabel_features_manifest.csv" `
+  --features_root "multilabel_cache\features" `
+  --labels_json "multilabel_data\metadata\labels.json" `
+  --runs_root "runs_multilabel" `
+  --variant "multilabel_5exit_nohint" `
+  --tap_blocks "1,2,3,4" `
+  --epochs 40 `
+  --batch_size 64 `
+  --lr 0.001 `
+  --threshold 0.5 `
+  --device cpu
+```
+
+### 8) Tune per-label thresholds for both runs
+
+```powershell
+python scripts\tune_multilabel_thresholds.py `
+  --run_dir "runs_multilabel\multilabel_3exit_nohint_20260509_002118" `
+  --device cpu
+
+python scripts\tune_multilabel_thresholds.py `
+  --run_dir "runs_multilabel\multilabel_5exit_nohint_20260509_001254" `
+  --device cpu
+```
+
+### 9) Summarise threshold-tuning results
+
+```powershell
+python scripts\summarize_multilabel_threshold_runs.py `
+  --run_dirs `
+    "runs_multilabel\multilabel_3exit_nohint_20260509_002118" `
+    "runs_multilabel\multilabel_5exit_nohint_20260509_001254" `
+  --names "3exit_nohint" "5exit_nohint" `
+  --out_dir "runs_multilabel\summary_thresholds"
+```
+
+
+---
+
+## ML-A17. Generated summary files
+
+```text
+runs_multilabel\summary_thresholdsll_exit_metrics.csv
+runs_multilabel\summary_thresholdsll_exit_metrics.md
+runs_multilabel\summary_thresholdsinal_exit_comparison.csv
+runs_multilabel\summary_thresholdsinal_exit_comparison.md
+runs_multilabel\summary_thresholdsest_exit_comparison.csv
+runs_multilabel\summary_thresholdsest_exit_comparison.md
+runs_multilabel\summary_thresholdsinal_exit_per_label.csv
+runs_multilabel\summary_thresholdsinal_exit_per_label.md
+runs_multilabel\summary_thresholdsinal_exit_thresholds.csv
+runs_multilabel\summary_thresholdsinal_exit_thresholds.md
+runs_multilabel\summary_thresholds\README_TABLES.md
+```
+
+---
+
+# Preserved previous appendix
+
+The content below is preserved from the uploaded `APPENDIX.md`. The v0.1 threshold-tuned appendix above supersedes earlier v0 fixed-threshold-only multi-label notes where they overlap.
+
 # Appendix — `kexit_cclass_greedy_multi-label_v0`
 
 This appendix records the first controlled multi-label baseline for NeuroAccuExit-ASHADIP.
@@ -273,619 +708,68 @@ git push -u origin kexit_cclass_greedy_multi-label_v0
 
 ---
 
-# Previous C-class appendix
-
-The content below is preserved from the earlier `kexit_cclass_greedy_v2` appendix.
-
-# Appendix Update — `kexit_cclass_greedy_v2`
-
-This appendix update should be read before the older 8-run appendix tables.
-
 ---
 
-# A0. Latest branch-level audit
+# Relationship to previous single-label C-class work
 
-| Item | Value |
-|---|---|
-| Branch | `kexit_cclass_greedy_v2` |
-| Current valid setting | Prepared/grouped 10-class C-class |
-| Intended next setting | Refined 11-class C-class |
-| New class | `rain_thunderstorm` |
-| Current issue | Refined logs still process only 10 effective labels |
-| Action required | Fix label ingestion and rerun 4 refined variants |
+This branch is derived from the earlier generic K-exit / C-class codebase, but it is **not** a continuation of the single-label C-class experiment.
 
----
-
-# A1. Intended 11-class split counts
-
-| Class | Train | Val | Test |
-|---|---:|---:|---:|
-| car_crash | 223 | 42 | 38 |
-| conversation | 223 | 42 | 38 |
-| engine_idling | 223 | 42 | 38 |
-| fireworks | 223 | 42 | 38 |
-| gun_shot | 223 | 42 | 38 |
-| rain | 223 | 42 | 38 |
-| rain_thunderstorm | 223 | 42 | 38 |
-| road_traffic | 223 | 42 | 38 |
-| scream | 223 | 42 | 38 |
-| thunderstorm | 223 | 42 | 38 |
-| wind | 223 | 42 | 38 |
-| **Total** | **2453** | **462** | **418** |
-
----
-
-# A2. Effective label audit from available refined logs
-
-| Field | Expected | Observed | Interpretation |
-|---|---:|---:|---|
-| CLI labels | 11 | 11 | Command was intended correctly |
-| Inventory labels | 11 | 10 | Effective preprocessing missed one class |
-| Missing class | None | `rain_thunderstorm` | Must fix before final reporting |
-| `num_classes` | 11 | 10 | Model/evaluation still effective-10 |
-| Train segments | 2453 | 2230 | 10 × 223 |
-| Val segments | 462 | 420 | 10 × 42 |
-| Test segments | 418 | 380 | 10 × 38 |
-
----
-
-# A3. Prepared/grouped 10-class result table
-
-| Variant | Exits | Hint | Policy acc | Full clip acc | Depth×Time acc | Windows saved | Compute saved | Exit behaviour |
-|---|---:|---|---:|---:|---:|---:|---:|---|
-| `3exit_cclass_greedy_prepared_grouped` | 3 | No | 55.79% | 66.44% | 66.44% | 22.63% | 22.01% | Uses e2/e3; final exit not strongest |
-| `3exit_cclass_greedy_hint_prepared_grouped` | 3 | Yes | 68.16% | **84.56%** | **84.56%** | 22.37% | 22.40% | Best current valid prepared/grouped model |
-| `5exit_cclass_greedy_prepared_grouped` | 5 | No | 61.58% | 75.17% | 75.17% | 22.11% | 21.99% | Mostly e5 |
-| `5exit_cclass_greedy_hint_prepared_grouped` | 5 | Yes | 68.42% | 79.87% | 79.19% | **23.16%** | **23.53%** | Better efficiency, lower accuracy than 3-exit hint |
-
----
-
-# A4. Segment-policy details
-
-| Variant | Policy acc | Avg exit depth | Exit mix | Flip-any rate | Exit consistency |
-|---|---:|---:|---|---:|---:|
-| `3exit_cclass_greedy_prepared_grouped` | 55.79% | 2.511 | e1=8.68%, e2=31.58%, e3=59.74% | 70.00% | 93.42% |
-| `3exit_cclass_greedy_hint_prepared_grouped` | 68.16% | 2.808 | e1=0.53%, e2=18.16%, e3=81.32% | 67.63% | 99.47% |
-| `5exit_cclass_greedy_prepared_grouped` | 61.58% | 4.547 | e1=0.00%, e2=7.63%, e3=10.26%, e4=1.84%, e5=80.26% | 69.74% | 99.74% |
-| `5exit_cclass_greedy_hint_prepared_grouped` | 68.42% | 4.474 | e1=0.79%, e2=8.42%, e3=10.00%, e4=4.21%, e5=76.58% | 66.32% | 99.47% |
-
----
-
-# A5. Clip-policy details
-
-| Variant | Mode | Clip acc | Segment acc | Avg windows | Windows saved | Avg compute | Compute saved | Flip rate | Exit consistency |
-|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| `3exit_cclass_greedy_prepared_grouped` | Full | 66.44% | 55.79% | 2.550 / 2.550 | 0.00% | 6.403 | 0.00% | 70.00% | 93.42% |
-| `3exit_cclass_greedy_prepared_grouped` | Depth×Time | 66.44% | 57.14% | 1.973 / 2.550 | 22.63% | 4.993 | 22.01% | 71.77% | 93.54% |
-| `3exit_cclass_greedy_hint_prepared_grouped` | Full | 84.56% | 68.16% | 2.550 / 2.550 | 0.00% | 7.161 | 0.00% | 67.63% | 99.47% |
-| `3exit_cclass_greedy_hint_prepared_grouped` | Depth×Time | 84.56% | 71.86% | 1.980 / 2.550 | 22.37% | 5.557 | 22.40% | 70.51% | 99.66% |
-| `5exit_cclass_greedy_prepared_grouped` | Full | 75.17% | 61.58% | 2.550 / 2.550 | 0.00% | 11.597 | 0.00% | 69.74% | 99.74% |
-| `5exit_cclass_greedy_prepared_grouped` | Depth×Time | 75.17% | — | 1.987 / 2.550 | 22.11% | 9.047 | 21.99% | 71.62% | 99.66% |
-| `5exit_cclass_greedy_hint_prepared_grouped` | Full | 79.87% | 68.42% | 2.550 / 2.550 | 0.00% | 11.409 | 0.00% | 66.32% | 99.47% |
-| `5exit_cclass_greedy_hint_prepared_grouped` | Depth×Time | 79.19% | — | 1.960 / 2.550 | 23.16% | 8.725 | 23.53% | 67.81% | 99.66% |
-
----
-
-# A6. Hint vs no-hint deltas on prepared/grouped 10-class
-
-| Exits | Metric | No hint | Hint | Delta |
-|---:|---|---:|---:|---:|
-| 3 | Segment policy acc | 55.79% | 68.16% | **+12.37pp** |
-| 3 | Full-clip acc | 66.44% | 84.56% | **+18.12pp** |
-| 3 | Depth×Time acc | 66.44% | 84.56% | **+18.12pp** |
-| 3 | Compute saved | 22.01% | 22.40% | +0.39pp |
-| 5 | Segment policy acc | 61.58% | 68.42% | **+6.84pp** |
-| 5 | Full-clip acc | 75.17% | 79.87% | **+4.70pp** |
-| 5 | Depth×Time acc | 75.17% | 79.19% | **+4.02pp** |
-| 5 | Compute saved | 21.99% | 23.53% | +1.54pp |
-
----
-
-# A7. 3-exit vs 5-exit deltas on prepared/grouped 10-class
-
-| Hint | Metric | 3 exits | 5 exits | Delta 5-3 |
-|---|---|---:|---:|---:|
-| No | Segment policy acc | 55.79% | 61.58% | +5.79pp |
-| No | Full-clip acc | 66.44% | 75.17% | +8.73pp |
-| No | Depth×Time acc | 66.44% | 75.17% | +8.73pp |
-| No | Compute saved | 22.01% | 21.99% | -0.02pp |
-| Yes | Segment policy acc | 68.16% | 68.42% | +0.26pp |
-| Yes | Full-clip acc | **84.56%** | 79.87% | -4.69pp |
-| Yes | Depth×Time acc | **84.56%** | 79.19% | -5.37pp |
-| Yes | Compute saved | 22.40% | **23.53%** | +1.13pp |
-
----
-
-# A8. Diagnostic refined-run table, not final 11-class
-
-| Variant | Policy acc | Full clip acc | Depth×Time acc | Note |
-|---|---:|---:|---:|---|
-| `3exit_cclass_greedy_refined11_grouped` | 71.32% | 83.33% | 83.97% | Effective 10-class only |
-| `3exit_cclass_greedy_hint_refined11_grouped` | 73.68% | 80.77% | — | Effective 10-class only |
-| `5exit_cclass_greedy_refined11_grouped` | 71.05% | 79.49% | 79.49% | Effective 10-class only |
-| `5exit_cclass_greedy_hint_refined11_grouped` | 72.37% | 82.05% | — | Effective 10-class only |
-
-These values can be used to debug the model behaviour, but not as final refined 11-class evidence.
-
----
-
-# A9. Final 11-class reporting template
-
-After the corrected rerun, fill this table.
-
-| Variant | Exits | Hint | Effective classes | Policy acc | Full-clip acc | Depth×Time acc | Compute saved | Best? |
-|---|---:|---|---:|---:|---:|---:|---:|---|
-| `3exit_cclass_greedy_refined11_grouped` | 3 | No | 11 | TBD | TBD | TBD | TBD | TBD |
-| `3exit_cclass_greedy_hint_refined11_grouped` | 3 | Yes | 11 | TBD | TBD | TBD | TBD | TBD |
-| `5exit_cclass_greedy_refined11_grouped` | 5 | No | 11 | TBD | TBD | TBD | TBD | TBD |
-| `5exit_cclass_greedy_hint_refined11_grouped` | 5 | Yes | 11 | TBD | TBD | TBD | TBD | TBD |
-
----
-
-# A10. Research-safe interpretation
-
-The safest interpretation is:
-
-> The prepared/grouped evaluation is now meaningful and shows that compact 3-exit hint passing currently gives the best valid prepared/grouped C-class clip accuracy. However, the newly intended 11-class refined experiment requires one more corrected rerun because the available logs show only 10 effective classes. The final claim should therefore be delayed until `rain_thunderstorm` is confirmed in inventory, `num_classes=11`, and the split counts match 2453/462/418.
-
----
-
-
-
----
-
-# Previous Extended 8-Run Appendix
-
-# Appendix — Extended Tables for 8-Run Generic K-Exit / C-Class Study
-
-This appendix contains the extended result tables for the controlled 8-run study:
+The earlier C-class branches used single-label multi-class classification:
 
 ```text
-3exit_2class_greedy
-3exit_2class_greedy_hint
-5exit_2class_greedy
-5exit_2class_greedy_hint
-3exit_cclass_greedy
-3exit_cclass_greedy_hint
-5exit_cclass_greedy
-5exit_cclass_greedy_hint
+one audio segment → one class only
+softmax activation
+CrossEntropyLoss
+greedy / hint / Depth×Time policies for single-label decisions
 ```
 
-The appendix should be used together with:
-
-- `README.md` for the main repository summary
-- `DOC_STRUCTURE.md` for thesis/report organization
-- `ASHADIP_8_run_comparison_tables.xlsx` for spreadsheet inspection
-
----
-
-# A. Overview table
-
-| Key finding                                 | Variant                      | Value                         |
-|:--------------------------------------------|:-----------------------------|:------------------------------|
-| Best 2-class segment policy                 | 3exit_2class_greedy_hint     | 99.38%                        |
-| Best 2-class clip accuracy                  | All four 2-class variants    | 100.00%                       |
-| Best 10-class segment policy                | 3exit_cclass_greedy          | 69.90%                        |
-| Best 10-class full/depth-time clip accuracy | 3exit_cclass_greedy          | 81.58%                        |
-| Best 10-class compute saving                | 3exit_cclass_greedy          | 34.34%                        |
-| Hint effect on C-class                      | Negative in all C-class runs | -8.22pp / -4.44pp segment acc |
-
----
-
-# B. Dataset and segmentation summary
-
-| Dataset        | Variant                  |   Classes |   Train files |   Val files |   Test files |   Train segs |   Val segs |   Test segs |   Total segs |   Test avg windows/clip |   Test median windows/clip |
-|:---------------|:-------------------------|----------:|--------------:|------------:|-------------:|-------------:|-----------:|------------:|-------------:|------------------------:|---------------------------:|
-| 2-class moth   | 3exit_2class_greedy      |         2 |            99 |          21 |           22 |         1646 |        246 |         325 |         2217 |                   14.77 |                        9.5 |
-| 2-class moth   | 3exit_2class_greedy_hint |         2 |            99 |          21 |           22 |         1646 |        246 |         325 |         2217 |                   14.77 |                        9.5 |
-| 2-class moth   | 5exit_2class_greedy      |         2 |            99 |          21 |           22 |         1646 |        246 |         325 |         2217 |                   14.77 |                        9.5 |
-| 2-class moth   | 5exit_2class_greedy_hint |         2 |            99 |          21 |           22 |         1646 |        246 |         325 |         2217 |                   14.77 |                        9.5 |
-| 10-class audio | 3exit_cclass_greedy      |        10 |           707 |         152 |          152 |         2713 |        566 |         608 |         3887 |                    4    |                        5   |
-| 10-class audio | 3exit_cclass_greedy_hint |        10 |           707 |         152 |          152 |         2713 |        566 |         608 |         3887 |                    4    |                        5   |
-| 10-class audio | 5exit_cclass_greedy      |        10 |           707 |         152 |          152 |         2713 |        566 |         608 |         3887 |                    4    |                        5   |
-| 10-class audio | 5exit_cclass_greedy_hint |        10 |           707 |         152 |          152 |         2713 |        566 |         608 |         3887 |                    4    |                        5   |
-
----
-
-# C. Per-exit test accuracy and macro-F1
-
-| Dataset        | Variant                  |   Exits | Hint   | Exit 1 acc   | Exit 1 macro F1   | Exit 2 acc   | Exit 2 macro F1   | Exit 3 acc   | Exit 3 macro F1   |
-|:---------------|:-------------------------|--------:|:-------|:-------------|:------------------|:-------------|:------------------|:-------------|:------------------|
-| 2-class moth   | 3exit_2class_greedy      |       3 | No     | 84.00%       | 79.44%            | 93.54%       | 91.18%            | 98.46%       | 97.90%            |
-| 2-class moth   | 3exit_2class_greedy_hint |       3 | Yes    | 84.62%       | 80.38%            | 94.46%       | 92.72%            | 99.38%       | 99.14%            |
-| 2-class moth   | 5exit_2class_greedy      |       5 | No     | 83.38%       | 78.81%            | 85.54%       | 82.36%            | 96.00%       | 94.68%            |
-| 2-class moth   | 5exit_2class_greedy_hint |       5 | Yes    | 83.38%       | 78.81%            | 86.15%       | 82.77%            | 94.77%       | 93.15%            |
-| 10-class audio | 3exit_cclass_greedy      |       3 | No     | 29.28%       | 21.29%            | 61.51%       | 56.79%            | 69.74%       | 64.74%            |
-| 10-class audio | 3exit_cclass_greedy_hint |       3 | Yes    | 22.70%       | 16.52%            | 53.29%       | 48.89%            | 61.68%       | 57.44%            |
-| 10-class audio | 5exit_cclass_greedy      |       5 | No     | 21.38%       | 14.90%            | 42.60%       | 35.56%            | 58.39%       | 51.89%            |
-| 10-class audio | 5exit_cclass_greedy_hint |       5 | Yes    | 21.05%       | 15.04%            | 40.13%       | 34.20%            | 56.74%       | 51.71%            |
-
----
-
-# D. Segment-level greedy policy
-
-| Dataset        | Variant                  |   Exits | Hint   | Policy acc   |   Avg exit depth | Flip-any rate   |   Avg flip count | Exit consistency   |   Tau |   N segments |
-|:---------------|:-------------------------|--------:|:-------|:-------------|-----------------:|:----------------|-----------------:|:-------------------|------:|-------------:|
-| 2-class moth   | 3exit_2class_greedy      |       3 | No     | 98.15%       |            1.862 | 17.23%          |            0.194 | 99.69%             |  0.9  |          325 |
-| 2-class moth   | 3exit_2class_greedy_hint |       3 | Yes    | 99.38%       |            1.911 | 16.31%          |            0.172 | 100.00%            |  0.95 |          325 |
-| 2-class moth   | 5exit_2class_greedy      |       5 | No     | 97.85%       |            2.462 | 20.31%          |            0.252 | 99.69%             |  0.95 |          325 |
-| 2-class moth   | 5exit_2class_greedy_hint |       5 | Yes    | 96.92%       |            2.36  | 19.38%          |            0.243 | 99.69%             |  0.9  |          325 |
-| 10-class audio | 3exit_cclass_greedy      |       3 | No     | 69.90%       |            2.873 | 71.38%          |            0.895 | 99.34%             |  0.92 |          608 |
-| 10-class audio | 3exit_cclass_greedy_hint |       3 | Yes    | 61.68%       |            2.87  | 84.38%          |            1.086 | 100.00%            |  0.85 |          608 |
-| 10-class audio | 5exit_cclass_greedy      |       5 | No     | 68.75%       |            4.612 | 81.91%          |            1.352 | 99.67%             |  0.9  |          608 |
-| 10-class audio | 5exit_cclass_greedy_hint |       5 | Yes    | 64.31%       |            4.748 | 83.22%          |            1.339 | 100.00%            |  0.95 |          608 |
-
----
-
-# E. Full-clip vs Depth×Time comparison
-
-| Dataset        | Variant                  |   Exits | Hint   | Clip mode   | Clip acc   | Segment acc used   |   Avg windows used |   Avg windows total | Windows saved %   |   Avg compute units | Compute saved %   |   Avg depth/used window | Flip rate   | Exit consistency   |   N clips |
-|:---------------|:-------------------------|--------:|:-------|:------------|:-----------|:-------------------|-------------------:|--------------------:|:------------------|--------------------:|:------------------|------------------------:|:------------|:-------------------|----------:|
-| 2-class moth   | 3exit_2class_greedy      |       3 | No     | Full clip   | 100.00%    | 98.15%             |             14.77  |               14.77 | 0.00%             |              27.5   | 0.00%             |                   1.862 | 17.23%      | 99.69%             |        22 |
-| 2-class moth   | 3exit_2class_greedy      |       3 | No     | Depth×Time  | 100.00%    | 97.73%             |              2     |               14.77 | 86.46%            |               4.818 | 82.48%            |                   2.409 | 36.36%      | 100.00%            |        22 |
-| 2-class moth   | 3exit_2class_greedy_hint |       3 | Yes    | Full clip   | 100.00%    | 99.38%             |             14.77  |               14.77 | 0.00%             |              28.23  | 0.00%             |                   1.911 | 16.31%      | 100.00%            |        22 |
-| 2-class moth   | 3exit_2class_greedy_hint |       3 | Yes    | Depth×Time  | 100.00%    | 100.00%            |              2     |               14.77 | 86.46%            |               4.864 | 82.77%            |                   2.432 | 36.36%      | 100.00%            |        22 |
-| 2-class moth   | 5exit_2class_greedy      |       5 | No     | Full clip   | 100.00%    | 97.85%             |             14.77  |               14.77 | 0.00%             |              36.36  | 0.00%             |                   2.462 | 20.31%      | 99.69%             |        22 |
-| 2-class moth   | 5exit_2class_greedy      |       5 | No     | Depth×Time  | 100.00%    | 97.78%             |              2.045 |               14.77 | 86.15%            |               6.455 | 82.25%            |                   3.156 | 40.00%      | 97.78%             |        22 |
-| 2-class moth   | 5exit_2class_greedy_hint |       5 | Yes    | Full clip   | 100.00%    | 96.92%             |             14.77  |               14.77 | 0.00%             |              34.86  | 0.00%             |                   2.36  | 19.38%      | 99.69%             |        22 |
-| 2-class moth   | 5exit_2class_greedy_hint |       5 | Yes    | Depth×Time  | 100.00%    | 97.87%             |              2.136 |               14.77 | 85.54%            |               7.136 | 79.53%            |                   3.34  | 40.43%      | 100.00%            |        22 |
-| 10-class audio | 3exit_cclass_greedy      |       3 | No     | Full clip   | 81.58%     | 69.90%             |              4     |                4    | 0.00%             |              11.49  | 0.00%             |                   2.873 | 71.38%      | 99.34%             |       152 |
-| 10-class audio | 3exit_cclass_greedy      |       3 | No     | Depth×Time  | 81.58%     | 65.59%             |              2.638 |                4    | 34.05%            |               7.546 | 34.34%            |                   2.86  | 72.07%      | 99.50%             |       152 |
-| 10-class audio | 3exit_cclass_greedy_hint |       3 | Yes    | Full clip   | 78.29%     | 61.68%             |              4     |                4    | 0.00%             |              11.48  | 0.00%             |                   2.87  | 84.38%      | 100.00%            |       152 |
-| 10-class audio | 3exit_cclass_greedy_hint |       3 | Yes    | Depth×Time  | 78.29%     | 61.20%             |              2.967 |                4    | 25.82%            |               8.467 | 26.25%            |                   2.854 | 82.48%      | 100.00%            |       152 |
-| 10-class audio | 5exit_cclass_greedy      |       5 | No     | Full clip   | 78.95%     | 68.75%             |              4     |                4    | 0.00%             |              18.45  | 0.00%             |                   4.612 | 81.91%      | 99.67%             |       152 |
-| 10-class audio | 5exit_cclass_greedy      |       5 | No     | Depth×Time  | 78.95%     | 65.57%             |              2.809 |                4    | 29.77%            |              12.93  | 29.89%            |                   4.604 | 80.80%      | 99.53%             |       152 |
-| 10-class audio | 5exit_cclass_greedy_hint |       5 | Yes    | Full clip   | 73.68%     | 64.31%             |              4     |                4    | 0.00%             |              18.99  | 0.00%             |                   4.748 | 83.22%      | 100.00%            |       152 |
-| 10-class audio | 5exit_cclass_greedy_hint |       5 | Yes    | Depth×Time  | 73.03%     | 61.69%             |              2.73  |                4    | 31.74%            |              12.88  | 32.21%            |                   4.716 | 81.69%      | 100.00%            |       152 |
-
----
-
-# F. Segment-policy exit mix
-
-| Dataset        | Variant                  |   Exits | Hint   | e1     | e2     | e3     | e4     | e5     |
-|:---------------|:-------------------------|--------:|:-------|:-------|:-------|:-------|:-------|:-------|
-| 2-class moth   | 3exit_2class_greedy      |       3 | No     | 39.38% | 35.08% | 25.54% | 0.00%  | 0.00%  |
-| 2-class moth   | 3exit_2class_greedy_hint |       3 | Yes    | 36.31% | 36.31% | 27.38% | 0.00%  | 0.00%  |
-| 2-class moth   | 5exit_2class_greedy      |       5 | No     | 36.31% | 6.46%  | 39.38% | 10.46% | 7.38%  |
-| 2-class moth   | 5exit_2class_greedy_hint |       5 | Yes    | 38.46% | 13.85% | 29.23% | 10.15% | 8.31%  |
-| 10-class audio | 3exit_cclass_greedy      |       3 | No     | 0.00%  | 12.66% | 87.34% | 0.00%  | 0.00%  |
-| 10-class audio | 3exit_cclass_greedy_hint |       3 | Yes    | 0.00%  | 12.99% | 87.01% | 0.00%  | 0.00%  |
-| 10-class audio | 5exit_cclass_greedy      |       5 | No     | 0.00%  | 2.96%  | 11.18% | 7.57%  | 78.29% |
-| 10-class audio | 5exit_cclass_greedy_hint |       5 | Yes    | 0.00%  | 1.97%  | 8.55%  | 2.14%  | 87.34% |
-
----
-
-# G. Full-clip exit mix
-
-| Dataset        | Variant                  |   Exits | Hint   | Clip mode   | e1     | e2     | e3     | e4     | e5     |
-|:---------------|:-------------------------|--------:|:-------|:------------|:-------|:-------|:-------|:-------|:-------|
-| 2-class moth   | 3exit_2class_greedy      |       3 | No     | Full clip   | 39.38% | 35.08% | 25.54% | 0.00%  | 0.00%  |
-| 2-class moth   | 3exit_2class_greedy_hint |       3 | Yes    | Full clip   | 36.31% | 36.31% | 27.38% | 0.00%  | 0.00%  |
-| 2-class moth   | 5exit_2class_greedy      |       5 | No     | Full clip   | 36.31% | 6.46%  | 39.38% | 10.46% | 7.38%  |
-| 2-class moth   | 5exit_2class_greedy_hint |       5 | Yes    | Full clip   | 38.46% | 13.85% | 29.23% | 10.15% | 8.31%  |
-| 10-class audio | 3exit_cclass_greedy      |       3 | No     | Full clip   | 0.00%  | 12.66% | 87.34% | 0.00%  | 0.00%  |
-| 10-class audio | 3exit_cclass_greedy_hint |       3 | Yes    | Full clip   | 0.00%  | 12.99% | 87.01% | 0.00%  | 0.00%  |
-| 10-class audio | 5exit_cclass_greedy      |       5 | No     | Full clip   | 0.00%  | 2.96%  | 11.18% | 7.57%  | 78.29% |
-| 10-class audio | 5exit_cclass_greedy_hint |       5 | Yes    | Full clip   | 0.00%  | 1.97%  | 8.55%  | 2.14%  | 87.34% |
-
----
-
-# H. Depth×Time exit mix
-
-| Dataset        | Variant                  |   Exits | Hint   | Clip mode   | e1     | e2     | e3     | e4     | e5     |
-|:---------------|:-------------------------|--------:|:-------|:------------|:-------|:-------|:-------|:-------|:-------|
-| 2-class moth   | 3exit_2class_greedy      |       3 | No     | Depth×Time  | 11.36% | 36.36% | 52.27% | 0.00%  | 0.00%  |
-| 2-class moth   | 3exit_2class_greedy_hint |       3 | Yes    | Depth×Time  | 9.09%  | 38.64% | 52.27% | 0.00%  | 0.00%  |
-| 2-class moth   | 5exit_2class_greedy      |       5 | No     | Depth×Time  | 8.89%  | 6.67%  | 53.33% | 22.22% | 8.89%  |
-| 2-class moth   | 5exit_2class_greedy_hint |       5 | Yes    | Depth×Time  | 8.51%  | 10.64% | 36.17% | 27.66% | 17.02% |
-| 10-class audio | 3exit_cclass_greedy      |       3 | No     | Depth×Time  | 0.00%  | 13.97% | 86.03% | 0.00%  | 0.00%  |
-| 10-class audio | 3exit_cclass_greedy_hint |       3 | Yes    | Depth×Time  | 0.00%  | 14.63% | 85.37% | 0.00%  | 0.00%  |
-| 10-class audio | 5exit_cclass_greedy      |       5 | No     | Depth×Time  | 0.00%  | 4.22%  | 10.30% | 6.32%  | 79.16% |
-| 10-class audio | 5exit_cclass_greedy_hint |       5 | Yes    | Depth×Time  | 0.00%  | 2.89%  | 8.43%  | 2.89%  | 85.78% |
-
----
-
-# I. Hint vs no-hint deltas
-
-Positive delta means hint improved the metric; negative delta means hint reduced the metric.
-
-| Dataset        |   Exits | Metric                     |   No hint |   Hint |   Delta Hint-No |
-|:---------------|--------:|:---------------------------|----------:|-------:|----------------:|
-| 2-class moth   |       3 | Segment policy acc         |     0.982 |  0.994 |           0.012 |
-| 2-class moth   |       3 | Full-clip acc              |     1     |  1     |           0     |
-| 2-class moth   |       3 | Depth×Time clip acc        |     1     |  1     |           0     |
-| 2-class moth   |       3 | Depth×Time compute saved % |    82.48  | 82.77  |           0.29  |
-| 2-class moth   |       3 | Avg exit depth             |     1.862 |  1.911 |           0.049 |
-| 2-class moth   |       5 | Segment policy acc         |     0.978 |  0.969 |          -0.009 |
-| 2-class moth   |       5 | Full-clip acc              |     1     |  1     |           0     |
-| 2-class moth   |       5 | Depth×Time clip acc        |     1     |  1     |           0     |
-| 2-class moth   |       5 | Depth×Time compute saved % |    82.25  | 79.53  |          -2.719 |
-| 2-class moth   |       5 | Avg exit depth             |     2.462 |  2.36  |          -0.102 |
-| 10-class audio |       3 | Segment policy acc         |     0.699 |  0.617 |          -0.082 |
-| 10-class audio |       3 | Full-clip acc              |     0.816 |  0.783 |          -0.033 |
-| 10-class audio |       3 | Depth×Time clip acc        |     0.816 |  0.783 |          -0.033 |
-| 10-class audio |       3 | Depth×Time compute saved % |    34.34  | 26.25  |          -8.098 |
-| 10-class audio |       3 | Avg exit depth             |     2.873 |  2.87  |          -0.003 |
-| 10-class audio |       5 | Segment policy acc         |     0.688 |  0.643 |          -0.044 |
-| 10-class audio |       5 | Full-clip acc              |     0.789 |  0.737 |          -0.053 |
-| 10-class audio |       5 | Depth×Time clip acc        |     0.789 |  0.73  |          -0.059 |
-| 10-class audio |       5 | Depth×Time compute saved % |    29.89  | 32.21  |           2.327 |
-| 10-class audio |       5 | Avg exit depth             |     4.612 |  4.748 |           0.137 |
-
----
-
-# J. 3-exit vs 5-exit deltas
-
-Positive delta means 5 exits improved the metric relative to 3 exits.
-
-| Dataset        | Hint   | Metric                     |   3 exits |   5 exits |   Delta 5-3 |
-|:---------------|:-------|:---------------------------|----------:|----------:|------------:|
-| 2-class moth   | No     | Segment policy acc         |     0.982 |     0.978 |      -0.003 |
-| 2-class moth   | No     | Full-clip acc              |     1     |     1     |       0     |
-| 2-class moth   | No     | Depth×Time clip acc        |     1     |     1     |       0     |
-| 2-class moth   | No     | Depth×Time compute saved % |    82.48  |    82.25  |      -0.229 |
-| 2-class moth   | No     | Avg exit depth             |     1.862 |     2.462 |       0.6   |
-| 2-class moth   | Yes    | Segment policy acc         |     0.994 |     0.969 |      -0.025 |
-| 2-class moth   | Yes    | Full-clip acc              |     1     |     1     |       0     |
-| 2-class moth   | Yes    | Depth×Time clip acc        |     1     |     1     |       0     |
-| 2-class moth   | Yes    | Depth×Time compute saved % |    82.77  |    79.53  |      -3.239 |
-| 2-class moth   | Yes    | Avg exit depth             |     1.911 |     2.36  |       0.449 |
-| 10-class audio | No     | Segment policy acc         |     0.699 |     0.688 |      -0.012 |
-| 10-class audio | No     | Full-clip acc              |     0.816 |     0.789 |      -0.026 |
-| 10-class audio | No     | Depth×Time clip acc        |     0.816 |     0.789 |      -0.026 |
-| 10-class audio | No     | Depth×Time compute saved % |    34.34  |    29.89  |      -4.459 |
-| 10-class audio | No     | Avg exit depth             |     2.873 |     4.612 |       1.738 |
-| 10-class audio | Yes    | Segment policy acc         |     0.617 |     0.643 |       0.026 |
-| 10-class audio | Yes    | Full-clip acc              |     0.783 |     0.737 |      -0.046 |
-| 10-class audio | Yes    | Depth×Time clip acc        |     0.783 |     0.73  |      -0.053 |
-| 10-class audio | Yes    | Depth×Time compute saved % |    26.25  |    32.21  |       5.967 |
-| 10-class audio | Yes    | Avg exit depth             |     2.87  |     4.748 |       1.878 |
-
----
-
-# K. C-class full-clip per-class F1
-
-| Class         | 3exit_cclass_greedy F1   |   3exit_cclass_greedy support | 3exit_cclass_greedy_hint F1   |   3exit_cclass_greedy_hint support | 5exit_cclass_greedy F1   |   5exit_cclass_greedy support | 5exit_cclass_greedy_hint F1   |   5exit_cclass_greedy_hint support |
-|:--------------|:-------------------------|------------------------------:|:------------------------------|-----------------------------------:|:-------------------------|------------------------------:|:------------------------------|-----------------------------------:|
-| car_crash     | 70.59%                   |                            14 | 73.33%                        |                                 14 | 69.23%                   |                            14 | 75.86%                        |                                 14 |
-| conversation  | 95.65%                   |                            12 | 95.65%                        |                                 12 | 95.65%                   |                            12 | 95.65%                        |                                 12 |
-| engine_idling | 82.35%                   |                            10 | 46.15%                        |                                 10 | 46.15%                   |                            10 | 33.33%                        |                                 10 |
-| fireworks     | 0.00%                    |                             2 | 0.00%                         |                                  2 | 0.00%                    |                             2 | 0.00%                         |                                  2 |
-| gun_shot      | 90.00%                   |                            28 | 91.53%                        |                                 28 | 94.74%                   |                            28 | 90.57%                        |                                 28 |
-| rain          | 66.67%                   |                            15 | 58.33%                        |                                 15 | 57.14%                   |                            15 | 60.87%                        |                                 15 |
-| road_traffic  | 90.00%                   |                            18 | 84.21%                        |                                 18 | 85.71%                   |                            18 | 66.67%                        |                                 18 |
-| scream        | 87.80%                   |                            23 | 85.00%                        |                                 23 | 93.33%                   |                            23 | 93.33%                        |                                 23 |
-| thunderstorm  | 40.00%                   |                            15 | 66.67%                        |                                 15 | 51.61%                   |                            15 | 40.00%                        |                                 15 |
-| wind          | 100.00%                  |                            15 | 85.71%                        |                                 15 | 89.66%                   |                            15 | 73.17%                        |                                 15 |
-
----
-
-# L. C-class per-class precision, recall, F1, and support
-
-| Variant                  | Mode       | Class         | Precision   | Recall   | F1      |   Support |
-|:-------------------------|:-----------|:--------------|:------------|:---------|:--------|----------:|
-| 3exit_cclass_greedy      | Full clip  | car_crash     | 60.00%      | 85.71%   | 70.59%  |        14 |
-| 3exit_cclass_greedy      | Full clip  | conversation  | 100.00%     | 91.67%   | 95.65%  |        12 |
-| 3exit_cclass_greedy      | Full clip  | engine_idling | 100.00%     | 70.00%   | 82.35%  |        10 |
-| 3exit_cclass_greedy      | Full clip  | fireworks     | 0.00%       | 0.00%    | 0.00%   |         2 |
-| 3exit_cclass_greedy      | Full clip  | gun_shot      | 84.38%      | 96.43%   | 90.00%  |        28 |
-| 3exit_cclass_greedy      | Full clip  | rain          | 57.14%      | 80.00%   | 66.67%  |        15 |
-| 3exit_cclass_greedy      | Full clip  | road_traffic  | 81.82%      | 100.00%  | 90.00%  |        18 |
-| 3exit_cclass_greedy      | Full clip  | scream        | 100.00%     | 78.26%   | 87.80%  |        23 |
-| 3exit_cclass_greedy      | Full clip  | thunderstorm  | 80.00%      | 26.67%   | 40.00%  |        15 |
-| 3exit_cclass_greedy      | Full clip  | wind          | 100.00%     | 100.00%  | 100.00% |        15 |
-| 3exit_cclass_greedy      | Depth×Time | car_crash     | 60.00%      | 85.71%   | 70.59%  |        14 |
-| 3exit_cclass_greedy      | Depth×Time | conversation  | 100.00%     | 91.67%   | 95.65%  |        12 |
-| 3exit_cclass_greedy      | Depth×Time | engine_idling | 100.00%     | 70.00%   | 82.35%  |        10 |
-| 3exit_cclass_greedy      | Depth×Time | fireworks     | 0.00%       | 0.00%    | 0.00%   |         2 |
-| 3exit_cclass_greedy      | Depth×Time | gun_shot      | 84.38%      | 96.43%   | 90.00%  |        28 |
-| 3exit_cclass_greedy      | Depth×Time | rain          | 57.14%      | 80.00%   | 66.67%  |        15 |
-| 3exit_cclass_greedy      | Depth×Time | road_traffic  | 81.82%      | 100.00%  | 90.00%  |        18 |
-| 3exit_cclass_greedy      | Depth×Time | scream        | 100.00%     | 78.26%   | 87.80%  |        23 |
-| 3exit_cclass_greedy      | Depth×Time | thunderstorm  | 80.00%      | 26.67%   | 40.00%  |        15 |
-| 3exit_cclass_greedy      | Depth×Time | wind          | 100.00%     | 100.00%  | 100.00% |        15 |
-| 3exit_cclass_greedy_hint | Full clip  | car_crash     | 68.75%      | 78.57%   | 73.33%  |        14 |
-| 3exit_cclass_greedy_hint | Full clip  | conversation  | 100.00%     | 91.67%   | 95.65%  |        12 |
-| 3exit_cclass_greedy_hint | Full clip  | engine_idling | 100.00%     | 30.00%   | 46.15%  |        10 |
-| 3exit_cclass_greedy_hint | Full clip  | fireworks     | 0.00%       | 0.00%    | 0.00%   |         2 |
-| 3exit_cclass_greedy_hint | Full clip  | gun_shot      | 87.10%      | 96.43%   | 91.53%  |        28 |
-| 3exit_cclass_greedy_hint | Full clip  | rain          | 77.78%      | 46.67%   | 58.33%  |        15 |
-| 3exit_cclass_greedy_hint | Full clip  | road_traffic  | 80.00%      | 88.89%   | 84.21%  |        18 |
-| 3exit_cclass_greedy_hint | Full clip  | scream        | 100.00%     | 73.91%   | 85.00%  |        23 |
-| 3exit_cclass_greedy_hint | Full clip  | thunderstorm  | 50.00%      | 100.00%  | 66.67%  |        15 |
-| 3exit_cclass_greedy_hint | Full clip  | wind          | 92.31%      | 80.00%   | 85.71%  |        15 |
-| 3exit_cclass_greedy_hint | Depth×Time | car_crash     | 68.75%      | 78.57%   | 73.33%  |        14 |
-| 3exit_cclass_greedy_hint | Depth×Time | conversation  | 100.00%     | 91.67%   | 95.65%  |        12 |
-| 3exit_cclass_greedy_hint | Depth×Time | engine_idling | 100.00%     | 30.00%   | 46.15%  |        10 |
-| 3exit_cclass_greedy_hint | Depth×Time | fireworks     | 0.00%       | 0.00%    | 0.00%   |         2 |
-| 3exit_cclass_greedy_hint | Depth×Time | gun_shot      | 87.10%      | 96.43%   | 91.53%  |        28 |
-| 3exit_cclass_greedy_hint | Depth×Time | rain          | 77.78%      | 46.67%   | 58.33%  |        15 |
-| 3exit_cclass_greedy_hint | Depth×Time | road_traffic  | 80.00%      | 88.89%   | 84.21%  |        18 |
-| 3exit_cclass_greedy_hint | Depth×Time | scream        | 100.00%     | 73.91%   | 85.00%  |        23 |
-| 3exit_cclass_greedy_hint | Depth×Time | thunderstorm  | 50.00%      | 100.00%  | 66.67%  |        15 |
-| 3exit_cclass_greedy_hint | Depth×Time | wind          | 92.31%      | 80.00%   | 85.71%  |        15 |
-| 5exit_cclass_greedy      | Full clip  | car_crash     | 75.00%      | 64.29%   | 69.23%  |        14 |
-| 5exit_cclass_greedy      | Full clip  | conversation  | 100.00%     | 91.67%   | 95.65%  |        12 |
-| 5exit_cclass_greedy      | Full clip  | engine_idling | 100.00%     | 30.00%   | 46.15%  |        10 |
-| 5exit_cclass_greedy      | Full clip  | fireworks     | 0.00%       | 0.00%    | 0.00%   |         2 |
-| 5exit_cclass_greedy      | Full clip  | gun_shot      | 93.10%      | 96.43%   | 94.74%  |        28 |
-| 5exit_cclass_greedy      | Full clip  | rain          | 50.00%      | 66.67%   | 57.14%  |        15 |
-| 5exit_cclass_greedy      | Full clip  | road_traffic  | 75.00%      | 100.00%  | 85.71%  |        18 |
-| 5exit_cclass_greedy      | Full clip  | scream        | 95.45%      | 91.30%   | 93.33%  |        23 |
-| 5exit_cclass_greedy      | Full clip  | thunderstorm  | 50.00%      | 53.33%   | 51.61%  |        15 |
-| 5exit_cclass_greedy      | Full clip  | wind          | 92.86%      | 86.67%   | 89.66%  |        15 |
-| 5exit_cclass_greedy      | Depth×Time | car_crash     | 75.00%      | 64.29%   | 69.23%  |        14 |
-| 5exit_cclass_greedy      | Depth×Time | conversation  | 100.00%     | 91.67%   | 95.65%  |        12 |
-| 5exit_cclass_greedy      | Depth×Time | engine_idling | 100.00%     | 30.00%   | 46.15%  |        10 |
-| 5exit_cclass_greedy      | Depth×Time | fireworks     | 0.00%       | 0.00%    | 0.00%   |         2 |
-| 5exit_cclass_greedy      | Depth×Time | gun_shot      | 93.10%      | 96.43%   | 94.74%  |        28 |
-| 5exit_cclass_greedy      | Depth×Time | rain          | 50.00%      | 66.67%   | 57.14%  |        15 |
-| 5exit_cclass_greedy      | Depth×Time | road_traffic  | 75.00%      | 100.00%  | 85.71%  |        18 |
-| 5exit_cclass_greedy      | Depth×Time | scream        | 95.45%      | 91.30%   | 93.33%  |        23 |
-| 5exit_cclass_greedy      | Depth×Time | thunderstorm  | 50.00%      | 53.33%   | 51.61%  |        15 |
-| 5exit_cclass_greedy      | Depth×Time | wind          | 92.86%      | 86.67%   | 89.66%  |        15 |
-| 5exit_cclass_greedy_hint | Full clip  | car_crash     | 73.33%      | 78.57%   | 75.86%  |        14 |
-| 5exit_cclass_greedy_hint | Full clip  | conversation  | 100.00%     | 91.67%   | 95.65%  |        12 |
-| 5exit_cclass_greedy_hint | Full clip  | engine_idling | 100.00%     | 20.00%   | 33.33%  |        10 |
-| 5exit_cclass_greedy_hint | Full clip  | fireworks     | 0.00%       | 0.00%    | 0.00%   |         2 |
-| 5exit_cclass_greedy_hint | Full clip  | gun_shot      | 96.00%      | 85.71%   | 90.57%  |        28 |
-| 5exit_cclass_greedy_hint | Full clip  | rain          | 45.16%      | 93.33%   | 60.87%  |        15 |
-| 5exit_cclass_greedy_hint | Full clip  | road_traffic  | 100.00%     | 50.00%   | 66.67%  |        18 |
-| 5exit_cclass_greedy_hint | Full clip  | scream        | 95.45%      | 91.30%   | 93.33%  |        23 |
-| 5exit_cclass_greedy_hint | Full clip  | thunderstorm  | 50.00%      | 33.33%   | 40.00%  |        15 |
-| 5exit_cclass_greedy_hint | Full clip  | wind          | 57.69%      | 100.00%  | 73.17%  |        15 |
-| 5exit_cclass_greedy_hint | Depth×Time | car_crash     | 71.43%      | 71.43%   | 71.43%  |        14 |
-| 5exit_cclass_greedy_hint | Depth×Time | conversation  | 100.00%     | 91.67%   | 95.65%  |        12 |
-| 5exit_cclass_greedy_hint | Depth×Time | engine_idling | 100.00%     | 20.00%   | 33.33%  |        10 |
-| 5exit_cclass_greedy_hint | Depth×Time | fireworks     | 0.00%       | 0.00%    | 0.00%   |         2 |
-| 5exit_cclass_greedy_hint | Depth×Time | gun_shot      | 96.00%      | 85.71%   | 90.57%  |        28 |
-| 5exit_cclass_greedy_hint | Depth×Time | rain          | 45.16%      | 93.33%   | 60.87%  |        15 |
-| 5exit_cclass_greedy_hint | Depth×Time | road_traffic  | 100.00%     | 50.00%   | 66.67%  |        18 |
-| 5exit_cclass_greedy_hint | Depth×Time | scream        | 95.45%      | 91.30%   | 93.33%  |        23 |
-| 5exit_cclass_greedy_hint | Depth×Time | thunderstorm  | 45.45%      | 33.33%   | 38.46%  |        15 |
-| 5exit_cclass_greedy_hint | Depth×Time | wind          | 57.69%      | 100.00%  | 73.17%  |        15 |
-
----
-
-# M. Runtime and profiling summary
-
-| Dataset        | Variant                  |   Exits | Hint   |   Expected MFLOPs |   Full MFLOPs | Compute saving %   | Latency mean ms   | Latency p50 ms   |
-|:---------------|:-------------------------|--------:|:-------|------------------:|--------------:|:-------------------|:------------------|:-----------------|
-| 2-class moth   | 3exit_2class_greedy      |       3 | No     |             20.39 |         51.63 | 60.51%             | —                 | —                |
-| 2-class moth   | 3exit_2class_greedy_hint |       3 | Yes    |             21.51 |         51.63 | 58.33%             | —                 | —                |
-| 2-class moth   | 5exit_2class_greedy      |       5 | No     |             15.68 |         51.63 | 69.63%             | —                 | —                |
-| 2-class moth   | 5exit_2class_greedy_hint |       5 | Yes    |             15.18 |         51.63 | 70.59%             | —                 | —                |
-| 10-class audio | 3exit_cclass_greedy      |       3 | No     |             47.43 |         51.63 | 8.14%              | —                 | —                |
-| 10-class audio | 3exit_cclass_greedy_hint |       3 | Yes    |             47.32 |         51.63 | 8.35%              | —                 | —                |
-| 10-class audio | 5exit_cclass_greedy      |       5 | No     |             45.1  |         51.63 | 12.65%             | —                 | —                |
-| 10-class audio | 5exit_cclass_greedy_hint |       5 | Yes    |             47.55 |         51.63 | 7.89%              | —                 | —                |
-
----
-
-# N. Per-class split segment counts
-
-| Dataset        | Variant                  | Class         |   Train |   Val |   Test |   Total |
-|:---------------|:-------------------------|:--------------|--------:|------:|-------:|--------:|
-| 2-class moth   | 3exit_2class_greedy      | female        |    1144 |   105 |    249 |    1498 |
-| 2-class moth   | 3exit_2class_greedy      | male          |     502 |   141 |     76 |     719 |
-| 2-class moth   | 3exit_2class_greedy_hint | female        |    1144 |   105 |    249 |    1498 |
-| 2-class moth   | 3exit_2class_greedy_hint | male          |     502 |   141 |     76 |     719 |
-| 2-class moth   | 5exit_2class_greedy      | female        |    1144 |   105 |    249 |    1498 |
-| 2-class moth   | 5exit_2class_greedy      | male          |     502 |   141 |     76 |     719 |
-| 2-class moth   | 5exit_2class_greedy_hint | female        |    1144 |   105 |    249 |    1498 |
-| 2-class moth   | 5exit_2class_greedy_hint | male          |     502 |   141 |     76 |     719 |
-| 10-class audio | 3exit_cclass_greedy      | car_crash     |     256 |    55 |     99 |     410 |
-| 10-class audio | 3exit_cclass_greedy      | conversation  |     192 |    47 |     43 |     282 |
-| 10-class audio | 3exit_cclass_greedy      | engine_idling |     199 |    50 |     49 |     298 |
-| 10-class audio | 3exit_cclass_greedy      | fireworks     |      59 |    11 |      9 |      79 |
-| 10-class audio | 3exit_cclass_greedy      | gun_shot      |     290 |    42 |     40 |     372 |
-| 10-class audio | 3exit_cclass_greedy      | rain          |     350 |    75 |     75 |     500 |
-| 10-class audio | 3exit_cclass_greedy      | road_traffic  |     425 |    90 |     90 |     605 |
-| 10-class audio | 3exit_cclass_greedy      | scream        |     242 |    47 |     53 |     342 |
-| 10-class audio | 3exit_cclass_greedy      | thunderstorm  |     350 |    74 |     75 |     499 |
-| 10-class audio | 3exit_cclass_greedy      | wind          |     350 |    75 |     75 |     500 |
-| 10-class audio | 3exit_cclass_greedy_hint | car_crash     |     256 |    55 |     99 |     410 |
-| 10-class audio | 3exit_cclass_greedy_hint | conversation  |     192 |    47 |     43 |     282 |
-| 10-class audio | 3exit_cclass_greedy_hint | engine_idling |     199 |    50 |     49 |     298 |
-| 10-class audio | 3exit_cclass_greedy_hint | fireworks     |      59 |    11 |      9 |      79 |
-| 10-class audio | 3exit_cclass_greedy_hint | gun_shot      |     290 |    42 |     40 |     372 |
-| 10-class audio | 3exit_cclass_greedy_hint | rain          |     350 |    75 |     75 |     500 |
-| 10-class audio | 3exit_cclass_greedy_hint | road_traffic  |     425 |    90 |     90 |     605 |
-| 10-class audio | 3exit_cclass_greedy_hint | scream        |     242 |    47 |     53 |     342 |
-| 10-class audio | 3exit_cclass_greedy_hint | thunderstorm  |     350 |    74 |     75 |     499 |
-| 10-class audio | 3exit_cclass_greedy_hint | wind          |     350 |    75 |     75 |     500 |
-| 10-class audio | 5exit_cclass_greedy      | car_crash     |     256 |    55 |     99 |     410 |
-| 10-class audio | 5exit_cclass_greedy      | conversation  |     192 |    47 |     43 |     282 |
-| 10-class audio | 5exit_cclass_greedy      | engine_idling |     199 |    50 |     49 |     298 |
-| 10-class audio | 5exit_cclass_greedy      | fireworks     |      59 |    11 |      9 |      79 |
-| 10-class audio | 5exit_cclass_greedy      | gun_shot      |     290 |    42 |     40 |     372 |
-| 10-class audio | 5exit_cclass_greedy      | rain          |     350 |    75 |     75 |     500 |
-| 10-class audio | 5exit_cclass_greedy      | road_traffic  |     425 |    90 |     90 |     605 |
-| 10-class audio | 5exit_cclass_greedy      | scream        |     242 |    47 |     53 |     342 |
-| 10-class audio | 5exit_cclass_greedy      | thunderstorm  |     350 |    74 |     75 |     499 |
-| 10-class audio | 5exit_cclass_greedy      | wind          |     350 |    75 |     75 |     500 |
-| 10-class audio | 5exit_cclass_greedy_hint | car_crash     |     256 |    55 |     99 |     410 |
-| 10-class audio | 5exit_cclass_greedy_hint | conversation  |     192 |    47 |     43 |     282 |
-| 10-class audio | 5exit_cclass_greedy_hint | engine_idling |     199 |    50 |     49 |     298 |
-| 10-class audio | 5exit_cclass_greedy_hint | fireworks     |      59 |    11 |      9 |      79 |
-| 10-class audio | 5exit_cclass_greedy_hint | gun_shot      |     290 |    42 |     40 |     372 |
-| 10-class audio | 5exit_cclass_greedy_hint | rain          |     350 |    75 |     75 |     500 |
-| 10-class audio | 5exit_cclass_greedy_hint | road_traffic  |     425 |    90 |     90 |     605 |
-| 10-class audio | 5exit_cclass_greedy_hint | scream        |     242 |    47 |     53 |     342 |
-| 10-class audio | 5exit_cclass_greedy_hint | thunderstorm  |     350 |    74 |     75 |     499 |
-| 10-class audio | 5exit_cclass_greedy_hint | wind          |     350 |    75 |     75 |     500 |
-
----
-
-# O. Threshold calibration summary
-
-| Dataset        | Variant                  |   Exits | Hint   |   Tau | Val macro F1   | Val acc   |
-|:---------------|:-------------------------|--------:|:-------|------:|:---------------|:----------|
-| 2-class moth   | 3exit_2class_greedy      |       3 | No     |  0.9  | 97.51%         | 97.56%    |
-| 2-class moth   | 3exit_2class_greedy_hint |       3 | Yes    |  0.95 | 98.35%         | 98.37%    |
-| 2-class moth   | 5exit_2class_greedy      |       5 | No     |  0.95 | 98.34%         | 98.37%    |
-| 2-class moth   | 5exit_2class_greedy_hint |       5 | Yes    |  0.9  | 96.67%         | 96.75%    |
-| 10-class audio | 3exit_cclass_greedy      |       3 | No     |  0.92 | 67.65%         | 71.38%    |
-| 10-class audio | 3exit_cclass_greedy_hint |       3 | Yes    |  0.85 | 70.53%         | 71.73%    |
-| 10-class audio | 5exit_cclass_greedy      |       5 | No     |  0.9  | 67.59%         | 71.73%    |
-| 10-class audio | 5exit_cclass_greedy_hint |       5 | Yes    |  0.95 | 66.28%         | 69.96%    |
-
----
-
-# P. Appendix interpretation
-
-## P.1 Why moth remains strong
-
-The moth task is binary and acoustically narrower. All four moth variants reached:
+This branch changes the learning problem to multi-label audio tagging:
 
 ```text
-Full-clip accuracy:   100%
-Depth×Time accuracy: 100%
+one audio segment → zero, one, or multiple active labels
+sigmoid activation
+BCEWithLogitsLoss
+per-label threshold tuning
+future sigmoid-aware early-exit policy
 ```
 
-This confirms that the new generic preprocessing/export pathway is not causing the lower C-class accuracy.
-
-## P.2 Why C-class is harder
-
-The C-class task is harder because:
-
-- the number of classes increases from 2 to 10
-- clips vary from very short to very long
-- several classes are acoustically similar
-- `fireworks` has very low support
-- environmental classes may overlap in frequency structure
-- event classes and background classes coexist in the same pipeline
-
-## P.3 Why 3exit_cclass_greedy is the current C-class baseline
-
-`3exit_cclass_greedy` has the best C-class balance:
+For the full older C-class documentation and result tables, use the dedicated C-class branches, especially:
 
 ```text
-Segment policy accuracy: 69.90%
-Full-clip accuracy:      81.58%
-Depth×Time accuracy:    81.58%
-Compute saved:          34.34%
+kexit_cclass_greedy_v2
 ```
 
-It also avoids the excessive final-exit dependence seen in 5-exit C-class runs.
+The current branch should report only the multi-label dataset construction, synthetic-mixture design, multi-label training, threshold tuning, and multi-label early-exit findings. The old C-class tables are intentionally **not preserved inside this branch documentation** to avoid mixing two different experimental tracks.
 
-## P.4 Why hint passing is not yet C-class ready
+---
 
-Hint passing improves compact moth performance but hurts C-class. This may happen because early exits in a 10-class setting are much less reliable. If their uncertain predictions are passed forward as hints, the later exits may receive noisy guidance.
+# Git saving plan for this cleaned multi-label documentation state
 
-Future hint experiments should include confidence gating, entropy/margin checks, stronger regularization, or selective hint passing.
+```powershell
+git status
 
-## P.5 Why 5 exits do not yet help C-class
+git add README.md DOC_STRUCTURE.md APPENDIX.md
 
-The 5-exit C-class variants mostly exit at the final exit, which means the additional exits are not confidently solving the task early. This increases average exit depth and reduces the expected efficiency benefit.
+git add runs_multilabel\summary_thresholds\all_exit_metrics.csv `
+        runs_multilabel\summary_thresholds\all_exit_metrics.md `
+        runs_multilabel\summary_thresholds\final_exit_comparison.csv `
+        runs_multilabel\summary_thresholds\final_exit_comparison.md `
+        runs_multilabel\summary_thresholds\best_exit_comparison.csv `
+        runs_multilabel\summary_thresholds\best_exit_comparison.md `
+        runs_multilabel\summary_thresholds\final_exit_per_label.csv `
+        runs_multilabel\summary_thresholds\final_exit_per_label.md `
+        runs_multilabel\summary_thresholds\final_exit_thresholds.csv `
+        runs_multilabel\summary_thresholds\final_exit_thresholds.md `
+        runs_multilabel\summary_thresholds\README_TABLES.md
 
-## P.6 Recommended next experiments
+git commit -m "docs: clean multi-label threshold-tuned baseline documentation"
 
-1. Add class-balanced sampling.
-2. Add source-file-balanced sampling.
-3. Tune class caps and window length.
-4. Try wider audio frequency ranges for non-moth data.
-5. Train C-class models with stronger auxiliary exit supervision.
-6. Re-test hint passing with confidence gating.
-7. Add macro-F1-first threshold selection.
-8. Run at least three seeds for the final selected C-class baseline.
+git branch kexit_cclass_greedy_multi-label_v0.1_threshold_tuned
+```
+
+When ready to upload:
+
+```powershell
+git push -u origin kexit_cclass_greedy_multi-label
+git push -u origin kexit_cclass_greedy_multi-label_v0.1_threshold_tuned
+```
