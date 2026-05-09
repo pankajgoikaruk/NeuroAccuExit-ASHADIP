@@ -1,3 +1,510 @@
+# ASHADIP / NeuroAccuExit — `kexit_cclass_greedy_multi-label_v0` Baseline
+
+This documentation update records the first **multi-label audio classification baseline** created on the local branch:
+
+```text
+kexit_cclass_greedy_multi-label
+```
+
+The baseline should be saved as:
+
+```text
+kexit_cclass_greedy_multi-label_v0
+```
+
+This branch is separate from the earlier single-label C-class branch. The goal here is not to replace the multi-class experiments, but to create a controlled future-work extension where one audio segment can contain **more than one sound label**.
+
+---
+
+## What this branch adds
+
+This branch implements the first controlled multi-label pipeline:
+
+```text
+clean single-label seed data
+→ synthetic multi-label mixtures
+→ multi-hot manifest
+→ log-mel feature extraction
+→ multi-label PyTorch dataset loader
+→ 5-exit no-hint multi-label training baseline
+```
+
+The key conceptual change is:
+
+| Setting | Single-label / multi-class | Multi-label |
+|---|---|---|
+| Target format | One integer class ID | Multi-hot vector |
+| Example | `rain_thunderstorm` | `rain=1`, `thunderstorm=1` |
+| Output activation | Softmax | Sigmoid |
+| Loss | CrossEntropyLoss | BCEWithLogitsLoss |
+| Prediction | One class only | Any number of labels |
+| Main metrics | Accuracy, macro-F1 | Micro-F1, macro-F1, samples-F1, exact match, hamming loss, per-label F1 |
+
+---
+
+## Why this branch is needed
+
+In real environmental audio, a one-second clip can contain more than one event:
+
+```text
+rain + thunderstorm
+traffic + gunshot
+fireworks + crowd/background
+wind + rain
+```
+
+The previous C-class setup forced mixed audio into one class such as:
+
+```text
+rain_thunderstorm
+```
+
+The multi-label setup instead represents the same sound as:
+
+```text
+rain = 1
+thunderstorm = 1
+```
+
+This is more realistic for overlapping acoustic events.
+
+---
+
+## Dataset design used in v0
+
+The branch uses a controlled first experiment, not noisy full-dataset weak supervision.
+
+### Source structure
+
+The clean seed data is stored as class folders:
+
+```text
+multilabel_data/
+└─ clean_seed/
+   ├─ car_crash/
+   ├─ conversation/
+   ├─ engine_idling/
+   ├─ fireworks/
+   ├─ gun_shot/
+   ├─ rain/
+   ├─ road_traffic/
+   ├─ scream/
+   ├─ thunderstorm/
+   └─ wind/
+```
+
+Each file was renamed in-place using class-prefixed names, for example:
+
+```text
+car_crash_0001.wav
+conversation_0001.wav
+fireworks_0001.flac
+```
+
+The `.m4a` files were excluded because the local environment could not decode them through `soundfile` or `librosa/audioread`.
+
+---
+
+## Table ML-v0.1 — Labels used
+
+| ID | Label |
+|---:|---|
+| 0 | `car_crash` |
+| 1 | `conversation` |
+| 2 | `engine_idling` |
+| 3 | `fireworks` |
+| 4 | `gun_shot` |
+| 5 | `rain` |
+| 6 | `road_traffic` |
+| 7 | `scream` |
+| 8 | `thunderstorm` |
+| 9 | `wind` |
+
+---
+
+## Table ML-v0.2 — Clean seed availability after excluding `.m4a`
+
+| Split | Total | car_crash | conversation | engine_idling | fireworks | gun_shot | rain | road_traffic | scream | thunderstorm | wind |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Train | 724 | 64 | 57 | 32 | 57 | 155 | 66 | 80 | 106 | 38 | 69 |
+| Val | 155 | 14 | 12 | 7 | 12 | 33 | 14 | 17 | 23 | 8 | 15 |
+| Test | 156 | 14 | 12 | 7 | 13 | 33 | 15 | 17 | 22 | 8 | 15 |
+
+---
+
+## Synthetic mixture generation
+
+Synthetic mixtures were created from the clean seed manifest using exactly two labels per synthetic sample:
+
+```text
+mix_size_min = 2
+mix_size_max = 2
+sample_rate  = 16000
+clip_sec     = 1.0
+seed         = 42
+gain range   = -6 dB to 0 dB
+```
+
+The synthetic split was leakage-safe:
+
+```text
+synthetic train mixtures use only clean_seed train files
+synthetic val mixtures use only clean_seed val files
+synthetic test mixtures use only clean_seed test files
+```
+
+---
+
+## Table ML-v0.3 — Synthetic mixture counts
+
+| Split | Synthetic mixtures |
+|---|---:|
+| Train | 1000 |
+| Val | 200 |
+| Test | 200 |
+| **Total** | **1400** |
+
+---
+
+## Table ML-v0.4 — Synthetic positive label counts
+
+| Label | Positive count |
+|---|---:|
+| car_crash | 276 |
+| conversation | 293 |
+| engine_idling | 301 |
+| fireworks | 256 |
+| gun_shot | 248 |
+| rain | 284 |
+| road_traffic | 288 |
+| scream | 289 |
+| thunderstorm | 267 |
+| wind | 298 |
+
+The counts are reasonably balanced for a first baseline.
+
+---
+
+## Table ML-v0.5 — Combined clean + synthetic manifest
+
+| Split | Rows |
+|---|---:|
+| Train | 1724 |
+| Val | 355 |
+| Test | 356 |
+| **Total** | **2435** |
+
+The combined manifest was saved as:
+
+```text
+multilabel_data/metadata/multilabel_train_manifest.csv
+```
+
+The extracted feature manifest was saved as:
+
+```text
+multilabel_cache/metadata/multilabel_features_manifest.csv
+```
+
+---
+
+## Feature extraction settings
+
+Log-mel feature extraction used:
+
+| Setting | Value |
+|---|---:|
+| Sample rate | 16000 Hz |
+| Clip length | 1.0 s |
+| Mel bins | 64 |
+| FFT size | 1024 |
+| Window length | 25 ms |
+| Hop length | 10 ms |
+| CMVN | Enabled |
+| Feature shape | `[1, 64, 101]` after dataset loading |
+
+---
+
+## Table ML-v0.6 — Final extracted feature dataset
+
+| Item | Value |
+|---|---:|
+| Total rows | 2435 |
+| Clean rows | 1035 |
+| Synthetic rows | 1400 |
+| Train rows | 1724 |
+| Val rows | 355 |
+| Test rows | 356 |
+| Input tensor shape | `[batch, 1, 64, 101]` |
+| Target tensor shape | `[batch, 10]` |
+
+---
+
+## Table ML-v0.7 — Final label-positive counts after feature extraction
+
+| Label | Positive count |
+|---|---:|
+| car_crash | 368 |
+| conversation | 374 |
+| engine_idling | 347 |
+| fireworks | 338 |
+| gun_shot | 469 |
+| rain | 379 |
+| road_traffic | 402 |
+| scream | 440 |
+| thunderstorm | 321 |
+| wind | 397 |
+
+---
+
+## Training baseline recorded in v0
+
+The first completed baseline was:
+
+```text
+multilabel_5exit_nohint
+```
+
+with:
+
+```text
+tap_blocks = 1,2,3,4
+num_exits  = 5
+exit_hint  = disabled
+epochs     = 40
+batch_size = 64
+lr         = 0.001
+threshold  = 0.5
+device     = cpu
+loss       = BCEWithLogitsLoss
+```
+
+The best validation checkpoint was selected using final-exit macro-F1.
+
+```text
+Best epoch: 37
+Best validation final-exit macro-F1: 0.5438
+```
+
+---
+
+## Table ML-v0.8 — Test metrics by exit for `multilabel_5exit_nohint`
+
+| Exit | Macro-F1 | Micro-F1 | Samples-F1 | Exact match | Hamming loss | Interpretation |
+|---:|---:|---:|---:|---:|---:|---|
+| 1 | 0.0068 | 0.0072 | — | 0.0056 | 0.1556 | Too weak; earliest exit is not useful yet |
+| 2 | 0.2411 | 0.3476 | — | 0.1601 | 0.1287 | Starts learning useful labels |
+| 3 | 0.3708 | 0.4660 | — | 0.1994 | 0.1191 | Moderate intermediate representation |
+| 4 | 0.5135 | 0.5686 | — | 0.2697 | 0.1104 | Strong early-exit candidate |
+| 5 | **0.5302** | **0.5852** | — | **0.3062** | **0.1067** | Best final prediction |
+
+`Samples-F1` was printed by the script, but the exact value was not available in the copied summary used for this documentation update. It remains available in `runs_multilabel/<run_id>/metrics.json`.
+
+---
+
+## Table ML-v0.9 — Final-exit per-label test metrics
+
+| Label | Precision | Recall | F1 | Support | Predicted positives | Interpretation |
+|---|---:|---:|---:|---:|---:|---|
+| car_crash | 0.6316 | 0.5106 | 0.5647 | 47 | — | Moderate |
+| conversation | 0.9815 | 0.8833 | **0.9298** | 60 | 54 | Excellent |
+| engine_idling | 0.7500 | 0.3673 | 0.4932 | — | — | Precise but misses many positives |
+| fireworks | 0.8421 | 0.3077 | 0.4507 | — | — | High precision, low recall |
+| gun_shot | 0.7458 | 0.5789 | 0.6519 | — | — | Good/moderate |
+| rain | 0.8800 | 0.4231 | 0.5714 | — | — | Precise but low recall |
+| road_traffic | 0.5000 | 0.1429 | 0.2222 | — | — | Weak |
+| scream | 0.7971 | 0.9649 | **0.8730** | — | — | Very good |
+| thunderstorm | 0.0000 | 0.0000 | 0.0000 | 49 | 6 | Failed in this baseline |
+| wind | 0.5625 | 0.5294 | 0.5455 | — | — | Moderate |
+
+`—` means the exact support or predicted-positive value was not available in the copied summary used for this documentation update. The full values should be read from `metrics.json` before final publication.
+
+---
+
+## Research findings from v0
+
+### 1. Multi-label pipeline is functional
+
+The v0 branch successfully builds a full multi-label path from clean seed audio to training-ready features and a working multi-label model.
+
+### 2. Deeper exits behave logically
+
+Performance improves consistently from exit 1 to exit 5. This confirms that the multi-exit architecture still behaves sensibly under a multi-label objective.
+
+### 3. Exit 4 is a promising early-exit candidate
+
+Exit 4 achieved macro-F1 `0.5135`, close to final-exit macro-F1 `0.5302`. This suggests that future multi-label early-exit policy work may be able to save computation with limited accuracy loss.
+
+### 4. Label-wise behaviour is uneven
+
+`conversation` and `scream` perform strongly, while `thunderstorm` and `road_traffic` are weak. This shows that one global threshold of `0.5` is not enough.
+
+### 5. Thunderstorm needs special attention
+
+The thunderstorm result is the clearest failure case:
+
+```text
+support = 49
+predicted positives = 6
+F1 = 0.0000
+```
+
+This may be due to weak/variable thunder cues, confusion with rain/fireworks/wind, or unsuitable thresholding.
+
+---
+
+## Current limitations
+
+| Limitation | Meaning | Next fix |
+|---|---|---|
+| Synthetic-only mixed training | Real mixed audio transfer is not yet proven | Add small verified real mixed test set |
+| Global threshold `0.5` | Some labels may need lower/higher thresholds | Tune per-label thresholds on validation set |
+| No hint passing | Current v0 is no-hint only | Add sigmoid-aware hint passing later |
+| No 3-exit multi-label comparison yet | Only 5-exit result is documented here | Run 3-exit no-hint baseline |
+| `.m4a` excluded | Codec limitation in local environment | Convert `.m4a` to WAV/FLAC or install FFmpeg |
+| Segment-level synthetic evaluation | Real weak-label clips not yet used | Add model-assisted dataset cleaning / real mixed test |
+
+---
+
+## Next updates after saving `kexit_cclass_greedy_multi-label_v0`
+
+The next branch progress should focus on result improvement, not changing the whole pipeline.
+
+Recommended order:
+
+1. **Tune per-label thresholds** using validation probabilities.
+2. **Re-evaluate test metrics** using label-specific thresholds instead of global `0.5`.
+3. **Run 3-exit no-hint baseline** for fair 3-exit vs 5-exit comparison.
+4. **Add threshold-calibrated early-exit policy** for multi-label inference.
+5. **Add sigmoid-aware hint passing** after the no-hint baselines are stable.
+6. **Create a small manually verified real mixed test set** to test transfer from synthetic to real overlapping audio.
+7. **Document mAP / per-label AUC** if probability quality is important.
+
+---
+
+## Reproducibility commands used in v0
+
+### Build clean seed manifest
+
+```powershell
+python scripts\build_multilabel_seed_manifest.py `
+  --root "multilabel_data\clean_seed" `
+  --out "multilabel_data\metadata\clean_seed_manifest.csv" `
+  --labels_json "multilabel_data\metadata\labels.json" `
+  --audio_exts ".wav,.flac,.mp3,.ogg" `
+  --seed 42
+```
+
+### Create synthetic mixtures
+
+```powershell
+python scripts\create_synthetic_multilabel_mixtures.py `
+  --seed_manifest "multilabel_data\metadata\clean_seed_manifest.csv" `
+  --labels_json "multilabel_data\metadata\labels.json" `
+  --out_audio_root "multilabel_data\synthetic_mixed\audio" `
+  --out_manifest "multilabel_data\metadata\synthetic_mixed_manifest.csv" `
+  --combined_out "multilabel_data\metadata\multilabel_train_manifest.csv" `
+  --num_train 1000 `
+  --num_val 200 `
+  --num_test 200 `
+  --mix_size_min 2 `
+  --mix_size_max 2 `
+  --sample_rate 16000 `
+  --clip_sec 1.0 `
+  --seed 42
+```
+
+### Extract multi-label features
+
+```powershell
+python scripts\extract_multilabel_features.py `
+  --manifest "multilabel_data\metadata\multilabel_train_manifest.csv" `
+  --labels_json "multilabel_data\metadata\labels.json" `
+  --out_cache "multilabel_cache" `
+  --sample_rate 16000 `
+  --clip_sec 1.0 `
+  --n_mels 64 `
+  --n_fft 1024 `
+  --win_ms 25 `
+  --hop_ms 10 `
+  --cmvn
+```
+
+### Sanity-check dataset loader
+
+```powershell
+python -c "from data.datasets_multilabel import make_multilabel_loaders; dl_tr, dl_va, dl_te, labels = make_multilabel_loaders('multilabel_cache/metadata/multilabel_features_manifest.csv', 'multilabel_cache/features', 'multilabel_data/metadata/labels.json', batch_size=8, num_workers=0, seed=42); x,y = next(iter(dl_tr)); print('labels=', labels); print('x shape=', x.shape); print('y shape=', y.shape); print('y[0]=', y[0])"
+```
+
+### Train 5-exit multi-label no-hint baseline
+
+```powershell
+python -m training.train_multilabel `
+  --manifest "multilabel_cache\metadata\multilabel_features_manifest.csv" `
+  --features_root "multilabel_cache\features" `
+  --labels_json "multilabel_data\metadata\labels.json" `
+  --runs_root "runs_multilabel" `
+  --variant "multilabel_5exit_nohint" `
+  --tap_blocks "1,2,3,4" `
+  --epochs 40 `
+  --batch_size 64 `
+  --lr 0.001 `
+  --threshold 0.5 `
+  --device cpu
+```
+
+---
+
+## Git saving plan for this baseline
+
+After updating documentation, save this local branch state as:
+
+```text
+kexit_cclass_greedy_multi-label_v0
+```
+
+Recommended Git commands:
+
+```powershell
+git status
+
+git add README.md DOC_STRUCTURE.md APPENDIX.md
+
+git add scripts\rename_wavs_by_class.py `
+        scripts\build_multilabel_seed_manifest.py `
+        scripts\create_synthetic_multilabel_mixtures.py `
+        scripts\extract_multilabel_features.py `
+        data\datasets_multilabel.py `
+        training\train_multilabel.py
+
+git commit -m "Document and save multi-label baseline v0"
+
+git branch kexit_cclass_greedy_multi-label_v0
+```
+
+When ready to upload:
+
+```powershell
+git push -u origin kexit_cclass_greedy_multi-label
+git push -u origin kexit_cclass_greedy_multi-label_v0
+```
+
+Large generated folders should normally stay out of Git:
+
+```text
+multilabel_data/
+multilabel_cache/
+runs_multilabel/
+```
+
+Commit only lightweight result summaries if needed, such as `metrics.json` and `config_used.json`.
+
+---
+
+# Previous single-label C-class documentation
+
+The content below is preserved from the earlier `kexit_cclass_greedy_v2` documentation.
+
 # ASHADIP / NeuroAccuExit — `kexit_cclass_greedy_v2` Documentation Update
 
 This update records the current **C-class prepared/grouped dataset experiments** and the latest refined-data audit for branch:

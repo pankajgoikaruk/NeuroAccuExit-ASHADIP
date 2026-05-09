@@ -21,6 +21,11 @@ runs*/
 analysis/plots/
 analysis/*.png
 
+# Multi-label generated data/caches/results
+multilabel_data/
+multilabel_cache/
+runs_multilabel/
+
 # Model artifacts
 **/ckpt/
 *.pt

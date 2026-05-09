@@ -1,3 +1,282 @@
+# Appendix — `kexit_cclass_greedy_multi-label_v0`
+
+This appendix records the first controlled multi-label baseline for NeuroAccuExit-ASHADIP.
+
+The baseline branch name is:
+
+```text
+kexit_cclass_greedy_multi-label_v0
+```
+
+---
+
+# ML-A0. Branch status
+
+| Item | Value |
+|---|---|
+| Working local branch | `kexit_cclass_greedy_multi-label` |
+| Baseline branch to save | `kexit_cclass_greedy_multi-label_v0` |
+| Task type | Multi-label audio classification |
+| Label count | 10 |
+| Training source | Clean seed + synthetic mixed audio |
+| First trained model | `multilabel_5exit_nohint` |
+| Hint passing | Disabled |
+| Status | Functional v0 baseline |
+
+---
+
+# ML-A1. Multi-label target representation
+
+| Audio content | Multi-class representation | Multi-label representation |
+|---|---|---|
+| rain only | `rain` | `rain=1` |
+| thunderstorm only | `thunderstorm` | `thunderstorm=1` |
+| rain + thunderstorm | `rain_thunderstorm` | `rain=1`, `thunderstorm=1` |
+| traffic + gunshot | requires artificial combined class | `road_traffic=1`, `gun_shot=1` |
+
+---
+
+# ML-A2. Label list
+
+| ID | Label |
+|---:|---|
+| 0 | `car_crash` |
+| 1 | `conversation` |
+| 2 | `engine_idling` |
+| 3 | `fireworks` |
+| 4 | `gun_shot` |
+| 5 | `rain` |
+| 6 | `road_traffic` |
+| 7 | `scream` |
+| 8 | `thunderstorm` |
+| 9 | `wind` |
+
+---
+
+# ML-A3. Clean seed split counts
+
+| Split | Total | car_crash | conversation | engine_idling | fireworks | gun_shot | rain | road_traffic | scream | thunderstorm | wind |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Train | 724 | 64 | 57 | 32 | 57 | 155 | 66 | 80 | 106 | 38 | 69 |
+| Val | 155 | 14 | 12 | 7 | 12 | 33 | 14 | 17 | 23 | 8 | 15 |
+| Test | 156 | 14 | 12 | 7 | 13 | 33 | 15 | 17 | 22 | 8 | 15 |
+
+`.m4a` files were excluded from the manifest because the local environment could not decode them.
+
+---
+
+# ML-A4. Synthetic mixture generation settings
+
+| Setting | Value |
+|---|---:|
+| Number of labels per synthetic clip | 2 |
+| Train mixtures | 1000 |
+| Val mixtures | 200 |
+| Test mixtures | 200 |
+| Sample rate | 16000 Hz |
+| Clip duration | 1.0 s |
+| Gain range | -6 dB to 0 dB |
+| Seed | 42 |
+| Output format | WAV |
+
+---
+
+# ML-A5. Synthetic mixture counts
+
+| Split | Synthetic mixtures |
+|---|---:|
+| Train | 1000 |
+| Val | 200 |
+| Test | 200 |
+| **Total** | **1400** |
+
+---
+
+# ML-A6. Synthetic positive label counts
+
+| Label | Positive count |
+|---|---:|
+| car_crash | 276 |
+| conversation | 293 |
+| engine_idling | 301 |
+| fireworks | 256 |
+| gun_shot | 248 |
+| rain | 284 |
+| road_traffic | 288 |
+| scream | 289 |
+| thunderstorm | 267 |
+| wind | 298 |
+
+---
+
+# ML-A7. Combined manifest counts
+
+| Split | Rows |
+|---|---:|
+| Train | 1724 |
+| Val | 355 |
+| Test | 356 |
+| **Total** | **2435** |
+
+---
+
+# ML-A8. Feature extraction settings
+
+| Setting | Value |
+|---|---:|
+| Sample rate | 16000 Hz |
+| Clip duration | 1.0 s |
+| Mel bins | 64 |
+| FFT size | 1024 |
+| Window length | 25 ms |
+| Hop length | 10 ms |
+| CMVN | Enabled |
+| Loaded tensor shape | `[batch, 1, 64, 101]` |
+| Target tensor shape | `[batch, 10]` |
+
+---
+
+# ML-A9. Feature dataset summary
+
+| Item | Value |
+|---|---:|
+| Total rows | 2435 |
+| Clean rows | 1035 |
+| Synthetic rows | 1400 |
+| Train rows | 1724 |
+| Val rows | 355 |
+| Test rows | 356 |
+
+---
+
+# ML-A10. Label-positive counts after feature extraction
+
+| Label | Positive count |
+|---|---:|
+| car_crash | 368 |
+| conversation | 374 |
+| engine_idling | 347 |
+| fireworks | 338 |
+| gun_shot | 469 |
+| rain | 379 |
+| road_traffic | 402 |
+| scream | 440 |
+| thunderstorm | 321 |
+| wind | 397 |
+
+---
+
+# ML-A11. Training setup for `multilabel_5exit_nohint`
+
+| Setting | Value |
+|---|---|
+| Model | TinyAudioCNN + ExitNet |
+| Exits | 5 |
+| Tap blocks | `1,2,3,4` |
+| Labels | 10 |
+| Loss | BCEWithLogitsLoss |
+| Activation for prediction | Sigmoid |
+| Threshold | 0.5 global |
+| Epochs | 40 |
+| Batch size | 64 |
+| Learning rate | 0.001 |
+| Device | CPU |
+| Hint passing | Disabled |
+| Best epoch | 37 |
+| Best validation final-exit macro-F1 | 0.5438 |
+
+---
+
+# ML-A12. Test metrics by exit
+
+| Exit | Macro-F1 | Micro-F1 | Exact match | Hamming loss | Interpretation |
+|---:|---:|---:|---:|---:|---|
+| 1 | 0.0068 | 0.0072 | 0.0056 | 0.1556 | Too shallow; almost no useful label prediction |
+| 2 | 0.2411 | 0.3476 | 0.1601 | 0.1287 | Weak but learning |
+| 3 | 0.3708 | 0.4660 | 0.1994 | 0.1191 | Moderate |
+| 4 | 0.5135 | 0.5686 | 0.2697 | 0.1104 | Strong early-exit candidate |
+| 5 | **0.5302** | **0.5852** | **0.3062** | **0.1067** | Best final prediction |
+
+---
+
+# ML-A13. Final-exit per-label test metrics
+
+| Label | Precision | Recall | F1 | Support | Predicted positives | Interpretation |
+|---|---:|---:|---:|---:|---:|---|
+| car_crash | 0.6316 | 0.5106 | 0.5647 | 47 | — | Moderate |
+| conversation | 0.9815 | 0.8833 | **0.9298** | 60 | 54 | Excellent |
+| engine_idling | 0.7500 | 0.3673 | 0.4932 | — | — | Precise but misses many |
+| fireworks | 0.8421 | 0.3077 | 0.4507 | — | — | High precision, low recall |
+| gun_shot | 0.7458 | 0.5789 | 0.6519 | — | — | Good/moderate |
+| rain | 0.8800 | 0.4231 | 0.5714 | — | — | High precision, low recall |
+| road_traffic | 0.5000 | 0.1429 | 0.2222 | — | — | Weak |
+| scream | 0.7971 | 0.9649 | **0.8730** | — | — | Very good |
+| thunderstorm | 0.0000 | 0.0000 | 0.0000 | 49 | 6 | Failed in v0 |
+| wind | 0.5625 | 0.5294 | 0.5455 | — | — | Moderate |
+
+Full support/predicted-positive values should be copied from `metrics.json` before final paper submission.
+
+---
+
+# ML-A14. Main findings
+
+1. The multi-label data pipeline works end-to-end.
+2. The model learns useful multi-label predictions from clean seed + synthetic mixture data.
+3. Exit performance improves with depth.
+4. Exit 4 is close to exit 5, making it promising for future early-exit inference.
+5. Conversation and scream are strong labels.
+6. Thunderstorm and road_traffic require threshold/data-quality improvement.
+7. A single global threshold of 0.5 is not sufficient.
+8. Hint passing should not be added until threshold tuning and no-hint baselines are stable.
+
+---
+
+# ML-A15. Next implementation checklist
+
+| Priority | Task | Why |
+|---:|---|---|
+| 1 | Tune per-label thresholds | Fix weak labels like thunderstorm and road_traffic |
+| 2 | Re-evaluate test with tuned thresholds | Establish stronger v0.1 result |
+| 3 | Run 3-exit no-hint baseline | Fair comparison with 5-exit baseline |
+| 4 | Add multi-label policy evaluation | Needed for early-exit compute/accuracy results |
+| 5 | Add sigmoid-aware hint passing | Multi-label hint passing differs from softmax hint passing |
+| 6 | Create small real mixed test set | Test synthetic-to-real generalisation |
+| 7 | Add mAP / label-wise AUC | Better probability-quality reporting |
+
+---
+
+# ML-A16. Git commands for saving this baseline
+
+```powershell
+git status
+
+git add README.md DOC_STRUCTURE.md APPENDIX.md
+
+git add scripts\rename_wavs_by_class.py `
+        scripts\build_multilabel_seed_manifest.py `
+        scripts\create_synthetic_multilabel_mixtures.py `
+        scripts\extract_multilabel_features.py `
+        data\datasets_multilabel.py `
+        training\train_multilabel.py
+
+git commit -m "Document and save multi-label baseline v0"
+
+git branch kexit_cclass_greedy_multi-label_v0
+```
+
+Upload later with:
+
+```powershell
+git push -u origin kexit_cclass_greedy_multi-label
+git push -u origin kexit_cclass_greedy_multi-label_v0
+```
+
+---
+
+# Previous C-class appendix
+
+The content below is preserved from the earlier `kexit_cclass_greedy_v2` appendix.
+
 # Appendix Update — `kexit_cclass_greedy_v2`
 
 This appendix update should be read before the older 8-run appendix tables.

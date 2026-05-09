@@ -1,3 +1,226 @@
+# Documentation Structure — `kexit_cclass_greedy_multi-label_v0`
+
+This update adds a new documentation layer for the first **multi-label early-exit audio classification baseline**.
+
+The branch to preserve this baseline is:
+
+```text
+kexit_cclass_greedy_multi-label_v0
+```
+
+This branch should be treated as a controlled baseline, not the final multi-label result.
+
+---
+
+## Updated project story
+
+The project now has two related but separate experimental tracks:
+
+| Track | Task type | Output type | Status |
+|---|---|---|---|
+| C-class track | Single-label multi-class | One class per segment | Existing prepared/grouped experiments |
+| Multi-label track | Multi-label audio tagging | Any number of labels per segment | New v0 baseline |
+
+The multi-label track should be framed as a future-work extension of the K-exit/C-class system, designed for overlapping real-world audio events.
+
+---
+
+## Recommended report/chapter placement
+
+### Chapter 1 — Motivation
+
+Add the motivation that real environmental audio often contains overlapping events. A single-label classifier is useful but limited when sounds co-occur.
+
+### Chapter 2 — Dataset design
+
+Separate the dataset discussion into:
+
+1. **Single-label C-class dataset**
+2. **Clean seed multi-label dataset**
+3. **Synthetic mixed multi-label dataset**
+4. **Future real mixed/weak-label dataset**
+
+Key point:
+
+> Multi-label v0 avoids blindly using noisy original folders. It uses a small manually verified clean seed subset and automatically generated synthetic mixtures to create controlled multi-label supervision.
+
+### Chapter 3 — Preprocessing pipeline
+
+Add a subsection:
+
+```text
+Multi-label seed and synthetic mixture preparation
+```
+
+Include these pipeline stages:
+
+| Stage | Script | Output |
+|---|---|---|
+| Rename raw seed files | `scripts/rename_wavs_by_class.py` | Class-prefixed audio filenames |
+| Build clean seed manifest | `scripts/build_multilabel_seed_manifest.py` | `clean_seed_manifest.csv`, `labels.json` |
+| Create synthetic mixtures | `scripts/create_synthetic_multilabel_mixtures.py` | Synthetic mixed WAVs + manifest |
+| Extract features | `scripts/extract_multilabel_features.py` | Log-mel `.npy` features |
+| Load dataset | `data/datasets_multilabel.py` | Multi-hot target tensors |
+| Train model | `training/train_multilabel.py` | Multi-label K-exit baseline |
+
+### Chapter 4 — Model formulation
+
+Add a distinction between single-label and multi-label heads.
+
+| Component | Single-label C-class | Multi-label v0 |
+|---|---|---|
+| Final logits | `[batch, num_classes]` | `[batch, num_labels]` |
+| Target | class ID | multi-hot vector |
+| Activation | softmax | sigmoid |
+| Loss | cross entropy | binary cross entropy with logits |
+| Early-exit output | one class | label set |
+
+The architecture still uses TinyAudioCNN + ExitNet. The output interpretation changes.
+
+### Chapter 5 — Results
+
+Add a new subsection:
+
+```text
+5.x Multi-label baseline v0
+```
+
+Report:
+
+1. dataset counts,
+2. synthetic mixture setup,
+3. feature extraction settings,
+4. 5-exit no-hint baseline results,
+5. per-label F1,
+6. limitations and next steps.
+
+---
+
+## Multi-label v0 result summary for Chapter 5
+
+| Item | Value |
+|---|---|
+| Branch baseline | `kexit_cclass_greedy_multi-label_v0` |
+| Task | 10-label audio tagging |
+| Data | clean seed + synthetic two-label mixtures |
+| Synthetic mixtures | 1000 train, 200 val, 200 test |
+| Combined rows | 2435 |
+| Feature shape | `[1, 64, 101]` |
+| Model | 5-exit TinyAudioCNN + ExitNet |
+| Taps | `1,2,3,4` |
+| Hint passing | disabled |
+| Loss | BCEWithLogitsLoss |
+| Threshold | global 0.5 |
+| Best epoch | 37 |
+| Best validation final-exit macro-F1 | 0.5438 |
+| Test final-exit macro-F1 | 0.5302 |
+| Test final-exit micro-F1 | 0.5852 |
+| Test exact match | 0.3062 |
+| Test hamming loss | 0.1067 |
+
+---
+
+## Interpretation for writing
+
+Use this wording:
+
+> The first multi-label baseline confirms that the K-exit audio architecture can be trained under a multi-hot target formulation using sigmoid outputs and BCEWithLogitsLoss. The 5-exit no-hint baseline shows a clear depth-performance pattern, with final-exit macro-F1 reaching 0.5302 and exit 4 approaching the final exit at 0.5135. This suggests that early-exit computation saving may be possible in the multi-label setting. However, label-wise performance is uneven: conversation and scream are strong, while thunderstorm and road_traffic remain weak. The next methodological requirement is per-label threshold calibration before adding hint passing or stronger early-exit policies.
+
+---
+
+## Required tables for the multi-label section
+
+| Table | Content | Location |
+|---:|---|---|
+| ML-v0.1 | Label list | README + Appendix |
+| ML-v0.2 | Clean seed split availability | README + Appendix |
+| ML-v0.3 | Synthetic mixture counts | README + Appendix |
+| ML-v0.4 | Synthetic positive label counts | README + Appendix |
+| ML-v0.5 | Combined manifest counts | README + Appendix |
+| ML-v0.6 | Feature extraction settings | README + Appendix |
+| ML-v0.7 | Test metrics by exit | README + Appendix |
+| ML-v0.8 | Per-label final-exit metrics | README + Appendix |
+| ML-v0.9 | Limitations and next updates | README + DOC_STRUCTURE |
+
+---
+
+## Next update plan after v0
+
+### Step 1 — Per-label threshold tuning
+
+Current results use a global threshold:
+
+```text
+threshold = 0.5
+```
+
+This is probably not suitable for all labels. For example:
+
+```text
+conversation may work well at 0.5 or higher
+thunderstorm may need 0.2–0.3
+road_traffic may need a lower threshold
+```
+
+Implement:
+
+```text
+scripts/tune_multilabel_thresholds.py
+```
+
+Expected outputs:
+
+```text
+runs_multilabel/<run_id>/thresholds_multilabel.json
+runs_multilabel/<run_id>/test_metrics_thresholded.json
+```
+
+### Step 2 — 3-exit no-hint baseline
+
+Run:
+
+```text
+multilabel_3exit_nohint
+```
+
+This is needed for a fair 3-exit vs 5-exit comparison.
+
+### Step 3 — Multi-label early-exit policy
+
+A multi-label greedy policy should not use softmax max-confidence. It should use sigmoid-aware confidence, for example:
+
+```text
+mean distance from 0.5
+stable predicted label set between exits
+per-label threshold satisfaction
+```
+
+### Step 4 — Sigmoid-aware hint passing
+
+Existing hint passing should not be reused blindly because it was designed around single-label softmax predictions. Multi-label hint passing should use sigmoid probabilities and uncertainty statistics.
+
+### Step 5 — Real mixed test set
+
+Create a small manually verified real mixed test set to test whether synthetic mixture training transfers to real mixed audio.
+
+---
+
+## Reviewer-safe limitations
+
+| Limitation | Reviewer-safe response |
+|---|---|
+| Synthetic mixtures may not perfectly match real mixed audio | v0 is a controlled baseline; real mixed evaluation is future work |
+| Global threshold may be unfair to rare/weak labels | Per-label threshold tuning is the next planned ablation |
+| Thunderstorm failed in v0 | This is reported transparently and motivates threshold/data-quality analysis |
+| No hint passing yet | The no-hint baseline is necessary before adding sigmoid-aware hint passing |
+| No 3-exit result in this baseline document | v0 records the first 5-exit result; 3-exit baseline is next |
+
+---
+
+# Previous single-label C-class documentation structure
+
+The content below is preserved from the earlier `kexit_cclass_greedy_v2` documentation.
+
 # Documentation Structure Update — `kexit_cclass_greedy_v2`
 
 This section updates the report/thesis structure for the current prepared/grouped C-class stage.
