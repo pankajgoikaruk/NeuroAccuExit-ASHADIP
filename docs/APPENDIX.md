@@ -1,33 +1,41 @@
-# Appendix — `kexit_cclass_greedy_multi-label_pos-weight`
+# Appendix — `kexit_multi-label_greedy_EE`
 
-This appendix records the detailed results for the active branch:
+This appendix records the detailed protocol and extended tables for the active branch:
 
 ```text
-kexit_cclass_greedy_multi-label_pos-weight
+kexit_multi-label_greedy_EE
 ```
 
-It includes no-weight threshold tuning and the positive-label-weighting ablation.
+This branch evaluates **multi-label greedy early-exit (EE)** behaviour using a sigmoid-aware label-set stability policy.
 
 ---
 
-## ML-A1. Branch and artifact status
+## ML-GEE-A1. Branch and artifact status
 
 | Item | Value |
 |---|---|
-| Working branch | `kexit_cclass_greedy_multi-label_pos-weight` |
-| Active branch | `kexit_cclass_greedy_multi-label_pos-weight` |
+| Active branch | `kexit_multi-label_greedy_EE` |
+| Base branch | `kexit_cclass_greedy_multi-label_policy` |
 | Task | Multi-label audio tagging |
 | Labels | 10 |
 | Input | 1-second log-mel windows |
 | Feature shape | `[batch, 1, 64, 101]` |
 | Target shape | `[batch, 10]` |
-| Compared variants | 3-exit no-hint, 5-exit no-hint, 3-exit pos-weight, 5-exit pos-weight |
-| Thresholding | Fixed 0.5 and tuned per-label thresholds |
-| Status | 4-model comparison complete |
+| Main script | `scripts/multilabel_greedy_policy.py` |
+| Compared variants | `3exit_nohint`, `5exit_nohint`, `3exit_posweight`, `5exit_posweight` |
+| Positive-weight cap in structured runs | `20.0` |
+| Thresholding | Tuned per-exit/per-label thresholds |
+| Main policy | Greedy label-set stability |
+| Dynamic metrics | Exit distribution, avg exit depth, depth units, estimated compute saved |
+| Status | Static and dynamic 4-model comparison complete |
+
+Important note:
+
+> These structured greedy-EE results use `--pos_weight_max 20.0`. They should not be numerically mixed with earlier positive-weight experiments that used a different cap.
 
 ---
 
-## ML-A2. Label list
+## ML-GEE-A2. Label list
 
 | ID | Label |
 |---:|---|
@@ -42,51 +50,9 @@ It includes no-weight threshold tuning and the positive-label-weighting ablation
 | 8 | `thunderstorm` |
 | 9 | `wind` |
 
-
 ---
 
-## ML-A3. Clean seed split counts after excluding `.m4a`
-
-| Split | Total | car_crash | conversation | engine_idling | fireworks | gun_shot | rain | road_traffic | scream | thunderstorm | wind |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| Train | 724 | 64 | 57 | 32 | 57 | 155 | 66 | 80 | 106 | 38 | 69 |
-| Val | 155 | 14 | 12 | 7 | 12 | 33 | 14 | 17 | 23 | 8 | 15 |
-| Test | 156 | 14 | 12 | 7 | 13 | 33 | 15 | 17 | 22 | 8 | 15 |
-
-
----
-
-## ML-A4. Synthetic mixture settings and counts
-
-| Setting | Value |
-|---|---:|
-| Labels per synthetic clip | 2 |
-| Train mixtures | 1000 |
-| Validation mixtures | 200 |
-| Test mixtures | 200 |
-| Sample rate | 16000 Hz |
-| Clip duration | 1.0 s |
-| Gain range | -6 dB to 0 dB |
-| Seed | 42 |
-| Leakage rule | Each synthetic split uses only source files from same split |
-
-| Label | Positive count |
-|---|---:|
-| car_crash | 276 |
-| conversation | 293 |
-| engine_idling | 301 |
-| fireworks | 256 |
-| gun_shot | 248 |
-| rain | 284 |
-| road_traffic | 288 |
-| scream | 289 |
-| thunderstorm | 267 |
-| wind | 298 |
-
-
----
-
-## ML-A5. Combined manifest and feature summary
+## ML-GEE-A3. Combined manifest and feature summary
 
 | Item | Value |
 |---|---:|
@@ -112,436 +78,576 @@ It includes no-weight threshold tuning and the positive-label-weighting ablation
 | thunderstorm | 321 |
 | wind | 397 |
 
-
 ---
 
-## ML-A6. Positive weights
-
-| Label | Train positive count |
-|---|---:|
-| car_crash | 267 |
-| conversation | 264 |
-| engine_idling | 237 |
-| fireworks | 226 |
-| gun_shot | 329 |
-| rain | 278 |
-| road_traffic | 280 |
-| scream | 323 |
-| thunderstorm | 228 |
-| wind | 292 |
-
-
-| Label | Positive weight used |
-|---|---:|
-| car_crash | 5.0000 |
-| conversation | 5.0000 |
-| engine_idling | 5.0000 |
-| fireworks | 5.0000 |
-| gun_shot | 4.2401 |
-| rain | 5.0000 |
-| road_traffic | 5.0000 |
-| scream | 4.3375 |
-| thunderstorm | 5.0000 |
-| wind | 4.9041 |
-
-
----
-
-## ML-A7. Training setup
-
-| Variant | Tap blocks | Exits | Pos-weight | Loss weights | Best epoch | Best validation final-exit macro-F1 |
-|---|---|---:|---|---|---:|---:|
-| `multilabel_3exit_nohint` | `1,3` | 3 | No | `[0.3, 0.3, 1.0]` | 27 | 0.5469 |
-| `multilabel_5exit_nohint` | `1,2,3,4` | 5 | No | `[0.3, 0.3, 0.6, 0.8, 1.0]` | 37 | 0.5438 |
-| `multilabel_3exit_nohint_posweight` | `1,3` | 3 | Yes, cap 5.0 | `[0.3, 0.3, 1.0]` | 39 | 0.6251 |
-| `multilabel_5exit_nohint_posweight` | `1,2,3,4` | 5 | Yes, cap 5.0 | `[0.3, 0.3, 0.6, 0.8, 1.0]` | 35 | 0.6199 |
-
-
----
-
-## ML-A8. Final-exit comparison
-
-| Model | Exits | Exit | Pos-weight | Threshold | Macro-F1 | Micro-F1 | Samples-F1 | Exact match | Hamming loss | Avg true labels | Avg predicted labels |
-|---|---:|---:|---|---|---:|---:|---:|---:|---:|---:|---:|
-| `3exit_nohint` | 3 | 3 | No | fixed 0.5 | 0.5319 | 0.5920 | 0.5598 | 0.3034 | **0.1065** | 1.5618 | 1.0478 |
-| `3exit_nohint` | 3 | 3 | No | tuned | 0.6301 | 0.6361 | 0.6576 | 0.2725 | 0.1247 | 1.5618 | 1.8652 |
-| `3exit_nohint_posweight` | 3 | 3 | Yes | fixed 0.5 | 0.6422 | 0.6379 | **0.6663** | 0.2500 | 0.1368 | 1.5618 | 2.2163 |
-| `3exit_nohint_posweight` | 3 | 3 | Yes | tuned | **0.6530** | 0.6427 | 0.6580 | 0.2978 | 0.1256 | 1.5618 | 1.9522 |
-| `5exit_nohint` | 5 | 5 | No | fixed 0.5 | 0.5302 | 0.5852 | 0.5545 | 0.3062 | 0.1067 | 1.5618 | 1.0112 |
-| `5exit_nohint` | 5 | 5 | No | tuned | 0.6152 | **0.6454** | 0.6639 | **0.3343** | 0.1157 | 1.5618 | 1.7022 |
-| `5exit_nohint_posweight` | 5 | 5 | Yes | fixed 0.5 | 0.6159 | 0.5931 | 0.6319 | 0.2556 | 0.1626 | 1.5618 | 2.4354 |
-| `5exit_nohint_posweight` | 5 | 5 | Yes | tuned | 0.6232 | 0.6085 | 0.6341 | 0.2640 | 0.1424 | 1.5618 | 2.0758 |
-
-
----
-
-## ML-A9. Best tuned exit per model
-
-| Model | Best tuned exit | Pos-weight | Macro-F1 | Micro-F1 | Samples-F1 | Exact match | Hamming loss | Avg predicted labels |
-|---|---:|---|---:|---:|---:|---:|---:|---:|
-| `3exit_nohint_posweight` | 3 | Yes | **0.6530** | **0.6427** | 0.6580 | 0.2978 | 0.1256 | 1.9522 |
-| `5exit_nohint_posweight` | 4 | Yes | 0.6433 | 0.6349 | **0.6645** | 0.2809 | 0.1292 | 1.9775 |
-| `3exit_nohint` | 3 | No | 0.6301 | 0.6361 | 0.6576 | 0.2725 | **0.1247** | 1.8652 |
-| `5exit_nohint` | 4 | No | 0.6281 | 0.6291 | 0.6475 | **0.3090** | 0.1258 | 1.8315 |
-
-
----
-
-## ML-A10. All exit-level test metrics
-
-| Model | Exit | Threshold | Macro-F1 | Micro-F1 | Samples-F1 | Exact match | Hamming loss | Avg predicted labels |
-|---|---:|---|---:|---:|---:|---:|---:|---:|
-| `3exit_nohint` | 1 | fixed 0.5 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.1562 | — |
-| `3exit_nohint` | 1 | tuned | 0.3802 | 0.3561 | — | 0.0112 | 0.3809 | — |
-| `3exit_nohint` | 2 | fixed 0.5 | 0.3024 | 0.4091 | 0.3408 | 0.1910 | 0.1242 | — |
-| `3exit_nohint` | 2 | tuned | 0.5570 | 0.5278 | — | 0.1601 | 0.1980 | — |
-| `3exit_nohint` | 3 | fixed 0.5 | 0.5319 | 0.5920 | 0.5598 | 0.3034 | 0.1065 | 1.0478 |
-| `3exit_nohint` | 3 | tuned | 0.6301 | 0.6361 | 0.6576 | 0.2725 | 0.1247 | 1.8652 |
-| `3exit_posweight` | 1 | fixed 0.5 | 0.3901 | 0.4076 | 0.3901 | 0.0197 | 0.2997 | — |
-| `3exit_posweight` | 1 | tuned | 0.4271 | 0.4020 | — | 0.0028 | 0.3410 | — |
-| `3exit_posweight` | 2 | fixed 0.5 | 0.5552 | 0.5467 | 0.5841 | 0.1657 | 0.2031 | — |
-| `3exit_posweight` | 2 | tuned | 0.5715 | 0.5680 | — | 0.2079 | 0.1598 | — |
-| `3exit_posweight` | 3 | fixed 0.5 | 0.6422 | 0.6379 | 0.6663 | 0.2500 | 0.1368 | 2.2163 |
-| `3exit_posweight` | 3 | tuned | 0.6530 | 0.6427 | 0.6580 | 0.2978 | 0.1256 | 1.9522 |
-| `5exit_nohint` | 1 | fixed 0.5 | 0.0068 | 0.0072 | 0.0056 | 0.0056 | 0.1556 | — |
-| `5exit_nohint` | 1 | tuned | 0.3879 | 0.3619 | — | 0.0028 | 0.3635 | — |
-| `5exit_nohint` | 2 | fixed 0.5 | 0.2411 | 0.3476 | 0.2739 | 0.1601 | 0.1287 | — |
-| `5exit_nohint` | 2 | tuned | 0.5020 | 0.4722 | — | 0.1067 | 0.2242 | — |
-| `5exit_nohint` | 3 | fixed 0.5 | 0.3708 | 0.4660 | 0.3928 | 0.1994 | 0.1191 | — |
-| `5exit_nohint` | 3 | tuned | 0.5723 | 0.5563 | — | 0.1910 | 0.1747 | — |
-| `5exit_nohint` | 4 | fixed 0.5 | 0.5135 | 0.5686 | 0.5325 | 0.2697 | 0.1104 | — |
-| `5exit_nohint` | 4 | tuned | 0.6281 | 0.6291 | 0.6475 | 0.3090 | 0.1258 | 1.8315 |
-| `5exit_nohint` | 5 | fixed 0.5 | 0.5302 | 0.5852 | 0.5545 | 0.3062 | 0.1067 | 1.0112 |
-| `5exit_nohint` | 5 | tuned | 0.6152 | 0.6454 | 0.6639 | 0.3343 | 0.1157 | 1.7022 |
-| `5exit_posweight` | 1 | fixed 0.5 | 0.3887 | 0.4031 | 0.3880 | 0.0309 | 0.3020 | — |
-| `5exit_posweight` | 1 | tuned | 0.4162 | 0.3964 | — | 0.0084 | 0.3362 | — |
-| `5exit_posweight` | 2 | fixed 0.5 | 0.4655 | 0.4669 | 0.4796 | 0.0646 | 0.2604 | — |
-| `5exit_posweight` | 2 | tuned | 0.5042 | 0.4653 | — | 0.0758 | 0.2531 | — |
-| `5exit_posweight` | 3 | fixed 0.5 | 0.5495 | 0.5416 | 0.5768 | 0.1489 | 0.2087 | — |
-| `5exit_posweight` | 3 | tuned | 0.5751 | 0.5600 | — | 0.2022 | 0.1730 | — |
-| `5exit_posweight` | 4 | fixed 0.5 | 0.6244 | 0.6121 | 0.6466 | 0.2219 | 0.1545 | — |
-| `5exit_posweight` | 4 | tuned | 0.6433 | 0.6349 | 0.6645 | 0.2809 | 0.1292 | 1.9775 |
-| `5exit_posweight` | 5 | fixed 0.5 | 0.6159 | 0.5931 | 0.6319 | 0.2556 | 0.1626 | 2.4354 |
-| `5exit_posweight` | 5 | tuned | 0.6232 | 0.6085 | 0.6341 | 0.2640 | 0.1424 | 2.0758 |
-
-
----
-
-## ML-A11. Positive-weight final-exit per-label fixed-vs-tuned metrics
-
-| Model | Label | Threshold | Support | Fixed P | Fixed R | Fixed F1 | Tuned P | Tuned R | Tuned F1 | ΔF1 |
-|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| `3exit_posweight` | car_crash | 0.61 | 47 | 0.5556 | 0.7447 | 0.6364 | 0.6400 | 0.6809 | 0.6598 | +0.0234 |
-| `3exit_posweight` | conversation | 0.47 | 60 | 0.9828 | 0.9500 | 0.9661 | 0.9667 | 0.9667 | 0.9667 | +0.0006 |
-| `3exit_posweight` | engine_idling | 0.75 | 49 | 0.3889 | 0.8571 | 0.5350 | 0.5606 | 0.7551 | 0.6435 | +0.1085 |
-| `3exit_posweight` | fireworks | 0.42 | 52 | 0.4375 | 0.6731 | 0.5303 | 0.4211 | 0.7692 | 0.5442 | +0.0139 |
-| `3exit_posweight` | gun_shot | 0.77 | 76 | 0.6522 | 0.7895 | 0.7143 | 0.7812 | 0.6579 | 0.7143 | +0.0000 |
-| `3exit_posweight` | rain | 0.88 | 52 | 0.5930 | 0.9808 | 0.7391 | 0.8269 | 0.8269 | 0.8269 | +0.0878 |
-| `3exit_posweight` | road_traffic | 0.63 | 63 | 0.4937 | 0.6190 | 0.5493 | 0.4630 | 0.3968 | 0.4274 | -0.1219 |
-| `3exit_posweight` | scream | 0.51 | 57 | 0.8413 | 0.9298 | 0.8833 | 0.8413 | 0.9298 | 0.8833 | +0.0000 |
-| `3exit_posweight` | thunderstorm | 0.47 | 49 | 0.2800 | 0.4286 | 0.3387 | 0.2771 | 0.4694 | 0.3485 | +0.0098 |
-| `3exit_posweight` | wind | 0.41 | 51 | 0.4235 | 0.7059 | 0.5294 | 0.3796 | 0.8039 | 0.5157 | -0.0137 |
-| `5exit_posweight` | car_crash | 0.43 | 47 | 0.4444 | 0.7660 | 0.5625 | 0.4138 | 0.7660 | 0.5373 | -0.0252 |
-| `5exit_posweight` | conversation | 0.45 | 60 | 0.9661 | 0.9500 | 0.9580 | 0.9661 | 0.9500 | 0.9580 | +0.0000 |
-| `5exit_posweight` | engine_idling | 0.57 | 49 | 0.4483 | 0.7959 | 0.5735 | 0.5429 | 0.7755 | 0.6387 | +0.0652 |
-| `5exit_posweight` | fireworks | 0.64 | 52 | 0.2714 | 0.7308 | 0.3958 | 0.4156 | 0.6154 | 0.4961 | +0.1003 |
-| `5exit_posweight` | gun_shot | 0.74 | 76 | 0.6566 | 0.8553 | 0.7429 | 0.7606 | 0.7105 | 0.7347 | -0.0082 |
-| `5exit_posweight` | rain | 0.46 | 52 | 0.8163 | 0.7692 | 0.7921 | 0.7843 | 0.7692 | 0.7767 | -0.0154 |
-| `5exit_posweight` | road_traffic | 0.43 | 63 | 0.5088 | 0.4603 | 0.4833 | 0.4507 | 0.5079 | 0.4776 | -0.0057 |
-| `5exit_posweight` | scream | 0.65 | 57 | 0.7794 | 0.9298 | 0.8480 | 0.8667 | 0.9123 | 0.8889 | +0.0409 |
-| `5exit_posweight` | thunderstorm | 0.57 | 49 | 0.2149 | 0.5306 | 0.3059 | 0.1837 | 0.3673 | 0.2449 | -0.0610 |
-| `5exit_posweight` | wind | 0.58 | 51 | 0.3679 | 0.7647 | 0.4968 | 0.3684 | 0.6863 | 0.4795 | -0.0173 |
-
-
----
-
-## ML-A12. Positive-weight tuned thresholds
-
-| Model | Final exit | car_crash | conversation | engine_idling | fireworks | gun_shot | rain | road_traffic | scream | thunderstorm | wind |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| `3exit_posweight` | 3 | 0.61 | 0.47 | 0.75 | 0.42 | 0.77 | 0.88 | 0.63 | 0.51 | 0.47 | 0.41 |
-| `5exit_posweight` | 5 | 0.43 | 0.45 | 0.57 | 0.64 | 0.74 | 0.46 | 0.43 | 0.65 | 0.57 | 0.58 |
-
-
----
-
-## ML-A13. Key deltas
-
-| Comparison | Before | After | Delta |
-|---|---:|---:|---:|
-| 3-exit no-weight fixed → tuned macro-F1 | 0.5319 | 0.6301 | +0.0982 |
-| 5-exit no-weight fixed → tuned macro-F1 | 0.5302 | 0.6152 | +0.0850 |
-| 3-exit no-weight tuned → pos-weight tuned macro-F1 | 0.6301 | 0.6530 | +0.0229 |
-| 5-exit no-weight tuned → pos-weight tuned macro-F1 | 0.6152 | 0.6232 | +0.0080 |
-| 3-exit no-weight tuned → pos-weight tuned exact match | 0.2725 | 0.2978 | +0.0253 |
-| 5-exit no-weight tuned → pos-weight tuned exact match | 0.3343 | 0.2640 | -0.0703 |
-| 3-exit no-weight tuned → pos-weight tuned hamming loss | 0.1247 | 0.1256 | +0.0009 |
-| 5-exit no-weight tuned → pos-weight tuned hamming loss | 0.1157 | 0.1424 | +0.0267 |
-
----
-
-## ML-A14. Research notes
-
-1. Fixed `0.5` threshold under-predicts positives.
-2. Per-label threshold tuning is required for fair multi-label comparison.
-3. Positive weighting improves the compact 3-exit macro-F1 most clearly.
-4. Positive weighting is too aggressive for the 5-exit model at cap `5.0` because it predicts `2.0758` labels/sample.
-5. Exit 4 is the best tuned macro-F1 exit for both 5-exit settings.
-6. Thunderstorm is improved but unresolved.
-
----
-
-## ML-A15. Generated result folders
-
-No-weight summary:
+## ML-GEE-A4. Experiment store
 
 ```text
-runs_multilabel\summary_thresholds```
-
-4-model positive-weight summary:
-
-```text
-runs_multilabel\summary_thresholds_posweight```
-
-Important files:
-
-```text
-runs_multilabel\summary_thresholds_posweightll_exit_metrics.csv
-runs_multilabel\summary_thresholds_posweightll_exit_metrics.md
-runs_multilabel\summary_thresholds_posweight
-inal_exit_comparison.csv
-runs_multilabel\summary_thresholds_posweight
-inal_exit_comparison.md
-runs_multilabel\summary_thresholds_posweightest_exit_comparison.csv
-runs_multilabel\summary_thresholds_posweightest_exit_comparison.md
-runs_multilabel\summary_thresholds_posweight
-inal_exit_per_label.csv
-runs_multilabel\summary_thresholds_posweight
-inal_exit_per_label.md
-runs_multilabel\summary_thresholds_posweight
-inal_exit_thresholds.csv
-runs_multilabel\summary_thresholds_posweight
-inal_exit_thresholds.md
-runs_multilabel\summary_thresholds_posweight\README_TABLES.md
+runs_multilabel/
+│
+├─ training/
+│  ├─ multilabel_nohint/
+│  │  ├─ multilabel_nohint_001_3exit_YYYYMMDD_HHMMSS/
+│  │  └─ multilabel_nohint_002_5exit_YYYYMMDD_HHMMSS/
+│  │
+│  └─ multilabel_posweight/
+│     ├─ multilabel_posweight_001_3exit_YYYYMMDD_HHMMSS/
+│     └─ multilabel_posweight_002_5exit_YYYYMMDD_HHMMSS/
+│
+├─ policy_eval/
+│  └─ multilabel_greedy_policy/
+│     ├─ multilabel_greedy_policy_001_minexit2_stable2/
+│     ├─ multilabel_greedy_policy_002_minexit1_stable2/
+│     ├─ multilabel_greedy_policy_003_minexit1_stable1/
+│     └─ multilabel_greedy_policy_004_minexit1_stable2_allowempty/
+│
+└─ summary/
+   └─ threshold_summary_001_static_tuned/
 ```
 
-## Reproducibility commands
+Important generated files per policy/model folder:
 
-Run commands from:
+```text
+dynamic_early_exit_efficiency.csv
+dynamic_early_exit_efficiency.md
+static_per_exit_quality.csv
+static_per_exit_quality.md
+exit_distribution.csv
+exit_distribution.md
+compute_depth_units.csv
+compute_depth_units.md
+full_policy_sweep.csv
+full_policy_sweep.md
+selected_policy_per_label.csv
+selected_policy_per_label.md
+policy_results.json
+policy_summary.md
+```
+
+Important static summary files:
+
+```text
+runs_multilabel\summary\threshold_summary_001_static_tuned\all_exit_metrics.csv
+runs_multilabel\summary\threshold_summary_001_static_tuned\all_exit_metrics.md
+runs_multilabel\summary\threshold_summary_001_static_tuned\final_exit_comparison.csv
+runs_multilabel\summary\threshold_summary_001_static_tuned\final_exit_comparison.md
+runs_multilabel\summary\threshold_summary_001_static_tuned\best_exit_comparison.csv
+runs_multilabel\summary\threshold_summary_001_static_tuned\best_exit_comparison.md
+runs_multilabel\summary\threshold_summary_001_static_tuned\final_exit_per_label.csv
+runs_multilabel\summary\threshold_summary_001_static_tuned\final_exit_per_label.md
+runs_multilabel\summary\threshold_summary_001_static_tuned\final_exit_thresholds.csv
+runs_multilabel\summary\threshold_summary_001_static_tuned\final_exit_thresholds.md
+runs_multilabel\summary\threshold_summary_001_static_tuned\README_TABLES.md
+```
+
+---
+
+## ML-GEE-A5. Model variants
+
+| Model | Tap blocks | Exits | Pos-weight | `pos_weight_max` | Purpose |
+|---|---|---:|---|---:|---|
+| `3exit_nohint` | `1,3` | 3 | No | — | Compact Tiny baseline |
+| `5exit_nohint` | `1,2,3,4` | 5 | No | — | More dynamic exit opportunities |
+| `3exit_posweight` | `1,3` | 3 | Yes | 20.0 | Compact recall-sensitive model |
+| `5exit_posweight` | `1,2,3,4` | 5 | Yes | 20.0 | Dynamic recall-sensitive model |
+
+---
+
+## ML-GEE-A6. Greedy policy definitions
+
+For each exit `e`, the model produces sigmoid probabilities:
+
+```text
+p_e = sigmoid(logits_e)
+```
+
+The predicted label set is obtained using tuned per-exit/per-label thresholds:
+
+```text
+y_hat_e[label] = 1 if p_e[label] >= tau_e,label else 0
+```
+
+The policy stops when the predicted label set is stable for `stable_k` consecutive considered exits.
+
+| Policy | Setting | Interpretation |
+|---|---|---|
+| Policy 001 | `min_exit=2, stable_k=2, allow_empty_stop=False` | Conservative; ignores Exit 1 |
+| Policy 002 | `min_exit=1, stable_k=2, allow_empty_stop=False` | Allows Exit 1; fair test for 3-exit early stopping |
+| Policy 003 | `min_exit=1, stable_k=1, allow_empty_stop=False` | Aggressive; mostly stops at Exit 1 |
+| Policy 004 | `min_exit=1, stable_k=2, allow_empty_stop=True` | Empty-label stopping ablation |
+
+There is no `min_exit=0` because exits are numbered from `1`.
+
+---
+
+## ML-GEE-A7. Static final-exit comparison
+
+| Model | Final Exit | Threshold | Macro-F1 | Micro-F1 | Samples-F1 | Exact Match | Hamming Loss | Avg Pred Labels |
+|---|---:|---|---:|---:|---:|---:|---:|---:|
+| `3exit_nohint` | 3 | fixed 0.5 | 0.5319 | 0.5920 | 0.5598 | 0.3034 | **0.1065** | 1.0478 |
+| `3exit_nohint` | 3 | tuned | 0.6301 | 0.6361 | 0.6576 | 0.2725 | 0.1247 | 1.8652 |
+| `3exit_posweight` | 3 | fixed 0.5 | 0.6356 | 0.6173 | 0.6499 | 0.2191 | 0.1525 | 2.4242 |
+| `3exit_posweight` | 3 | tuned | **0.6451** | 0.6338 | 0.6600 | 0.2753 | 0.1272 | 1.9129 |
+| `5exit_nohint` | 5 | fixed 0.5 | 0.5302 | 0.5852 | 0.5545 | 0.3062 | 0.1067 | 1.0112 |
+| `5exit_nohint` | 5 | tuned | 0.6152 | **0.6454** | **0.6639** | **0.3343** | 0.1157 | 1.7022 |
+| `5exit_posweight` | 5 | fixed 0.5 | 0.6058 | 0.5764 | 0.6224 | 0.2247 | 0.1775 | 2.6292 |
+| `5exit_posweight` | 5 | tuned | 0.6384 | 0.6223 | 0.6489 | 0.2612 | 0.1419 | 2.1938 |
+
+---
+
+## ML-GEE-A8. Best static exit per model
+
+| Model | Best Static Exit | Macro-F1 | Micro-F1 | Samples-F1 | Exact Match | Hamming Loss | Avg Pred Labels |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `5exit_posweight` | **4** | **0.6538** | **0.6536** | **0.6825** | **0.3315** | **0.1191** | 1.8764 |
+| `3exit_posweight` | 3 | 0.6451 | 0.6338 | 0.6600 | 0.2753 | 0.1272 | 1.9129 |
+| `3exit_nohint` | 3 | 0.6301 | 0.6361 | 0.6576 | 0.2725 | 0.1247 | 1.8652 |
+| `5exit_nohint` | **4** | 0.6281 | 0.6291 | 0.6475 | 0.3090 | 0.1258 | 1.8315 |
+
+Static conclusion:
+
+```text
+5exit_posweight Exit 4 macro-F1 = 0.6538
+```
+
+The best 5-exit static head is not the final exit. This supports the idea that intermediate exits can be useful compute-adaptive decision points.
+
+---
+
+## ML-GEE-A9. Static per-exit quality
+
+| Model | Exit | Macro-F1 | Micro-F1 | Samples-F1 | Exact Match | Hamming Loss | Avg Pred Labels |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `3exit_nohint` | 1 | 0.3802 | 0.3561 | 0.3560 | 0.0112 | 0.3809 | 4.3539 |
+| `3exit_nohint` | 2 | 0.5570 | 0.5278 | 0.5586 | 0.1601 | 0.1980 | 2.6320 |
+| `3exit_nohint` | 3 | **0.6301** | **0.6361** | **0.6576** | **0.2725** | **0.1247** | 1.8652 |
+| `3exit_posweight` | 1 | 0.4268 | 0.4038 | 0.4047 | 0.0000 | 0.3508 | 4.3230 |
+| `3exit_posweight` | 2 | 0.5727 | 0.5649 | 0.5841 | 0.1770 | 0.1705 | 2.3567 |
+| `3exit_posweight` | 3 | **0.6451** | **0.6338** | **0.6600** | **0.2753** | **0.1272** | 1.9129 |
+| `5exit_nohint` | 1 | 0.3879 | 0.3619 | 0.3565 | 0.0028 | 0.3635 | 4.1348 |
+| `5exit_nohint` | 2 | 0.5020 | 0.4722 | 0.4805 | 0.1067 | 0.2242 | 2.6854 |
+| `5exit_nohint` | 3 | 0.5723 | 0.5563 | 0.5893 | 0.1910 | 0.1747 | 2.3764 |
+| `5exit_nohint` | 4 | **0.6281** | 0.6291 | 0.6475 | 0.3090 | 0.1258 | 1.8315 |
+| `5exit_nohint` | 5 | 0.6152 | **0.6454** | **0.6639** | **0.3343** | **0.1157** | 1.7022 |
+| `5exit_posweight` | 1 | 0.4116 | 0.3957 | 0.3913 | 0.0253 | 0.3191 | 3.7191 |
+| `5exit_posweight` | 2 | 0.4777 | 0.4412 | 0.4392 | 0.0815 | 0.2455 | 2.8315 |
+| `5exit_posweight` | 3 | 0.5932 | 0.5881 | 0.6202 | 0.2528 | 0.1542 | 2.1826 |
+| `5exit_posweight` | 4 | **0.6538** | **0.6536** | **0.6825** | **0.3315** | **0.1191** | 1.8764 |
+| `5exit_posweight` | 5 | 0.6384 | 0.6223 | 0.6489 | 0.2612 | 0.1419 | 2.1938 |
+
+Early-exit diagnostic:
+
+```text
+True avg labels per test sample = 1.5618
+
+Exit 1 avg predicted labels:
+3exit_nohint      = 4.3539
+3exit_posweight   = 4.3230
+5exit_nohint      = 4.1348
+5exit_posweight   = 3.7191
+```
+
+Exit 1 is currently weak and over-predicts labels. This explains why immediate Exit-1 stopping performs poorly.
+
+---
+
+## ML-GEE-A10. Selected policy experiments
+
+| Experiment | Model | min_exit | stable_k | empty stop | Macro-F1 | Micro-F1 | Samples-F1 | Exact Match | Hamming Loss | Avg Exit Depth | Compute Saved |
+|---|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|
+| Policy 001 | `3exit_nohint` | 2 | 2 | False | 0.6301 | 0.6361 | 0.6576 | 0.2725 | 0.1247 | 3.0000 / 3 | 0.00% |
+| Policy 001 | `3exit_posweight` | 2 | 2 | False | **0.6451** | 0.6338 | 0.6600 | 0.2753 | 0.1272 | 3.0000 / 3 | 0.00% |
+| Policy 001 | `5exit_nohint` | 2 | 2 | False | 0.6246 | 0.6340 | 0.6601 | 0.2978 | 0.1301 | 4.1994 / 5 | 16.01% |
+| Policy 001 | `5exit_posweight` | 2 | 2 | False | 0.6321 | 0.6207 | **0.6636** | 0.2949 | 0.1421 | 4.2893 / 5 | 14.21% |
+| Policy 002 | `3exit_nohint` | 1 | 2 | False | 0.6179 | 0.6160 | 0.6495 | 0.2612 | 0.1419 | 2.8848 / 3 | 3.84% |
+| Policy 002 | `3exit_posweight` | 1 | 2 | False | 0.6293 | 0.6162 | 0.6530 | 0.2725 | 0.1396 | 2.9242 / 3 | 2.53% |
+| Policy 002 | `5exit_nohint` | 1 | 2 | False | 0.6097 | 0.6112 | 0.6451 | 0.2837 | 0.1458 | 3.9551 / 5 | 20.90% |
+| Policy 002 | `5exit_posweight` | 1 | 2 | False | 0.6260 | 0.6124 | 0.6580 | 0.2865 | 0.1497 | 4.0534 / 5 | 18.93% |
+| Policy 003 | `3exit_nohint` | 1 | 1 | False | 0.3806 | 0.3569 | 0.3588 | 0.0140 | 0.3806 | 1.0028 / 3 | 66.57% |
+| Policy 003 | `3exit_posweight` | 1 | 1 | False | 0.4268 | 0.4038 | 0.4047 | 0.0000 | 0.3508 | 1.0000 / 3 | 66.67% |
+| Policy 003 | `5exit_nohint` | 1 | 1 | False | 0.3890 | 0.3627 | 0.3594 | 0.0056 | 0.3632 | 1.0028 / 5 | 79.94% |
+| Policy 003 | `5exit_posweight` | 1 | 1 | False | 0.4116 | 0.3957 | 0.3913 | 0.0253 | 0.3191 | 1.0000 / 5 | 80.00% |
+| Policy 004 | `3exit_nohint` | 1 | 2 | True | 0.6179 | 0.6160 | 0.6495 | 0.2612 | 0.1419 | 2.8848 / 3 | 3.84% |
+| Policy 004 | `3exit_posweight` | 1 | 2 | True | 0.6293 | 0.6162 | 0.6530 | 0.2725 | 0.1396 | 2.9242 / 3 | 2.53% |
+| Policy 004 | `5exit_nohint` | 1 | 2 | True | 0.6094 | 0.6107 | 0.6423 | 0.2809 | 0.1458 | 3.9410 / 5 | 21.18% |
+| Policy 004 | `5exit_posweight` | 1 | 2 | True | 0.6244 | 0.6101 | 0.6477 | 0.2781 | 0.1497 | 4.0112 / 5 | 19.78% |
+
+---
+
+## ML-GEE-A11. Policy 001 vs Policy 002
+
+This is the main fair comparison because it tests whether allowing Exit 1 makes the 3-exit Tiny model behave like a real early-exit model.
+
+| Model | Policy 001 Macro-F1 | Policy 002 Macro-F1 | F1 Change | Policy 001 Saved | Policy 002 Saved | Saving Gain |
+|---|---:|---:|---:|---:|---:|---:|
+| `3exit_nohint` | 0.6301 | 0.6179 | -0.0122 | 0.00% | 3.84% | +3.84% |
+| `3exit_posweight` | 0.6451 | 0.6293 | -0.0158 | 0.00% | 2.53% | +2.53% |
+| `5exit_nohint` | 0.6246 | 0.6097 | -0.0149 | 16.01% | 20.90% | +4.89% |
+| `5exit_posweight` | 0.6321 | 0.6260 | -0.0061 | 14.21% | 18.93% | +4.72% |
+
+Interpretation:
+
+```text
+3exit_nohint:
+  Exit 2 samples = 41 / 356
+  compute saved  = 3.84%
+  macro-F1 drop  = -0.0122
+
+3exit_posweight:
+  Exit 2 samples = 27 / 356
+  compute saved  = 2.53%
+  macro-F1 drop  = -0.0158
+```
+
+Conclusion:
+
+> Allowing Exit 1 makes the compact 3-exit model behave as a true early-exit model, but savings are still modest because early label-set stability occurs for only a small proportion of samples.
+
+---
+
+## ML-GEE-A12. Exit distribution
+
+| Experiment | Model | Exit 1 | Exit 2 | Exit 3 | Exit 4 | Exit 5 |
+|---|---|---:|---:|---:|---:|---:|
+| Policy 001 | `3exit_nohint` | 0 | 0 | 356 | — | — |
+| Policy 001 | `3exit_posweight` | 0 | 0 | 356 | — | — |
+| Policy 001 | `5exit_nohint` | 0 | 0 | 101 | 83 | 172 |
+| Policy 001 | `5exit_posweight` | 0 | 0 | 59 | 135 | 162 |
+| Policy 002 | `3exit_nohint` | 0 | 41 | 315 | — | — |
+| Policy 002 | `3exit_posweight` | 0 | 27 | 329 | — | — |
+| Policy 002 | `5exit_nohint` | 0 | 41 | 85 | 79 | 151 |
+| Policy 002 | `5exit_posweight` | 0 | 47 | 33 | 130 | 146 |
+| Policy 003 | `3exit_nohint` | 355 | 1 | 0 | — | — |
+| Policy 003 | `3exit_posweight` | 356 | 0 | 0 | — | — |
+| Policy 003 | `5exit_nohint` | 355 | 1 | 0 | 0 | 0 |
+| Policy 003 | `5exit_posweight` | 356 | 0 | 0 | 0 | 0 |
+| Policy 004 | `3exit_nohint` | 0 | 41 | 315 | — | — |
+| Policy 004 | `3exit_posweight` | 0 | 27 | 329 | — | — |
+| Policy 004 | `5exit_nohint` | 0 | 41 | 87 | 80 | 148 |
+| Policy 004 | `5exit_posweight` | 0 | 47 | 40 | 131 | 138 |
+
+---
+
+## ML-GEE-A13. Best practical dynamic trade-offs from sweep
+
+| Model | Best Practical Policy | Macro-F1 | Micro-F1 | Samples-F1 | Avg Depth | Compute Saved |
+|---|---|---:|---:|---:|---:|---:|
+| `3exit_nohint` | `min_exit=1, stable_k=2` | 0.6179 | 0.6160 | 0.6495 | 2.8848 / 3 | 3.84% |
+| `3exit_posweight` | `min_exit=1, stable_k=2` | 0.6293 | 0.6162 | 0.6530 | 2.9242 / 3 | 2.53% |
+| `5exit_nohint` | `min_exit=3, stable_k=2` | 0.6267 | **0.6486** | 0.6684 | 4.6433 / 5 | 7.13% |
+| `5exit_posweight` | `min_exit=3, stable_k=2` | **0.6449** | 0.6313 | **0.6690** | 4.5337 / 5 | **9.33%** |
+
+Recommended headline result:
+
+```text
+Model: 5exit_posweight
+Policy: min_exit=3, stable_k=2
+Macro-F1: 0.6449
+Samples-F1: 0.6690
+Avg exit depth: 4.5337 / 5
+Estimated depth-compute saved: 9.33%
+```
+
+---
+
+## ML-GEE-A14. Key research findings
+
+1. Multi-label early-exit evaluation is now dynamic, not only static.
+2. Per-label threshold tuning is required for fair multi-label comparison.
+3. Positive weighting improves label-balanced behaviour but may increase false positives.
+4. Exit 1 is not yet reliable for immediate stopping.
+5. The 3-exit Tiny model can save compute only when Exit 1 is enabled, but current savings are small.
+6. The 5-exit model provides better dynamic flexibility because it has more intermediate decision points.
+7. Exit 4 is the strongest static early-exit candidate.
+8. A later stability policy, especially `min_exit=3, stable_k=2`, gives the best current accuracy-efficiency trade-off.
+9. Future work should strengthen earlier exits through loss design, calibration, and sigmoid-aware hint passing.
+
+---
+
+## ML-GEE-A15. Recommended thesis/README wording
+
+> The multi-label greedy early-exit study shows that dynamic inference is possible in the NeuroAccuExit architecture, but the usefulness of early exits depends strongly on exit reliability. Conservative label-set stability preserves prediction quality and provides clear compute savings in 5-exit models, while compact 3-exit models require Exit 1 to be enabled before any early stopping is possible. However, because Exit 1 currently over-predicts labels, aggressive stopping produces unacceptable F1 degradation. The strongest practical trade-off is obtained by using later stable exits, particularly the 5-exit positive-weighted model with `min_exit=3, stable_k=2`, which maintains high macro-F1 while saving estimated depth compute.
+
+---
+
+## ML-GEE-A16. Reproducibility commands
+
+Run from:
 
 ```powershell
 cd C:\Users\wwwsa\PycharmProjects\NeuroAccuExit-ASHADIP
+git checkout kexit_multi-label_greedy_EE
 ```
 
-### Build clean seed manifest
+Set common variables:
 
 ```powershell
-python scripts\build_multilabel_seed_manifest.py `
-  --root "multilabel_data\clean_seed" `
-  --out "multilabel_data\metadata\clean_seed_manifest.csv" `
-  --labels_json "multilabel_data\metadata\labels.json" `
-  --audio_exts ".wav,.flac,.mp3,.ogg" `
-  --seed 42
+$DEVICE = "cpu"
+
+$MANIFEST = "multilabel_cache\metadata\multilabel_features_manifest.csv"
+$FEATURES_ROOT = "multilabel_cache\features"
+$LABELS_JSON = "multilabel_data\metadata\labels.json"
+
+$ROOT = "runs_multilabel"
+
+$TRAIN_NOHINT = "$ROOT\training\multilabel_nohint"
+$TRAIN_POSWEIGHT = "$ROOT\training\multilabel_posweight"
+
+$POLICY_ROOT = "$ROOT\policy_eval\multilabel_greedy_policy"
+$SUMMARY_ROOT = "$ROOT\summary"
+
+New-Item -ItemType Directory -Force -Path $TRAIN_NOHINT | Out-Null
+New-Item -ItemType Directory -Force -Path $TRAIN_POSWEIGHT | Out-Null
+New-Item -ItemType Directory -Force -Path $POLICY_ROOT | Out-Null
+New-Item -ItemType Directory -Force -Path $SUMMARY_ROOT | Out-Null
 ```
 
-### Create synthetic mixtures
+### Train four models
 
-```powershell
-python scripts\create_synthetic_multilabel_mixtures.py `
-  --seed_manifest "multilabel_data\metadata\clean_seed_manifest.csv" `
-  --labels_json "multilabel_data\metadata\labels.json" `
-  --out_audio_root "multilabel_data\synthetic_mixed\audio" `
-  --out_manifest "multilabel_data\metadata\synthetic_mixed_manifest.csv" `
-  --combined_out "multilabel_data\metadata\multilabel_train_manifest.csv" `
-  --num_train 1000 `
-  --num_val 200 `
-  --num_test 200 `
-  --mix_size_min 2 `
-  --mix_size_max 2 `
-  --sample_rate 16000 `
-  --clip_sec 1.0 `
-  --seed 42
-```
-
-### Extract features
-
-```powershell
-python scripts\extract_multilabel_features.py `
-  --manifest "multilabel_data\metadata\multilabel_train_manifest.csv" `
-  --labels_json "multilabel_data\metadata\labels.json" `
-  --out_cache "multilabel_cache" `
-  --sample_rate 16000 `
-  --clip_sec 1.0 `
-  --n_mels 64 `
-  --n_fft 1024 `
-  --win_ms 25 `
-  --hop_ms 10 `
-  --cmvn
-```
-
-### Train 3-exit no-hint
+3-exit no-hint:
 
 ```powershell
 python -m training.train_multilabel `
-  --manifest "multilabel_cache\metadata\multilabel_features_manifest.csv" `
-  --features_root "multilabel_cache\features" `
-  --labels_json "multilabel_data\metadata\labels.json" `
-  --runs_root "runs_multilabel" `
-  --variant "multilabel_3exit_nohint" `
+  --manifest $MANIFEST `
+  --features_root $FEATURES_ROOT `
+  --labels_json $LABELS_JSON `
+  --runs_root $TRAIN_NOHINT `
+  --variant "multilabel_nohint_001_3exit" `
   --tap_blocks "1,3" `
   --epochs 40 `
   --batch_size 64 `
   --lr 0.001 `
-  --threshold 0.5 `
-  --device cpu
+  --device $DEVICE
 ```
 
-### Train 5-exit no-hint
+5-exit no-hint:
 
 ```powershell
 python -m training.train_multilabel `
-  --manifest "multilabel_cache\metadata\multilabel_features_manifest.csv" `
-  --features_root "multilabel_cache\features" `
-  --labels_json "multilabel_data\metadata\labels.json" `
-  --runs_root "runs_multilabel" `
-  --variant "multilabel_5exit_nohint" `
+  --manifest $MANIFEST `
+  --features_root $FEATURES_ROOT `
+  --labels_json $LABELS_JSON `
+  --runs_root $TRAIN_NOHINT `
+  --variant "multilabel_nohint_002_5exit" `
   --tap_blocks "1,2,3,4" `
   --epochs 40 `
   --batch_size 64 `
   --lr 0.001 `
-  --threshold 0.5 `
-  --device cpu
+  --device $DEVICE
 ```
 
-### Tune no-hint thresholds
-
-```powershell
-python scripts\tune_multilabel_thresholds.py `
-  --run_dir "runs_multilabel\multilabel_3exit_nohint_20260509_002118" `
-  --device cpu
-
-python scripts\tune_multilabel_thresholds.py `
-  --run_dir "runs_multilabel\multilabel_5exit_nohint_20260509_001254" `
-  --device cpu
-```
-
-### Train 3-exit positive-weight model
+3-exit pos-weight:
 
 ```powershell
 python -m training.train_multilabel `
-  --manifest "multilabel_cache\metadata\multilabel_features_manifest.csv" `
-  --features_root "multilabel_cache\features" `
-  --labels_json "multilabel_data\metadata\labels.json" `
-  --runs_root "runs_multilabel" `
-  --variant "multilabel_3exit_nohint_posweight" `
+  --manifest $MANIFEST `
+  --features_root $FEATURES_ROOT `
+  --labels_json $LABELS_JSON `
+  --runs_root $TRAIN_POSWEIGHT `
+  --variant "multilabel_posweight_001_3exit" `
   --tap_blocks "1,3" `
   --epochs 40 `
   --batch_size 64 `
   --lr 0.001 `
-  --threshold 0.5 `
+  --device $DEVICE `
   --use_pos_weight `
-  --pos_weight_max 5.0 `
-  --device cpu
+  --pos_weight_max 20.0
 ```
 
-### Train 5-exit positive-weight model
+5-exit pos-weight:
 
 ```powershell
 python -m training.train_multilabel `
-  --manifest "multilabel_cache\metadata\multilabel_features_manifest.csv" `
-  --features_root "multilabel_cache\features" `
-  --labels_json "multilabel_data\metadata\labels.json" `
-  --runs_root "runs_multilabel" `
-  --variant "multilabel_5exit_nohint_posweight" `
+  --manifest $MANIFEST `
+  --features_root $FEATURES_ROOT `
+  --labels_json $LABELS_JSON `
+  --runs_root $TRAIN_POSWEIGHT `
+  --variant "multilabel_posweight_002_5exit" `
   --tap_blocks "1,2,3,4" `
   --epochs 40 `
   --batch_size 64 `
   --lr 0.001 `
-  --threshold 0.5 `
+  --device $DEVICE `
   --use_pos_weight `
-  --pos_weight_max 5.0 `
-  --device cpu
+  --pos_weight_max 20.0
 ```
 
-### Tune positive-weight thresholds
+### Re-detect all four trained run directories
 
 ```powershell
-python scripts\tune_multilabel_thresholds.py `
-  --run_dir "runs_multilabel\multilabel_3exit_nohint_posweight_20260510_094046" `
-  --device cpu
+$RUN_3_NOHINT = (Get-ChildItem $TRAIN_NOHINT -Directory |
+  Where-Object { $_.Name -like "multilabel_nohint_001_3exit_*" } |
+  Sort-Object LastWriteTime -Descending |
+  Select-Object -First 1).FullName
 
-python scripts\tune_multilabel_thresholds.py `
-  --run_dir "runs_multilabel\multilabel_5exit_nohint_posweight_20260510_094350" `
-  --device cpu
+$RUN_5_NOHINT = (Get-ChildItem $TRAIN_NOHINT -Directory |
+  Where-Object { $_.Name -like "multilabel_nohint_002_5exit_*" } |
+  Sort-Object LastWriteTime -Descending |
+  Select-Object -First 1).FullName
+
+$RUN_3_POSWEIGHT = (Get-ChildItem $TRAIN_POSWEIGHT -Directory |
+  Where-Object { $_.Name -like "multilabel_posweight_001_3exit_*" } |
+  Sort-Object LastWriteTime -Descending |
+  Select-Object -First 1).FullName
+
+$RUN_5_POSWEIGHT = (Get-ChildItem $TRAIN_POSWEIGHT -Directory |
+  Where-Object { $_.Name -like "multilabel_posweight_002_5exit_*" } |
+  Sort-Object LastWriteTime -Descending |
+  Select-Object -First 1).FullName
 ```
 
-### Generate final 4-model summary
+### Tune thresholds
 
 ```powershell
+python scripts\tune_multilabel_thresholds.py --run_dir $RUN_3_NOHINT --device $DEVICE
+python scripts\tune_multilabel_thresholds.py --run_dir $RUN_5_NOHINT --device $DEVICE
+python scripts\tune_multilabel_thresholds.py --run_dir $RUN_3_POSWEIGHT --device $DEVICE
+python scripts\tune_multilabel_thresholds.py --run_dir $RUN_5_POSWEIGHT --device $DEVICE
+```
+
+### Static threshold summary
+
+```powershell
+$RUN_DIRS = @(
+  $RUN_3_NOHINT,
+  $RUN_5_NOHINT,
+  $RUN_3_POSWEIGHT,
+  $RUN_5_POSWEIGHT
+)
+
+$NAMES = @(
+  "3exit_nohint",
+  "5exit_nohint",
+  "3exit_posweight",
+  "5exit_posweight"
+)
+
 python scripts\summarize_multilabel_threshold_runs.py `
-  --run_dirs `
-    "runs_multilabel\multilabel_3exit_nohint_20260509_002118" `
-    "runs_multilabel\multilabel_5exit_nohint_20260509_001254" `
-    "runs_multilabel\multilabel_3exit_nohint_posweight_20260510_094046" `
-    "runs_multilabel\multilabel_5exit_nohint_posweight_20260510_094350" `
-  --names `
-    "3exit_nohint" `
-    "5exit_nohint" `
-    "3exit_nohint_posweight" `
-    "5exit_nohint_posweight" `
-  --out_dir "runs_multilabel\summary_thresholds_posweight"
+  --run_dirs $RUN_DIRS `
+  --names $NAMES `
+  --out_dir "$SUMMARY_ROOT\threshold_summary_001_static_tuned"
 ```
 
-## Git saving plan
-
-These commands save the documentation directly on the active branch:
-
-```text
-kexit_cclass_greedy_multi-label_pos-weight
-```
-
-Check that the current branch is correct:
+### Helper function for policy experiments
 
 ```powershell
-git branch --show-current
+function Run-MultilabelGreedyPolicy {
+  param(
+    [string]$RunDir,
+    [string]$Name,
+    [int]$MinExit,
+    [int]$StableK,
+    [string]$SweepMinExits,
+    [string]$SweepStableK,
+    [string]$OutDir,
+    [switch]$AllowEmptyStop
+  )
+
+  $args = @(
+    "scripts\multilabel_greedy_policy.py",
+    "--run_dir", $RunDir,
+    "--name", $Name,
+    "--device", $DEVICE,
+    "--threshold_mode", "tuned_per_exit",
+    "--min_exit", $MinExit,
+    "--stable_k", $StableK,
+    "--sweep_min_exits", $SweepMinExits,
+    "--sweep_stable_k", $SweepStableK,
+    "--out_dir", $OutDir
+  )
+
+  if ($AllowEmptyStop) {
+    $args += "--allow_empty_stop"
+  }
+
+  python @args
+}
 ```
 
-Expected output:
-
-```text
-kexit_cclass_greedy_multi-label_pos-weight
-```
-
-Then stage and commit the documentation and selected lightweight summary tables:
+### Policy Experiment 001
 
 ```powershell
-git status
+$EXP001 = "$POLICY_ROOT\multilabel_greedy_policy_001_minexit2_stable2"
 
-git add README.md DOC_STRUCTURE.md APPENDIX.md
-
-git add runs_multilabel\summary_thresholds_posweight\all_exit_metrics.csv `
-        runs_multilabel\summary_thresholds_posweight\all_exit_metrics.md `
-        runs_multilabel\summary_thresholds_posweight\final_exit_comparison.csv `
-        runs_multilabel\summary_thresholds_posweight\final_exit_comparison.md `
-        runs_multilabel\summary_thresholds_posweight\best_exit_comparison.csv `
-        runs_multilabel\summary_thresholds_posweight\best_exit_comparison.md `
-        runs_multilabel\summary_thresholds_posweight\final_exit_per_label.csv `
-        runs_multilabel\summary_thresholds_posweight\final_exit_per_label.md `
-        runs_multilabel\summary_thresholds_posweight\final_exit_thresholds.csv `
-        runs_multilabel\summary_thresholds_posweight\final_exit_thresholds.md `
-        runs_multilabel\summary_thresholds_posweight\README_TABLES.md
-
-git commit -m "docs: record pos-weight multi-label branch findings"
-
-git push -u origin kexit_cclass_greedy_multi-label_pos-weight
+Run-MultilabelGreedyPolicy -RunDir $RUN_3_NOHINT -Name "3exit_nohint" -MinExit 2 -StableK 2 -SweepMinExits "2" -SweepStableK "1,2,3" -OutDir "$EXP001\3exit_nohint"
+Run-MultilabelGreedyPolicy -RunDir $RUN_5_NOHINT -Name "5exit_nohint" -MinExit 2 -StableK 2 -SweepMinExits "2,3" -SweepStableK "1,2,3" -OutDir "$EXP001\5exit_nohint"
+Run-MultilabelGreedyPolicy -RunDir $RUN_3_POSWEIGHT -Name "3exit_posweight" -MinExit 2 -StableK 2 -SweepMinExits "2" -SweepStableK "1,2,3" -OutDir "$EXP001\3exit_posweight"
+Run-MultilabelGreedyPolicy -RunDir $RUN_5_POSWEIGHT -Name "5exit_posweight" -MinExit 2 -StableK 2 -SweepMinExits "2,3" -SweepStableK "1,2,3" -OutDir "$EXP001\5exit_posweight"
 ```
 
-Do not commit the generated heavy data/cache folders unless there is a specific reason:
+### Policy Experiment 002
+
+```powershell
+$EXP002 = "$POLICY_ROOT\multilabel_greedy_policy_002_minexit1_stable2"
+
+Run-MultilabelGreedyPolicy -RunDir $RUN_3_NOHINT -Name "3exit_nohint" -MinExit 1 -StableK 2 -SweepMinExits "1,2" -SweepStableK "1,2,3" -OutDir "$EXP002\3exit_nohint"
+Run-MultilabelGreedyPolicy -RunDir $RUN_5_NOHINT -Name "5exit_nohint" -MinExit 1 -StableK 2 -SweepMinExits "1,2,3" -SweepStableK "1,2,3" -OutDir "$EXP002\5exit_nohint"
+Run-MultilabelGreedyPolicy -RunDir $RUN_3_POSWEIGHT -Name "3exit_posweight" -MinExit 1 -StableK 2 -SweepMinExits "1,2" -SweepStableK "1,2,3" -OutDir "$EXP002\3exit_posweight"
+Run-MultilabelGreedyPolicy -RunDir $RUN_5_POSWEIGHT -Name "5exit_posweight" -MinExit 1 -StableK 2 -SweepMinExits "1,2,3" -SweepStableK "1,2,3" -OutDir "$EXP002\5exit_posweight"
+```
+
+### Policy Experiment 003
+
+```powershell
+$EXP003 = "$POLICY_ROOT\multilabel_greedy_policy_003_minexit1_stable1"
+
+Run-MultilabelGreedyPolicy -RunDir $RUN_3_NOHINT -Name "3exit_nohint" -MinExit 1 -StableK 1 -SweepMinExits "1,2" -SweepStableK "1,2,3" -OutDir "$EXP003\3exit_nohint"
+Run-MultilabelGreedyPolicy -RunDir $RUN_5_NOHINT -Name "5exit_nohint" -MinExit 1 -StableK 1 -SweepMinExits "1,2,3" -SweepStableK "1,2,3" -OutDir "$EXP003\5exit_nohint"
+Run-MultilabelGreedyPolicy -RunDir $RUN_3_POSWEIGHT -Name "3exit_posweight" -MinExit 1 -StableK 1 -SweepMinExits "1,2" -SweepStableK "1,2,3" -OutDir "$EXP003\3exit_posweight"
+Run-MultilabelGreedyPolicy -RunDir $RUN_5_POSWEIGHT -Name "5exit_posweight" -MinExit 1 -StableK 1 -SweepMinExits "1,2,3" -SweepStableK "1,2,3" -OutDir "$EXP003\5exit_posweight"
+```
+
+### Policy Experiment 004
+
+```powershell
+$EXP004 = "$POLICY_ROOT\multilabel_greedy_policy_004_minexit1_stable2_allowempty"
+
+Run-MultilabelGreedyPolicy -RunDir $RUN_3_NOHINT -Name "3exit_nohint" -MinExit 1 -StableK 2 -SweepMinExits "1,2" -SweepStableK "1,2,3" -OutDir "$EXP004\3exit_nohint" -AllowEmptyStop
+Run-MultilabelGreedyPolicy -RunDir $RUN_5_NOHINT -Name "5exit_nohint" -MinExit 1 -StableK 2 -SweepMinExits "1,2,3" -SweepStableK "1,2,3" -OutDir "$EXP004\5exit_nohint" -AllowEmptyStop
+Run-MultilabelGreedyPolicy -RunDir $RUN_3_POSWEIGHT -Name "3exit_posweight" -MinExit 1 -StableK 2 -SweepMinExits "1,2" -SweepStableK "1,2,3" -OutDir "$EXP004\3exit_posweight" -AllowEmptyStop
+Run-MultilabelGreedyPolicy -RunDir $RUN_5_POSWEIGHT -Name "5exit_posweight" -MinExit 1 -StableK 2 -SweepMinExits "1,2,3" -SweepStableK "1,2,3" -OutDir "$EXP004\5exit_posweight" -AllowEmptyStop
+```
+
+---
+
+## ML-GEE-A17. Recommended interpretation order
+
+1. Static threshold-tuned results.
+2. Policy 001: `min_exit=2, stable_k=2`.
+3. Policy 002: `min_exit=1, stable_k=2`.
+4. Policy 003: `min_exit=1, stable_k=1`.
+5. Policy 004: `allow_empty_stop=True`.
+
+The most important comparison is:
 
 ```text
-multilabel_data/
-multilabel_cache/
-runs_multilabel/
+Policy 001 vs Policy 002
 ```
 
-Only documentation, scripts, configs, and selected lightweight summary tables should normally be committed.
+because it directly tests whether allowing Exit 1 makes the 3-exit Tiny model behave like a real early-exit model.
+
+---
+
+## ML-GEE-A18. Next update plan
+
+Recommended next branch:
+
+```text
+kexit_multi-label_EE_lossweight
+```
+
+Main research question:
+
+> Can stronger early-exit supervision improve Exit 1 and Exit 2 enough to increase compute saving without causing major macro-F1 degradation?
+
+Candidate loss-weight settings:
+
+```text
+3-exit:
+[0.6, 0.6, 1.0]
+[0.8, 0.6, 1.0]
+
+5-exit:
+[0.6, 0.6, 0.7, 0.9, 1.0]
+[0.8, 0.7, 0.7, 0.9, 1.0]
+```
