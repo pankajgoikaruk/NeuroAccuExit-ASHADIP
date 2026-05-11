@@ -1,38 +1,48 @@
-# ASHADIP / NeuroAccuExit — `kexit_cclass_greedy_multi-label_pos-weight`
+# NeuroAccuExit Multi-Label Greedy Early Exit — `kexit_multi-label_greedy_EE`
 
-This document records the current **multi-label positive-label-weighting early-exit audio classification baseline** for the active branch:
+This branch records the **multi-label greedy early-exit (EE) policy study** for NeuroAccuExit-ASHADIP.
 
 ```text
-kexit_cclass_greedy_multi-label_pos-weight
+Branch: kexit_multi-label_greedy_EE
+Base branch: kexit_cclass_greedy_multi-label_policy
+Core script: scripts/multilabel_greedy_policy.py
+Main policy: sigmoid-aware label-set stability
 ```
 
-This document is intentionally focused only on the active positive-weight multi-label branch.
+The previous branch established the static multi-label baseline with BCE/sigmoid outputs, tuned per-label thresholds, and positive-label weighting. This branch adds the missing dynamic-neural-network evidence: **when does the model exit, how much depth compute is saved, and what accuracy/F1 trade-off is produced?**
 
 ---
 
 ## Executive summary
 
-The current multi-label baseline is now thesis-ready as a controlled experimental record.
-
-1. The pipeline works end-to-end: clean seed audio, synthetic mixtures, multi-hot labels, log-mel features, K-exit training, threshold tuning, and positive-label-weighting ablation.
-2. Fixed global threshold `0.5` under-predicts labels. Per-label tuning improved no-weight final macro-F1 from `0.5319 → 0.6301` for 3-exit and `0.5302 → 0.6152` for 5-exit.
-3. Positive label weighting improves label-balanced performance. The best final macro-F1 is now `0.6530` from `3exit_nohint_posweight` with tuned thresholds.
-4. Positive weighting increases recall but risks false positives. This appears through higher average predicted label counts and worse hamming/exact-match behaviour in some settings.
-5. For 5-exit models, Exit 4 is consistently the best tuned macro-F1 exit, not Exit 5. This is the strongest early-exit research signal.
-6. Thunderstorm improves with positive weighting but remains the most difficult label.
+1. The experiment store has been reorganised into a thesis-friendly structure under `runs_multilabel/`, separating training, policy evaluation, and summaries.
+2. Four models were trained again under the structured experiment layout:
+   - `3exit_nohint`
+   - `5exit_nohint`
+   - `3exit_posweight`
+   - `5exit_posweight`
+3. Threshold tuning remains essential for multi-label inference. Fixed `0.5` under-predicts labels in no-hint models and can over/under-shift positive-weighted models.
+4. Static per-exit analysis shows that **5exit pos-weight Exit 4** is the strongest standalone exit with macro-F1 `0.6538`.
+5. The conservative policy `min_exit=2, stable_k=2` proves useful dynamic behaviour for 5-exit models, saving `14–16%` depth compute, but it cannot save compute for 3-exit models because the earliest stable decision is the final exit.
+6. The fair early-exit policy `min_exit=1, stable_k=2` allows the 3-exit Tiny model to early-exit, but savings are small: `3.84%` for no-hint and `2.53%` for pos-weight.
+7. The aggressive policy `min_exit=1, stable_k=1` saves `66–80%` compute but collapses prediction quality, proving that Exit 1 is not currently reliable enough for immediate stopping.
+8. The best practical dynamic trade-off is currently **5exit pos-weight with `min_exit=3, stable_k=2`**, achieving macro-F1 `0.6449` with `9.33%` estimated depth-compute saving.
+9. The next research step is to strengthen early exits using better loss weighting, calibration, and later sigmoid-aware hint passing.
 
 ---
 
 ## Multi-label task formulation
 
-| Component | Multi-label setting |
+| Component | Setting |
 |---|---|
 | Target format | Multi-hot vector |
 | Output activation | Sigmoid |
 | Loss | BCEWithLogitsLoss |
 | Prediction | Any number of labels |
-| Thresholding | Fixed `0.5` baseline and tuned per-label thresholds |
-| Main metrics | Macro-F1, micro-F1, samples-F1, exact match, hamming loss, per-label precision/recall/F1 |
+| Thresholding | Fixed `0.5`, tuned per-label thresholds, and tuned per-exit/per-label thresholds |
+| Policy type | Greedy label-set stability |
+| Main metrics | Macro-F1, micro-F1, samples-F1, exact match, hamming loss, per-label F1 |
+| Dynamic metrics | Exit distribution, average exit depth, depth compute units, estimated compute saved |
 
 ---
 
@@ -51,537 +61,288 @@ The current multi-label baseline is now thesis-ready as a controlled experimenta
 | 8 | `thunderstorm` |
 | 9 | `wind` |
 
-
 ---
 
-## Dataset construction
+## Experiment store
 
-### Clean seed split counts after excluding `.m4a`
-
-| Split | Total | car_crash | conversation | engine_idling | fireworks | gun_shot | rain | road_traffic | scream | thunderstorm | wind |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| Train | 724 | 64 | 57 | 32 | 57 | 155 | 66 | 80 | 106 | 38 | 69 |
-| Val | 155 | 14 | 12 | 7 | 12 | 33 | 14 | 17 | 23 | 8 | 15 |
-| Test | 156 | 14 | 12 | 7 | 13 | 33 | 15 | 17 | 22 | 8 | 15 |
-
-
-### Synthetic mixture design
-
-| Setting | Value |
-|---|---:|
-| Synthetic train mixtures | 1000 |
-| Synthetic validation mixtures | 200 |
-| Synthetic test mixtures | 200 |
-| Labels per synthetic clip | 2 |
-| Sample rate | 16000 Hz |
-| Clip duration | 1.0 s |
-| Gain range | -6 dB to 0 dB |
-| Split leakage control | Train mixtures use train seed files only; val mixtures use val seed files only; test mixtures use test seed files only |
-| Seed | 42 |
-
-### Synthetic positive label counts
-
-| Label | Positive count |
-|---|---:|
-| car_crash | 276 |
-| conversation | 293 |
-| engine_idling | 301 |
-| fireworks | 256 |
-| gun_shot | 248 |
-| rain | 284 |
-| road_traffic | 288 |
-| scream | 289 |
-| thunderstorm | 267 |
-| wind | 298 |
-
-
-### Combined manifest and feature settings
-
-| Item | Value |
-|---|---:|
-| Train rows | 1724 |
-| Validation rows | 355 |
-| Test rows | 356 |
-| Total rows | 2435 |
-| Sample rate | 16000 Hz |
-| Clip duration | 1.0 s |
-| Mel bins | 64 |
-| FFT size | 1024 |
-| Window length | 25 ms |
-| Hop length | 10 ms |
-| CMVN | Enabled |
-| Loaded feature tensor | `[batch, 1, 64, 101]` |
-| Target tensor | `[batch, 10]` |
-
-### Overall positive label counts after feature extraction
-
-| Label | Positive count |
-|---|---:|
-| car_crash | 368 |
-| conversation | 374 |
-| engine_idling | 347 |
-| fireworks | 338 |
-| gun_shot | 469 |
-| rain | 379 |
-| road_traffic | 402 |
-| scream | 440 |
-| thunderstorm | 321 |
-| wind | 397 |
-
-
-### Train positive label counts used by loader
-
-| Label | Train positive count |
-|---|---:|
-| car_crash | 267 |
-| conversation | 264 |
-| engine_idling | 237 |
-| fireworks | 226 |
-| gun_shot | 329 |
-| rain | 278 |
-| road_traffic | 280 |
-| scream | 323 |
-| thunderstorm | 228 |
-| wind | 292 |
-
-
----
-
-## Model variants and training setup
-
-| Variant | Tap blocks | Exits | Pos-weight | Loss weights | Best epoch | Best validation final-exit macro-F1 |
-|---|---|---:|---|---|---:|---:|
-| `multilabel_3exit_nohint` | `1,3` | 3 | No | `[0.3, 0.3, 1.0]` | 27 | 0.5469 |
-| `multilabel_5exit_nohint` | `1,2,3,4` | 5 | No | `[0.3, 0.3, 0.6, 0.8, 1.0]` | 37 | 0.5438 |
-| `multilabel_3exit_nohint_posweight` | `1,3` | 3 | Yes, cap 5.0 | `[0.3, 0.3, 1.0]` | 39 | 0.6251 |
-| `multilabel_5exit_nohint_posweight` | `1,2,3,4` | 5 | Yes, cap 5.0 | `[0.3, 0.3, 0.6, 0.8, 1.0]` | 35 | 0.6199 |
-
-
-### Positive label weights
-
-The weighted-loss runs used:
+The branch uses this result organisation:
 
 ```text
---use_pos_weight --pos_weight_max 5.0
+runs_multilabel/
+│
+├─ training/
+│  ├─ multilabel_nohint/
+│  │  ├─ multilabel_nohint_001_3exit_YYYYMMDD_HHMMSS/
+│  │  └─ multilabel_nohint_002_5exit_YYYYMMDD_HHMMSS/
+│  │
+│  └─ multilabel_posweight/
+│     ├─ multilabel_posweight_001_3exit_YYYYMMDD_HHMMSS/
+│     └─ multilabel_posweight_002_5exit_YYYYMMDD_HHMMSS/
+│
+├─ policy_eval/
+│  └─ multilabel_greedy_policy/
+│     ├─ multilabel_greedy_policy_001_minexit2_stable2/
+│     ├─ multilabel_greedy_policy_002_minexit1_stable2/
+│     ├─ multilabel_greedy_policy_003_minexit1_stable1/
+│     └─ multilabel_greedy_policy_004_minexit1_stable2_allowempty/
+│
+└─ summary/
+   └─ threshold_summary_001_static_tuned/
 ```
 
-| Label | Positive weight used |
-|---|---:|
-| car_crash | 5.0000 |
-| conversation | 5.0000 |
-| engine_idling | 5.0000 |
-| fireworks | 5.0000 |
-| gun_shot | 4.2401 |
-| rain | 5.0000 |
-| road_traffic | 5.0000 |
-| scream | 4.3375 |
-| thunderstorm | 5.0000 |
-| wind | 4.9041 |
-
-
-Positive weighting increases the penalty for missing active labels. It is expected to increase recall, but it can also increase false positives.
+This structure is preferred because policy experiments can be repeated many times against the same trained checkpoint. Training runs and dynamic-policy outputs should therefore not be mixed.
 
 ---
 
-## Final-exit comparison across all four models
+## Model variants
 
-| Model | Exits | Exit | Pos-weight | Threshold | Macro-F1 | Micro-F1 | Samples-F1 | Exact match | Hamming loss | Avg true labels | Avg predicted labels |
-|---|---:|---:|---|---|---:|---:|---:|---:|---:|---:|---:|
-| `3exit_nohint` | 3 | 3 | No | fixed 0.5 | 0.5319 | 0.5920 | 0.5598 | 0.3034 | **0.1065** | 1.5618 | 1.0478 |
-| `3exit_nohint` | 3 | 3 | No | tuned | 0.6301 | 0.6361 | 0.6576 | 0.2725 | 0.1247 | 1.5618 | 1.8652 |
-| `3exit_nohint_posweight` | 3 | 3 | Yes | fixed 0.5 | 0.6422 | 0.6379 | **0.6663** | 0.2500 | 0.1368 | 1.5618 | 2.2163 |
-| `3exit_nohint_posweight` | 3 | 3 | Yes | tuned | **0.6530** | 0.6427 | 0.6580 | 0.2978 | 0.1256 | 1.5618 | 1.9522 |
-| `5exit_nohint` | 5 | 5 | No | fixed 0.5 | 0.5302 | 0.5852 | 0.5545 | 0.3062 | 0.1067 | 1.5618 | 1.0112 |
-| `5exit_nohint` | 5 | 5 | No | tuned | 0.6152 | **0.6454** | 0.6639 | **0.3343** | 0.1157 | 1.5618 | 1.7022 |
-| `5exit_nohint_posweight` | 5 | 5 | Yes | fixed 0.5 | 0.6159 | 0.5931 | 0.6319 | 0.2556 | 0.1626 | 1.5618 | 2.4354 |
-| `5exit_nohint_posweight` | 5 | 5 | Yes | tuned | 0.6232 | 0.6085 | 0.6341 | 0.2640 | 0.1424 | 1.5618 | 2.0758 |
+| Model | Tap blocks | Exits | Pos-weight | `pos_weight_max` | Purpose |
+|---|---|---:|---|---:|---|
+| `3exit_nohint` | `1,3` | 3 | No | — | Compact Tiny baseline |
+| `5exit_nohint` | `1,2,3,4` | 5 | No | — | More dynamic exit opportunities |
+| `3exit_posweight` | `1,3` | 3 | Yes | 20.0 | Compact model with recall-sensitive loss |
+| `5exit_posweight` | `1,2,3,4` | 5 | Yes | 20.0 | Dynamic model with recall-sensitive loss |
 
-
-### Main interpretation
-
-The strongest final macro-F1 is:
-
-```text
-3exit_nohint_posweight + tuned thresholds = 0.6530
-```
-
-The strongest micro-F1 and exact-match model is:
-
-```text
-5exit_nohint + tuned thresholds
-micro-F1    = 0.6454
-exact match = 0.3343
-```
-
-So the best model depends on the research objective.
+> Important: these structured runs used `--pos_weight_max 20.0`. Do not mix these numerical results with earlier positive-weight runs that used a different cap such as `5.0`.
 
 ---
 
-## Best tuned exit per model
+## Greedy label-set stability policy
 
-| Model | Best tuned exit | Pos-weight | Macro-F1 | Micro-F1 | Samples-F1 | Exact match | Hamming loss | Avg predicted labels |
+For each exit `e`, the model produces sigmoid probabilities:
+
+```text
+p_e = sigmoid(logits_e)
+```
+
+The prediction at that exit is converted into a multi-label set using tuned per-exit/per-label thresholds:
+
+```text
+y_hat_e[label] = 1 if p_e[label] >= tau_e,label else 0
+```
+
+The policy scans exits from `min_exit` onward and stops when the predicted label set is stable for `stable_k` consecutive considered exits. If no stable decision is found, the policy falls back to the final exit.
+
+```text
+min_exit=2, stable_k=2:
+  Ignore Exit 1.
+  Stop only after two consecutive matching label sets from Exit 2 onward.
+
+min_exit=1, stable_k=2:
+  Allow Exit 1.
+  For a 3-exit model, this allows stopping at Exit 2 if Exit 1 and Exit 2 agree.
+
+min_exit=1, stable_k=1:
+  Aggressive ablation.
+  Stop as soon as the first considered exit is reached.
+```
+
+There is no `min_exit=0` in the implementation because exits are numbered from `1`.
+
+---
+
+## Static final-exit comparison
+
+| Model | Final Exit | Threshold | Macro-F1 | Micro-F1 | Samples-F1 | Exact Match | Hamming Loss | Avg Pred Labels |
 |---|---:|---|---:|---:|---:|---:|---:|---:|
-| `3exit_nohint_posweight` | 3 | Yes | **0.6530** | **0.6427** | 0.6580 | 0.2978 | 0.1256 | 1.9522 |
-| `5exit_nohint_posweight` | 4 | Yes | 0.6433 | 0.6349 | **0.6645** | 0.2809 | 0.1292 | 1.9775 |
-| `3exit_nohint` | 3 | No | 0.6301 | 0.6361 | 0.6576 | 0.2725 | **0.1247** | 1.8652 |
-| `5exit_nohint` | 4 | No | 0.6281 | 0.6291 | 0.6475 | **0.3090** | 0.1258 | 1.8315 |
-
-
-### Early-exit interpretation
-
-The repeated finding is:
-
-```text
-5-exit models achieve their best macro-F1 at Exit 4, not Exit 5.
-```
-
-This supports compute-adaptive multi-label inference: an intermediate exit can be the best accuracy–depth trade-off point.
+| `3exit_nohint` | 3 | fixed 0.5 | 0.5319 | 0.5920 | 0.5598 | 0.3034 | **0.1065** | 1.0478 |
+| `3exit_nohint` | 3 | tuned | 0.6301 | 0.6361 | 0.6576 | 0.2725 | 0.1247 | 1.8652 |
+| `3exit_posweight` | 3 | fixed 0.5 | 0.6356 | 0.6173 | 0.6499 | 0.2191 | 0.1525 | 2.4242 |
+| `3exit_posweight` | 3 | tuned | **0.6451** | 0.6338 | 0.6600 | 0.2753 | 0.1272 | 1.9129 |
+| `5exit_nohint` | 5 | fixed 0.5 | 0.5302 | 0.5852 | 0.5545 | 0.3062 | 0.1067 | 1.0112 |
+| `5exit_nohint` | 5 | tuned | 0.6152 | **0.6454** | **0.6639** | **0.3343** | 0.1157 | 1.7022 |
+| `5exit_posweight` | 5 | fixed 0.5 | 0.6058 | 0.5764 | 0.6224 | 0.2247 | 0.1775 | 2.6292 |
+| `5exit_posweight` | 5 | tuned | 0.6384 | 0.6223 | 0.6489 | 0.2612 | 0.1419 | 2.1938 |
 
 ---
 
-## Positive label weighting ablation
+## Best static exit per model
 
-### 3-exit effect
+| Model | Best Static Exit | Macro-F1 | Micro-F1 | Samples-F1 | Exact Match | Hamming Loss | Avg Pred Labels |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `5exit_posweight` | **4** | **0.6538** | **0.6536** | **0.6825** | **0.3315** | **0.1191** | 1.8764 |
+| `3exit_posweight` | 3 | 0.6451 | 0.6338 | 0.6600 | 0.2753 | 0.1272 | 1.9129 |
+| `3exit_nohint` | 3 | 0.6301 | 0.6361 | 0.6576 | 0.2725 | 0.1247 | 1.8652 |
+| `5exit_nohint` | **4** | 0.6281 | 0.6291 | 0.6475 | 0.3090 | 0.1258 | 1.8315 |
 
-```text
-3exit_nohint tuned macro-F1            = 0.6301
-3exit_nohint_posweight tuned macro-F1  = 0.6530
-Improvement                            = +0.0229
-```
+### Static interpretation
 
-This is the clearest gain from positive weighting.
-
-### 5-exit effect
-
-```text
-5exit_nohint tuned macro-F1            = 0.6152
-5exit_nohint_posweight tuned macro-F1  = 0.6232
-Improvement                            = +0.0080
-```
-
-The 5-exit gain is smaller and comes with a worse exact match and hamming loss.
-
-### Average predicted labels
-
-True average labels per test sample:
+The strongest static finding is:
 
 ```text
-1.5618
+5exit_posweight Exit 4 macro-F1 = 0.6538
 ```
 
-Predicted labels after tuning:
-
-| Model | Avg predicted labels |
-|---|---:|
-| `3exit_nohint` tuned | 1.8652 |
-| `3exit_nohint_posweight` tuned | 1.9522 |
-| `5exit_nohint` tuned | 1.7022 |
-| `5exit_nohint_posweight` tuned | 2.0758 |
-
-The positive-weighted models predict more labels, especially the 5-exit positive-weighted model.
+This means the best macro-F1 in the 5-exit system is **not** always at the final exit. This is important because it supports compute-adaptive inference: an intermediate head can be both shallower and more accurate for macro-F1.
 
 ---
 
-## Positive-weight final-exit per-label analysis
+## Static per-exit quality
 
-| Model | Label | Threshold | Support | Fixed P | Fixed R | Fixed F1 | Tuned P | Tuned R | Tuned F1 | ΔF1 |
-|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| `3exit_posweight` | car_crash | 0.61 | 47 | 0.5556 | 0.7447 | 0.6364 | 0.6400 | 0.6809 | 0.6598 | +0.0234 |
-| `3exit_posweight` | conversation | 0.47 | 60 | 0.9828 | 0.9500 | 0.9661 | 0.9667 | 0.9667 | 0.9667 | +0.0006 |
-| `3exit_posweight` | engine_idling | 0.75 | 49 | 0.3889 | 0.8571 | 0.5350 | 0.5606 | 0.7551 | 0.6435 | +0.1085 |
-| `3exit_posweight` | fireworks | 0.42 | 52 | 0.4375 | 0.6731 | 0.5303 | 0.4211 | 0.7692 | 0.5442 | +0.0139 |
-| `3exit_posweight` | gun_shot | 0.77 | 76 | 0.6522 | 0.7895 | 0.7143 | 0.7812 | 0.6579 | 0.7143 | +0.0000 |
-| `3exit_posweight` | rain | 0.88 | 52 | 0.5930 | 0.9808 | 0.7391 | 0.8269 | 0.8269 | 0.8269 | +0.0878 |
-| `3exit_posweight` | road_traffic | 0.63 | 63 | 0.4937 | 0.6190 | 0.5493 | 0.4630 | 0.3968 | 0.4274 | -0.1219 |
-| `3exit_posweight` | scream | 0.51 | 57 | 0.8413 | 0.9298 | 0.8833 | 0.8413 | 0.9298 | 0.8833 | +0.0000 |
-| `3exit_posweight` | thunderstorm | 0.47 | 49 | 0.2800 | 0.4286 | 0.3387 | 0.2771 | 0.4694 | 0.3485 | +0.0098 |
-| `3exit_posweight` | wind | 0.41 | 51 | 0.4235 | 0.7059 | 0.5294 | 0.3796 | 0.8039 | 0.5157 | -0.0137 |
-| `5exit_posweight` | car_crash | 0.43 | 47 | 0.4444 | 0.7660 | 0.5625 | 0.4138 | 0.7660 | 0.5373 | -0.0252 |
-| `5exit_posweight` | conversation | 0.45 | 60 | 0.9661 | 0.9500 | 0.9580 | 0.9661 | 0.9500 | 0.9580 | +0.0000 |
-| `5exit_posweight` | engine_idling | 0.57 | 49 | 0.4483 | 0.7959 | 0.5735 | 0.5429 | 0.7755 | 0.6387 | +0.0652 |
-| `5exit_posweight` | fireworks | 0.64 | 52 | 0.2714 | 0.7308 | 0.3958 | 0.4156 | 0.6154 | 0.4961 | +0.1003 |
-| `5exit_posweight` | gun_shot | 0.74 | 76 | 0.6566 | 0.8553 | 0.7429 | 0.7606 | 0.7105 | 0.7347 | -0.0082 |
-| `5exit_posweight` | rain | 0.46 | 52 | 0.8163 | 0.7692 | 0.7921 | 0.7843 | 0.7692 | 0.7767 | -0.0154 |
-| `5exit_posweight` | road_traffic | 0.43 | 63 | 0.5088 | 0.4603 | 0.4833 | 0.4507 | 0.5079 | 0.4776 | -0.0057 |
-| `5exit_posweight` | scream | 0.65 | 57 | 0.7794 | 0.9298 | 0.8480 | 0.8667 | 0.9123 | 0.8889 | +0.0409 |
-| `5exit_posweight` | thunderstorm | 0.57 | 49 | 0.2149 | 0.5306 | 0.3059 | 0.1837 | 0.3673 | 0.2449 | -0.0610 |
-| `5exit_posweight` | wind | 0.58 | 51 | 0.3679 | 0.7647 | 0.4968 | 0.3684 | 0.6863 | 0.4795 | -0.0173 |
+| Model | Exit | Macro-F1 | Micro-F1 | Samples-F1 | Exact Match | Hamming Loss | Avg Pred Labels |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `3exit_nohint` | 1 | 0.3802 | 0.3561 | 0.3560 | 0.0112 | 0.3809 | 4.3539 |
+| `3exit_nohint` | 2 | 0.5570 | 0.5278 | 0.5586 | 0.1601 | 0.1980 | 2.6320 |
+| `3exit_nohint` | 3 | **0.6301** | **0.6361** | **0.6576** | **0.2725** | **0.1247** | 1.8652 |
+| `3exit_posweight` | 1 | 0.4268 | 0.4038 | 0.4047 | 0.0000 | 0.3508 | 4.3230 |
+| `3exit_posweight` | 2 | 0.5727 | 0.5649 | 0.5841 | 0.1770 | 0.1705 | 2.3567 |
+| `3exit_posweight` | 3 | **0.6451** | **0.6338** | **0.6600** | **0.2753** | **0.1272** | 1.9129 |
+| `5exit_nohint` | 1 | 0.3879 | 0.3619 | 0.3565 | 0.0028 | 0.3635 | 4.1348 |
+| `5exit_nohint` | 2 | 0.5020 | 0.4722 | 0.4805 | 0.1067 | 0.2242 | 2.6854 |
+| `5exit_nohint` | 3 | 0.5723 | 0.5563 | 0.5893 | 0.1910 | 0.1747 | 2.3764 |
+| `5exit_nohint` | 4 | **0.6281** | 0.6291 | 0.6475 | 0.3090 | 0.1258 | 1.8315 |
+| `5exit_nohint` | 5 | 0.6152 | **0.6454** | **0.6639** | **0.3343** | **0.1157** | 1.7022 |
+| `5exit_posweight` | 1 | 0.4116 | 0.3957 | 0.3913 | 0.0253 | 0.3191 | 3.7191 |
+| `5exit_posweight` | 2 | 0.4777 | 0.4412 | 0.4392 | 0.0815 | 0.2455 | 2.8315 |
+| `5exit_posweight` | 3 | 0.5932 | 0.5881 | 0.6202 | 0.2528 | 0.1542 | 2.1826 |
+| `5exit_posweight` | 4 | **0.6538** | **0.6536** | **0.6825** | **0.3315** | **0.1191** | 1.8764 |
+| `5exit_posweight` | 5 | 0.6384 | 0.6223 | 0.6489 | 0.2612 | 0.1419 | 2.1938 |
 
+### Early-exit diagnostic
 
-### Label-level conclusions
+Exit 1 is still weak. It predicts too many labels compared with the true average label count:
 
-- `conversation` is consistently the strongest and most stable label.
-- `scream` is also strong, especially in the 5-exit positive-weighted tuned model.
-- `rain` becomes very strong in the 3-exit positive-weighted tuned model, reaching F1 `0.8269`.
-- `engine_idling` improves substantially with positive weighting.
-- `fireworks` improves most in the 5-exit positive-weighted tuned model, but precision remains limited.
-- `thunderstorm` reaches its best result so far in the 3-exit positive-weighted tuned model: F1 `0.3485`.
-- `road_traffic` remains unstable and should be inspected separately.
+```text
+True avg labels per test sample = 1.5618
+
+Exit 1 avg predicted labels:
+3exit_nohint      = 4.3539
+3exit_posweight   = 4.3230
+5exit_nohint      = 4.1348
+5exit_posweight   = 3.7191
+```
+
+This explains why aggressive immediate stopping performs poorly. The current early exits are not yet reliable enough to be used alone.
 
 ---
 
-## Positive-weight tuned thresholds
+## Selected policy experiments
 
-| Model | Final exit | car_crash | conversation | engine_idling | fireworks | gun_shot | rain | road_traffic | scream | thunderstorm | wind |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| `3exit_posweight` | 3 | 0.61 | 0.47 | 0.75 | 0.42 | 0.77 | 0.88 | 0.63 | 0.51 | 0.47 | 0.41 |
-| `5exit_posweight` | 5 | 0.43 | 0.45 | 0.57 | 0.64 | 0.74 | 0.46 | 0.43 | 0.65 | 0.57 | 0.58 |
+| Experiment | Model | min_exit | stable_k | empty stop | Macro-F1 | Micro-F1 | Samples-F1 | Exact Match | Hamming Loss | Avg Exit Depth | Compute Saved |
+|---|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|
+| Policy 001 | `3exit_nohint` | 2 | 2 | False | 0.6301 | 0.6361 | 0.6576 | 0.2725 | 0.1247 | 3.0000 / 3 | 0.00% |
+| Policy 001 | `3exit_posweight` | 2 | 2 | False | **0.6451** | 0.6338 | 0.6600 | 0.2753 | 0.1272 | 3.0000 / 3 | 0.00% |
+| Policy 001 | `5exit_nohint` | 2 | 2 | False | 0.6246 | 0.6340 | 0.6601 | 0.2978 | 0.1301 | 4.1994 / 5 | 16.01% |
+| Policy 001 | `5exit_posweight` | 2 | 2 | False | 0.6321 | 0.6207 | **0.6636** | 0.2949 | 0.1421 | 4.2893 / 5 | 14.21% |
+| Policy 002 | `3exit_nohint` | 1 | 2 | False | 0.6179 | 0.6160 | 0.6495 | 0.2612 | 0.1419 | 2.8848 / 3 | 3.84% |
+| Policy 002 | `3exit_posweight` | 1 | 2 | False | 0.6293 | 0.6162 | 0.6530 | 0.2725 | 0.1396 | 2.9242 / 3 | 2.53% |
+| Policy 002 | `5exit_nohint` | 1 | 2 | False | 0.6097 | 0.6112 | 0.6451 | 0.2837 | 0.1458 | 3.9551 / 5 | 20.90% |
+| Policy 002 | `5exit_posweight` | 1 | 2 | False | 0.6260 | 0.6124 | 0.6580 | 0.2865 | 0.1497 | 4.0534 / 5 | 18.93% |
+| Policy 003 | `3exit_nohint` | 1 | 1 | False | 0.3806 | 0.3569 | 0.3588 | 0.0140 | 0.3806 | 1.0028 / 3 | 66.57% |
+| Policy 003 | `3exit_posweight` | 1 | 1 | False | 0.4268 | 0.4038 | 0.4047 | 0.0000 | 0.3508 | 1.0000 / 3 | 66.67% |
+| Policy 003 | `5exit_nohint` | 1 | 1 | False | 0.3890 | 0.3627 | 0.3594 | 0.0056 | 0.3632 | 1.0028 / 5 | 79.94% |
+| Policy 003 | `5exit_posweight` | 1 | 1 | False | 0.4116 | 0.3957 | 0.3913 | 0.0253 | 0.3191 | 1.0000 / 5 | 80.00% |
+| Policy 004 | `3exit_nohint` | 1 | 2 | True | 0.6179 | 0.6160 | 0.6495 | 0.2612 | 0.1419 | 2.8848 / 3 | 3.84% |
+| Policy 004 | `3exit_posweight` | 1 | 2 | True | 0.6293 | 0.6162 | 0.6530 | 0.2725 | 0.1396 | 2.9242 / 3 | 2.53% |
+| Policy 004 | `5exit_nohint` | 1 | 2 | True | 0.6094 | 0.6107 | 0.6423 | 0.2809 | 0.1458 | 3.9410 / 5 | 21.18% |
+| Policy 004 | `5exit_posweight` | 1 | 2 | True | 0.6244 | 0.6101 | 0.6477 | 0.2781 | 0.1497 | 4.0112 / 5 | 19.78% |
 
+---
 
-The positive-weighted model thresholds are generally higher than the no-weight thresholds because positive weighting pushes the model toward predicting more positives. Threshold tuning then raises some label cutoffs to recover precision.
+## Policy 001 vs Policy 002: main fair comparison
+
+| Model | Policy 001 Macro-F1 | Policy 002 Macro-F1 | F1 Change | Policy 001 Saved | Policy 002 Saved | Saving Gain |
+|---|---:|---:|---:|---:|---:|---:|
+| `3exit_nohint` | 0.6301 | 0.6179 | -0.0122 | 0.00% | 3.84% | +3.84% |
+| `3exit_posweight` | 0.6451 | 0.6293 | -0.0158 | 0.00% | 2.53% | +2.53% |
+| `5exit_nohint` | 0.6246 | 0.6097 | -0.0149 | 16.01% | 20.90% | +4.89% |
+| `5exit_posweight` | 0.6321 | 0.6260 | -0.0061 | 14.21% | 18.93% | +4.72% |
+
+### Interpretation
+
+Policy 001 is conservative and safe. However, for a 3-exit model, it cannot save compute because `min_exit=2` and `stable_k=2` make the earliest stable decision the final Exit 3.
+
+Policy 002 enables Exit 1 and finally allows the 3-exit Tiny model to behave like a real early-exit model:
+
+```text
+3exit_nohint:
+  Exit 2 samples = 41 / 356
+  compute saved  = 3.84%
+  macro-F1 drop  = -0.0122
+
+3exit_posweight:
+  Exit 2 samples = 27 / 356
+  compute saved  = 2.53%
+  macro-F1 drop  = -0.0158
+```
+
+The result is valid but modest. It shows that the compact 3-exit model can early-exit, but only for a small proportion of samples under a safe stability rule.
+
+---
+
+## Exit distribution
+
+| Experiment | Model | Exit 1 | Exit 2 | Exit 3 | Exit 4 | Exit 5 |
+|---|---|---:|---:|---:|---:|---:|
+| Policy 001 | `3exit_nohint` | 0 | 0 | 356 | — | — |
+| Policy 001 | `3exit_posweight` | 0 | 0 | 356 | — | — |
+| Policy 001 | `5exit_nohint` | 0 | 0 | 101 | 83 | 172 |
+| Policy 001 | `5exit_posweight` | 0 | 0 | 59 | 135 | 162 |
+| Policy 002 | `3exit_nohint` | 0 | 41 | 315 | — | — |
+| Policy 002 | `3exit_posweight` | 0 | 27 | 329 | — | — |
+| Policy 002 | `5exit_nohint` | 0 | 41 | 85 | 79 | 151 |
+| Policy 002 | `5exit_posweight` | 0 | 47 | 33 | 130 | 146 |
+| Policy 003 | `3exit_nohint` | 355 | 1 | 0 | — | — |
+| Policy 003 | `3exit_posweight` | 356 | 0 | 0 | — | — |
+| Policy 003 | `5exit_nohint` | 355 | 1 | 0 | 0 | 0 |
+| Policy 003 | `5exit_posweight` | 356 | 0 | 0 | 0 | 0 |
+| Policy 004 | `3exit_nohint` | 0 | 41 | 315 | — | — |
+| Policy 004 | `3exit_posweight` | 0 | 27 | 329 | — | — |
+| Policy 004 | `5exit_nohint` | 0 | 41 | 87 | 80 | 148 |
+| Policy 004 | `5exit_posweight` | 0 | 47 | 40 | 131 | 138 |
+
+---
+
+## Best practical dynamic trade-offs from the sweep
+
+| Model | Best Practical Policy | Macro-F1 | Micro-F1 | Samples-F1 | Avg Depth | Compute Saved |
+|---|---|---:|---:|---:|---:|---:|
+| `3exit_nohint` | `min_exit=1, stable_k=2` | 0.6179 | 0.6160 | 0.6495 | 2.8848 / 3 | 3.84% |
+| `3exit_posweight` | `min_exit=1, stable_k=2` | 0.6293 | 0.6162 | 0.6530 | 2.9242 / 3 | 2.53% |
+| `5exit_nohint` | `min_exit=3, stable_k=2` | 0.6267 | **0.6486** | 0.6684 | 4.6433 / 5 | 7.13% |
+| `5exit_posweight` | `min_exit=3, stable_k=2` | **0.6449** | 0.6313 | **0.6690** | 4.5337 / 5 | **9.33%** |
+
+### Recommended headline dynamic result
+
+The strongest practical dynamic result is:
+
+```text
+Model: 5exit_posweight
+Policy: min_exit=3, stable_k=2
+Macro-F1: 0.6449
+Samples-F1: 0.6690
+Avg exit depth: 4.5337 / 5
+Estimated depth-compute saved: 9.33%
+```
+
+This policy avoids the unreliable first two exits and focuses on the more reliable middle-to-late exits. It aligns with the static result where Exit 4 is the best macro-F1 exit.
 
 ---
 
 ## Research conclusions
 
-1. Multi-label adaptation is successful using the existing TinyAudioCNN + ExitNet family.
-2. Threshold tuning is required before fair multi-label comparison.
-3. Positive label weighting improves macro-F1, especially in the compact 3-exit model.
-4. Positive weighting creates a recall–precision trade-off.
-5. The best 5-exit macro-F1 occurs at Exit 4, making it the key early-exit candidate.
-6. Thunderstorm improves but is still unresolved.
+1. Multi-label early-exit evaluation is now dynamic, not only static.
+2. Threshold tuning is required for fair multi-label comparison.
+3. Positive weighting improves macro-F1 but increases the risk of false positives.
+4. Exit 1 is not yet reliable for immediate stopping.
+5. The 3-exit Tiny model can save compute only when Exit 1 is enabled, but the saving is currently small.
+6. The 5-exit model provides better dynamic flexibility because it has more intermediate decision points.
+7. Exit 4 is the strongest static early-exit candidate.
+8. A later stability policy, especially `min_exit=3, stable_k=2`, gives the best current accuracy-efficiency trade-off.
+9. Future work should strengthen earlier exits through loss design, calibration, and sigmoid-aware hint passing.
 
 ---
 
-## Limitations and next work
+## Recommended wording for thesis/README
 
-| Limitation | Meaning | Next action |
-|---|---|---|
-| Synthetic mixtures only | Real overlapping audio transfer is not proven | Create a manually verified real mixed test set |
-| Single seed | Robustness not proven | Repeat strongest settings with multiple seeds |
-| Positive-weight cap fixed at 5.0 | May be too aggressive | Test `--pos_weight_max 3.0` |
-| No dynamic multi-label early-exit policy | Current results are static per-exit evaluations | Add sigmoid confidence and label-set stability policy |
-| No sigmoid-aware hint passing | Existing hint logic is not multi-label-safe | Add only after no-hint and pos-weight baselines are stable |
-| Thunderstorm weak | Data quality or acoustic overlap may be limiting | Inspect and improve thunderstorm seed data |
-| Calibration not fully studied | Thresholds vary strongly by model | Add mAP, AUC, and calibration diagnostics |
+> The multi-label greedy early-exit study shows that dynamic inference is possible in the NeuroAccuExit architecture, but the usefulness of early exits depends strongly on exit reliability. Conservative label-set stability preserves prediction quality and provides clear compute savings in 5-exit models, while compact 3-exit models require Exit 1 to be enabled before any early stopping is possible. However, because Exit 1 currently over-predicts labels, aggressive stopping produces unacceptable F1 degradation. The strongest practical trade-off is obtained by using later stable exits, particularly the 5-exit positive-weighted model with `min_exit=3, stable_k=2`, which maintains high macro-F1 while saving estimated depth compute.
 
 ---
 
-## Recommended next experiments
+## Documentation map
 
-1. Rerun 3-exit and 5-exit with `--pos_weight_max 3.0`.
-2. Implement multi-label early-exit policy, excluding Exit 1 initially.
-3. Add mAP and per-label AUC reporting.
-4. Build a small manually verified real mixed test set.
-5. Add sigmoid-aware hint passing only after the no-hint baselines are stable.
-
-## Reproducibility commands
-
-Run commands from:
-
-```powershell
-cd C:\Users\wwwsa\PycharmProjects\NeuroAccuExit-ASHADIP
-```
-
-### Build clean seed manifest
-
-```powershell
-python scripts\build_multilabel_seed_manifest.py `
-  --root "multilabel_data\clean_seed" `
-  --out "multilabel_data\metadata\clean_seed_manifest.csv" `
-  --labels_json "multilabel_data\metadata\labels.json" `
-  --audio_exts ".wav,.flac,.mp3,.ogg" `
-  --seed 42
-```
-
-### Create synthetic mixtures
-
-```powershell
-python scripts\create_synthetic_multilabel_mixtures.py `
-  --seed_manifest "multilabel_data\metadata\clean_seed_manifest.csv" `
-  --labels_json "multilabel_data\metadata\labels.json" `
-  --out_audio_root "multilabel_data\synthetic_mixed\audio" `
-  --out_manifest "multilabel_data\metadata\synthetic_mixed_manifest.csv" `
-  --combined_out "multilabel_data\metadata\multilabel_train_manifest.csv" `
-  --num_train 1000 `
-  --num_val 200 `
-  --num_test 200 `
-  --mix_size_min 2 `
-  --mix_size_max 2 `
-  --sample_rate 16000 `
-  --clip_sec 1.0 `
-  --seed 42
-```
-
-### Extract features
-
-```powershell
-python scripts\extract_multilabel_features.py `
-  --manifest "multilabel_data\metadata\multilabel_train_manifest.csv" `
-  --labels_json "multilabel_data\metadata\labels.json" `
-  --out_cache "multilabel_cache" `
-  --sample_rate 16000 `
-  --clip_sec 1.0 `
-  --n_mels 64 `
-  --n_fft 1024 `
-  --win_ms 25 `
-  --hop_ms 10 `
-  --cmvn
-```
-
-### Train 3-exit no-hint
-
-```powershell
-python -m training.train_multilabel `
-  --manifest "multilabel_cache\metadata\multilabel_features_manifest.csv" `
-  --features_root "multilabel_cache\features" `
-  --labels_json "multilabel_data\metadata\labels.json" `
-  --runs_root "runs_multilabel" `
-  --variant "multilabel_3exit_nohint" `
-  --tap_blocks "1,3" `
-  --epochs 40 `
-  --batch_size 64 `
-  --lr 0.001 `
-  --threshold 0.5 `
-  --device cpu
-```
-
-### Train 5-exit no-hint
-
-```powershell
-python -m training.train_multilabel `
-  --manifest "multilabel_cache\metadata\multilabel_features_manifest.csv" `
-  --features_root "multilabel_cache\features" `
-  --labels_json "multilabel_data\metadata\labels.json" `
-  --runs_root "runs_multilabel" `
-  --variant "multilabel_5exit_nohint" `
-  --tap_blocks "1,2,3,4" `
-  --epochs 40 `
-  --batch_size 64 `
-  --lr 0.001 `
-  --threshold 0.5 `
-  --device cpu
-```
-
-### Tune no-hint thresholds
-
-```powershell
-python scripts\tune_multilabel_thresholds.py `
-  --run_dir "runs_multilabel\multilabel_3exit_nohint_20260509_002118" `
-  --device cpu
-
-python scripts\tune_multilabel_thresholds.py `
-  --run_dir "runs_multilabel\multilabel_5exit_nohint_20260509_001254" `
-  --device cpu
-```
-
-### Train 3-exit positive-weight model
-
-```powershell
-python -m training.train_multilabel `
-  --manifest "multilabel_cache\metadata\multilabel_features_manifest.csv" `
-  --features_root "multilabel_cache\features" `
-  --labels_json "multilabel_data\metadata\labels.json" `
-  --runs_root "runs_multilabel" `
-  --variant "multilabel_3exit_nohint_posweight" `
-  --tap_blocks "1,3" `
-  --epochs 40 `
-  --batch_size 64 `
-  --lr 0.001 `
-  --threshold 0.5 `
-  --use_pos_weight `
-  --pos_weight_max 5.0 `
-  --device cpu
-```
-
-### Train 5-exit positive-weight model
-
-```powershell
-python -m training.train_multilabel `
-  --manifest "multilabel_cache\metadata\multilabel_features_manifest.csv" `
-  --features_root "multilabel_cache\features" `
-  --labels_json "multilabel_data\metadata\labels.json" `
-  --runs_root "runs_multilabel" `
-  --variant "multilabel_5exit_nohint_posweight" `
-  --tap_blocks "1,2,3,4" `
-  --epochs 40 `
-  --batch_size 64 `
-  --lr 0.001 `
-  --threshold 0.5 `
-  --use_pos_weight `
-  --pos_weight_max 5.0 `
-  --device cpu
-```
-
-### Tune positive-weight thresholds
-
-```powershell
-python scripts\tune_multilabel_thresholds.py `
-  --run_dir "runs_multilabel\multilabel_3exit_nohint_posweight_20260510_094046" `
-  --device cpu
-
-python scripts\tune_multilabel_thresholds.py `
-  --run_dir "runs_multilabel\multilabel_5exit_nohint_posweight_20260510_094350" `
-  --device cpu
-```
-
-### Generate final 4-model summary
-
-```powershell
-python scripts\summarize_multilabel_threshold_runs.py `
-  --run_dirs `
-    "runs_multilabel\multilabel_3exit_nohint_20260509_002118" `
-    "runs_multilabel\multilabel_5exit_nohint_20260509_001254" `
-    "runs_multilabel\multilabel_3exit_nohint_posweight_20260510_094046" `
-    "runs_multilabel\multilabel_5exit_nohint_posweight_20260510_094350" `
-  --names `
-    "3exit_nohint" `
-    "5exit_nohint" `
-    "3exit_nohint_posweight" `
-    "5exit_nohint_posweight" `
-  --out_dir "runs_multilabel\summary_thresholds_posweight"
-```
-
-## Git saving plan
-
-These commands save the documentation directly on the active branch:
-
-```text
-kexit_cclass_greedy_multi-label_pos-weight
-```
-
-Check that the current branch is correct:
-
-```powershell
-git branch --show-current
-```
-
-Expected output:
-
-```text
-kexit_cclass_greedy_multi-label_pos-weight
-```
-
-Then stage and commit the documentation and selected lightweight summary tables:
-
-```powershell
-git status
-
-git add README.md DOC_STRUCTURE.md APPENDIX.md
-
-git add runs_multilabel\summary_thresholds_posweight\all_exit_metrics.csv `
-        runs_multilabel\summary_thresholds_posweight\all_exit_metrics.md `
-        runs_multilabel\summary_thresholds_posweight\final_exit_comparison.csv `
-        runs_multilabel\summary_thresholds_posweight\final_exit_comparison.md `
-        runs_multilabel\summary_thresholds_posweight\best_exit_comparison.csv `
-        runs_multilabel\summary_thresholds_posweight\best_exit_comparison.md `
-        runs_multilabel\summary_thresholds_posweight\final_exit_per_label.csv `
-        runs_multilabel\summary_thresholds_posweight\final_exit_per_label.md `
-        runs_multilabel\summary_thresholds_posweight\final_exit_thresholds.csv `
-        runs_multilabel\summary_thresholds_posweight\final_exit_thresholds.md `
-        runs_multilabel\summary_thresholds_posweight\README_TABLES.md
-
-git commit -m "docs: record pos-weight multi-label branch findings"
-
-git push -u origin kexit_cclass_greedy_multi-label_pos-weight
-```
-
-Do not commit the generated heavy data/cache folders unless there is a specific reason:
-
-```text
-multilabel_data/
-multilabel_cache/
-runs_multilabel/
-```
-
-Only documentation, scripts, configs, and selected lightweight summary tables should normally be committed.
+| File | Purpose |
+|---|---|
+| `README.md` | Branch-level summary, key tables, and main research findings |
+| `DOC_STRUCTURE.md` | Thesis/report structure and detailed writing plan |
+| `APPENDIX.md` | Full PowerShell commands, experiment protocol, and extended tables |
