@@ -17,6 +17,7 @@
 #   - rename_manifest.csv for traceability
 #   - configurable separator
 #   - optional case preservation
+#   - manifest path outside the raw dataset root
 #
 # Manifest columns:
 #   class_dir,old_path,new_path,old_name,new_name,old_ext,new_ext,action
@@ -34,18 +35,28 @@
 #
 # Example dry run for human-talk data:
 #   python scripts\rename_wavs_by_class.py `
-#     --root event_dataset `
-#     --manifest human_talk_data\metadata\rename_manifest.csv `
+#     --root human_talk_dataset `
+#     --manifest human_talk_workspace\metadata\rename_manifest.csv `
 #     --separator "__" `
 #     --preserve_case
 #
 # Example apply for human-talk data:
 #   python scripts\rename_wavs_by_class.py `
-#     --root event_dataset `
-#     --manifest human_talk_data\metadata\rename_manifest.csv `
+#     --root human_talk_dataset `
+#     --manifest human_talk_workspace\metadata\rename_manifest.csv `
 #     --separator "__" `
 #     --preserve_case `
 #     --apply
+#
+# Important path behaviour:
+#   --manifest rename_manifest.csv
+#       writes to: <root>/rename_manifest.csv
+#
+#   --manifest human_talk_workspace\metadata\rename_manifest.csv
+#       writes to that project-level path, relative to the current working directory.
+#
+# Therefore, for human-talk experiments, keep the rename manifest here:
+#   human_talk_workspace/metadata/rename_manifest.csv
 
 from __future__ import annotations
 
@@ -105,11 +116,10 @@ def collect_class_dirs(root: Path) -> list[Path]:
     Collect immediate class folders under root.
 
     Example:
-      clean_seed/car_crash
-      clean_seed/conversation
-      clean_seed/fireworks
-      event_dataset/Les_Brown
-      event_dataset/Simon_Sinek
+      multilabel_data/clean_seed/car_crash
+      multilabel_data/clean_seed/conversation
+      human_talk_dataset/Les_Brown
+      human_talk_dataset/Simon_Sinek
     """
     return sorted(
         [p for p in root.iterdir() if p.is_dir()],
@@ -120,7 +130,9 @@ def collect_class_dirs(root: Path) -> list[Path]:
 def collect_audio_files(class_dir: Path) -> list[Path]:
     """
     Collect supported audio files directly inside a class folder.
-    This does not search recursively by design.
+
+    This does not search recursively by design. This avoids accidentally
+    renaming generated segments or nested output files.
     """
     return sorted(
         [
@@ -131,7 +143,12 @@ def collect_audio_files(class_dir: Path) -> list[Path]:
     )
 
 
-def parse_existing_index(label: str, separator: str, path: Path, preserve_case: bool = False) -> int | None:
+def parse_existing_index(
+    label: str,
+    separator: str,
+    path: Path,
+    preserve_case: bool = False,
+) -> int | None:
     """
     Detect whether a file is already named like:
       label_0001.wav
@@ -159,13 +176,19 @@ def make_index(i: int, digits: int) -> str:
 
 def resolve_manifest_path(root: Path, manifest_arg: str) -> Path:
     """
-    Backward-compatible manifest handling:
+    Backward-compatible manifest handling.
+
+    Case 1:
       --manifest rename_manifest.csv
-          -> writes inside root/rename_manifest.csv, same as old script.
-      --manifest human_talk_data/metadata/rename_manifest.csv
-          -> writes exactly there relative to current working directory.
+      -> writes inside root/rename_manifest.csv, same as the older script.
+
+    Case 2:
+      --manifest human_talk_workspace/metadata/rename_manifest.csv
+      -> writes exactly there relative to the current working directory.
+
+    Case 3:
       --manifest C:/.../rename_manifest.csv
-          -> writes absolute path.
+      -> writes to that absolute path.
     """
     manifest = Path(manifest_arg)
 
@@ -197,7 +220,10 @@ def main():
     parser.add_argument(
         "--root",
         required=True,
-        help="Root directory containing class folders, e.g. multilabel_data/clean_seed or event_dataset",
+        help=(
+            "Root directory containing class folders, e.g. "
+            "multilabel_data/clean_seed or human_talk_dataset"
+        ),
     )
     parser.add_argument(
         "--start",
@@ -234,7 +260,7 @@ def main():
         help=(
             "CSV file to store old/new filename mapping. "
             "If a simple filename is given, it is written inside --root for backward compatibility. "
-            "If a path is given, it is written to that path."
+            "If a path is given, it is written to that path relative to the current working directory."
         ),
     )
     parser.add_argument(
@@ -348,8 +374,16 @@ def main():
             planned.append((old_path, new_path, action))
             next_index += 1
 
-        rename_items = [(old_path, new_path) for old_path, new_path, action in planned if action.endswith("rename")]
-        same_name_items = [(old_path, new_path) for old_path, new_path, action in planned if action.endswith("skip_same_name")]
+        rename_items = [
+            (old_path, new_path)
+            for old_path, new_path, action in planned
+            if action.endswith("rename")
+        ]
+        same_name_items = [
+            (old_path, new_path)
+            for old_path, new_path, action in planned
+            if action.endswith("skip_same_name")
+        ]
 
         print(f"Planned renames: {len(rename_items)}")
         print(f"Already correct names: {len(same_name_items)}")
