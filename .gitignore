@@ -69,3 +69,7 @@ event_dataset/
 human_talk_dataset/
 final_dataset/
 runs_multilabel_backup/
+
+# Human-talk local dataset/workspace
+human_talk_dataset/
+human_talk_workspace/
