@@ -286,13 +286,6 @@ powershell -ExecutionPolicy Bypass -File .\scripts\run_human_talk_confusion_eval
 Use this wording:
 
 > The 3-exit model provides the strongest accuracy baseline across the clean human-talk stages. The 5-exit model provides a practical dynamic early-exit trade-off, saving approximately 16.9%–19.5% estimated depth compute while retaining high speaker-classification performance. Confusion-matrix analysis shows that clip-level aggregation improves robustness, while segment-level errors increase with class count, particularly around `Simon_Sinek`.
-
-Avoid this wording:
-
-> The 5-exit model is more accurate than the 3-exit model.
-
-That is not supported by the clean-stage results.
-
 ---
 
 ## Known limitations
