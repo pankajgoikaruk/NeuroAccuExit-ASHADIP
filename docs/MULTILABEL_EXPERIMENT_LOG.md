@@ -1,784 +1,244 @@
-# Multi-Label Experiment Log
+# Human-Talk Multi-Label Early-Exit Experiment Log
 
-This document is a quick memory book for the multi-label NeuroAccuExit work. It records the main branches, methods, motivation, outcomes, and lessons learned so that future experiments do not lose context.
+This log records the current staged human-talk evaluation on the `kexit_human_talk_incremental_eval` branch.
 
 ```text
 Project: NeuroAccuExit-ASHADIP
-Scope: Multi-label K-exit audio classification and dynamic early-exit policy
-Current reference branch: kexit_multi-label_EE_lossweight
-Previous locked baseline branch: kexit_multi-label_greedy_EE
+Branch: kexit_human_talk_incremental_eval
+Current study: clean human-talk staged speaker classification
+Compared models: 3-exit no-hint vs 5-exit no-hint
+Evaluation levels: segment, clip, confusion matrix
 ```
 
 ---
 
-## 1. Why we moved to multi-label
+## 1. Why this branch exists
 
-Earlier versions mainly treated the audio task as single-label or multi-class:
+The previous multi-label branches established a sigmoid/BCE early-exit pipeline. This branch tests whether the same K-exit architecture can generalise to a different audio domain: human-talk speaker classification.
 
-```text
-one audio segment -> one class
-```
+The clean speaker stages are not intended to prove real-world noisy robustness yet. They are a controlled benchmark to test:
 
-However, real environmental audio can contain overlapping events:
-
-```text
-rain + thunderstorm
-road_traffic + gun_shot
-fireworks + conversation
-wind + rain
-```
-
-Therefore, the task was reformulated as:
-
-```text
-one audio segment -> multiple possible labels
-```
-
-This required a change from:
-
-```text
-softmax + CrossEntropyLoss
-```
-
-to:
-
-```text
-sigmoid + BCEWithLogitsLoss
-```
-
-### Verdict
-
-Helpful and necessary. Multi-label formulation is the correct direction for overlapping audio events.
+1. Whether the model learns speaker-discriminative log-mel features.
+2. Whether performance degrades smoothly as classes increase.
+3. Whether 5 exits give a useful accuracy/compute trade-off.
+4. Whether clip aggregation improves robustness over 1-second segments.
 
 ---
 
-## 2. Multi-label dataset and synthetic mixture stage
+## 2. Stage chronology
 
-### Method
-
-A multi-label data pipeline was introduced:
-
-```text
-clean class-wise audio
--> seed manifest
--> synthetic two-label mixtures
--> multi-hot labels
--> log-mel features
--> train/val/test manifest
-```
-
-Example target for `rain + thunderstorm`:
-
-```text
-[0,0,0,0,0,1,0,0,1,0]
-```
-
-### Why this was done
-
-The project needed overlapping-label examples. Since naturally mixed audio was limited, synthetic two-label mixtures provided a controlled way to train and evaluate multi-label behaviour.
-
-### Outcome
-
-Helpful. It enabled a proper multi-label training and evaluation setup.
-
-### Limitation
-
-Synthetic mixtures are not a complete replacement for real overlapping audio scenes. A real mixed-audio test set is still needed later.
+| Stage | Purpose | Status |
+|---|---|---|
+| `clean2_balanced` | Two-speaker sanity check | Completed |
+| `clean3_balanced` | First scalability check | Completed |
+| `clean4_balanced` | Intermediate scalability stage | Completed |
+| `clean5_balanced` | Main clean scalability stage | Completed |
+| Clip/confusion evaluation | Fairer segment + clip comparison | Completed |
+| Noisy/raw speaker stage | Robustness stress test | Not yet run |
 
 ---
 
-## 3. Multi-label training setup
+## 3. Dataset summary
 
-### Likely branch family
-
-```text
-kexit_cclass_greedy_multi-label
-```
-
-### Main method
-
-The model was adapted for multi-label prediction using:
-
-```text
-TinyAudioCNN + ExitNet
-multi-label logits at every exit
-sigmoid probabilities
-BCEWithLogitsLoss
-```
-
-Important files/scripts include:
-
-```text
-training/train_multilabel.py
-data/datasets_multilabel.py
-scripts/tune_multilabel_thresholds.py
-scripts/summarize_multilabel_threshold_runs.py
-```
-
-### Why this was done
-
-Multi-label audio tagging requires independent prediction for each label rather than one mutually exclusive softmax class.
-
-### Outcome
-
-Helpful, but fixed threshold `0.5` was not enough.
-
-### Main lesson
-
-The model could perform multi-label prediction, but threshold selection became a critical part of the method.
+| stage   |   n_labels | labels                                                           |   n_parent_clips |   n_segments |   train_segments |   val_segments |   test_segments |
+|:--------|-----------:|:-----------------------------------------------------------------|-----------------:|-------------:|-----------------:|---------------:|----------------:|
+| clean2  |          2 | Les_Brown, Simon_Sinek                                           |              944 |         8496 |             5940 |           1278 |            1278 |
+| clean3  |          3 | Les_Brown, Simon_Sinek, Rabin_Sharma                             |             1416 |        12744 |             8910 |           1917 |            1917 |
+| clean4  |          4 | Les_Brown, Simon_Sinek, Rabin_Sharma, Oprah_Winfrey              |             1888 |        16992 |            11880 |           2556 |            2556 |
+| clean5  |          5 | Les_Brown, Mel_Robbins, Oprah_Winfrey, Rabin_Sharma, Simon_Sinek |             2205 |        19845 |            13905 |           2970 |            2970 |
 
 ---
 
-## 4. Threshold tuning
+## 4. Main segment-level results
 
-### Method
-
-Instead of using only:
-
-```text
-probability >= 0.5
-```
-
-we tuned thresholds per label and later per exit/per label:
-
-```text
-Exit 1 threshold for each label
-Exit 2 threshold for each label
-Exit 3 threshold for each label
-...
-```
-
-### Why this was done
-
-Different labels have different score distributions. Some labels require lower thresholds to recover recall; other labels require higher thresholds to reduce false positives.
-
-### Outcome
-
-Strongly helpful.
-
-### Main lesson
-
-Per-label and per-exit threshold tuning is essential for fair multi-label evaluation.
+| stage   | model_type   |   macro_f1 |   exact_match |   hamming_loss |   hamming_accuracy |   jaccard_score |   macro_auprc |   avg_exit_depth |   depth_compute_saved_pct |   exit_consistency |   label_set_flip_any_rate |
+|:--------|:-------------|-----------:|--------------:|---------------:|-------------------:|----------------:|--------------:|-----------------:|--------------------------:|-------------------:|--------------------------:|
+| clean2  | 3-exit       |     0.9898 |        0.9898 |         0.0102 |             0.9898 |          0.9898 |        0.9996 |           3      |                    0      |             1      |                    0.1369 |
+| clean2  | 5-exit       |     0.9898 |        0.9898 |         0.0102 |             0.9898 |          0.9898 |        0.9989 |           4.025  |                   19.4992 |             0.9953 |                    0.1385 |
+| clean3  | 3-exit       |     0.9808 |        0.975  |         0.0127 |             0.9873 |          0.9763 |        0.9976 |           3      |                    0      |             1      |                    0.4956 |
+| clean3  | 5-exit       |     0.9792 |        0.9729 |         0.0137 |             0.9863 |          0.9755 |        0.9955 |           4.121  |                   17.5796 |             0.987  |                    0.4971 |
+| clean4  | 3-exit       |     0.9789 |        0.9667 |         0.0105 |             0.9895 |          0.9705 |        0.9976 |           3      |                    0      |             1      |                    0.7433 |
+| clean4  | 5-exit       |     0.9696 |        0.9515 |         0.0154 |             0.9846 |          0.9634 |        0.995  |           4.1451 |                   17.097  |             0.9855 |                    0.8075 |
+| clean5  | 3-exit       |     0.9758 |        0.9589 |         0.0096 |             0.9904 |          0.9655 |        0.9976 |           3      |                    0      |             1      |                    0.7428 |
+| clean5  | 5-exit       |     0.9629 |        0.9414 |         0.0152 |             0.9848 |          0.954  |        0.994  |           4.1535 |                   16.9293 |             0.9778 |                    0.731  |
 
 ---
 
-## 5. Positive-label weighting
+## 5. Confusion results
 
-### Likely branch family
+| stage   | model_type   | level   | policy          |   n_samples |   accuracy |   errors | worst_class   |   worst_class_f1 |
+|:--------|:-------------|:--------|:----------------|------------:|-----------:|---------:|:--------------|-----------------:|
+| clean2  | 3-exit       | clip    | dynamic_policy  |         142 |     0.993  |        1 | Simon_Sinek   |           0.9929 |
+| clean2  | 3-exit       | clip    | full_final      |         142 |     1      |        0 | Les_Brown     |           1      |
+| clean2  | 5-exit       | clip    | dynamic_policy  |         142 |     1      |        0 | Les_Brown     |           1      |
+| clean2  | 5-exit       | clip    | full_final      |         142 |     1      |        0 | Les_Brown     |           1      |
+| clean2  | 3-exit       | segment | selected_policy |        1278 |     0.9898 |       13 | Simon_Sinek   |           0.9898 |
+| clean2  | 5-exit       | segment | selected_policy |        1278 |     0.9898 |       13 | Les_Brown     |           0.9898 |
+| clean3  | 3-exit       | clip    | dynamic_policy  |         213 |     0.9906 |        2 | Simon_Sinek   |           0.9859 |
+| clean3  | 3-exit       | clip    | full_final      |         213 |     1      |        0 | Les_Brown     |           1      |
+| clean3  | 5-exit       | clip    | dynamic_policy  |         213 |     0.9906 |        2 | Simon_Sinek   |           0.9859 |
+| clean3  | 5-exit       | clip    | full_final      |         213 |     1      |        0 | Les_Brown     |           1      |
+| clean3  | 3-exit       | segment | selected_policy |        1917 |     0.9812 |       36 | Simon_Sinek   |           0.9739 |
+| clean3  | 5-exit       | segment | selected_policy |        1917 |     0.9802 |       38 | Simon_Sinek   |           0.9721 |
+| clean4  | 3-exit       | clip    | dynamic_policy  |         284 |     0.993  |        2 | Simon_Sinek   |           0.9859 |
+| clean4  | 3-exit       | clip    | full_final      |         284 |     0.9965 |        1 | Oprah_Winfrey |           0.9929 |
+| clean4  | 5-exit       | clip    | dynamic_policy  |         284 |     1      |        0 | Les_Brown     |           1      |
+| clean4  | 5-exit       | clip    | full_final      |         284 |     1      |        0 | Les_Brown     |           1      |
+| clean4  | 3-exit       | segment | selected_policy |        2556 |     0.9812 |       48 | Simon_Sinek   |           0.9734 |
+| clean4  | 5-exit       | segment | selected_policy |        2556 |     0.98   |       51 | Simon_Sinek   |           0.9719 |
+| clean5  | 3-exit       | clip    | dynamic_policy  |         330 |     1      |        0 | Les_Brown     |           1      |
+| clean5  | 3-exit       | clip    | full_final      |         330 |     1      |        0 | Les_Brown     |           1      |
+| clean5  | 5-exit       | clip    | dynamic_policy  |         330 |     0.9879 |        4 | Oprah_Winfrey |           0.9688 |
+| clean5  | 5-exit       | clip    | full_final      |         330 |     0.9939 |        2 | Oprah_Winfrey |           0.9846 |
+| clean5  | 3-exit       | segment | selected_policy |        2970 |     0.9848 |       45 | Simon_Sinek   |           0.9702 |
+| clean5  | 5-exit       | segment | selected_policy |        2970 |     0.9667 |       99 | Simon_Sinek   |           0.9319 |
+
+---
+
+## 6. Clean5 detailed confusion findings
+
+| model_type   | label         |   precision |   recall |     f1 |   support |   predicted |   tp |   fp |   fn |
+|:-------------|:--------------|------------:|---------:|-------:|----------:|------------:|-----:|-----:|-----:|
+| 3-exit       | Les_Brown     |      1      |   0.9949 | 0.9975 |       594 |         591 |  591 |    0 |    3 |
+| 3-exit       | Mel_Robbins   |      0.9966 |   0.9916 | 0.9941 |       594 |         591 |  589 |    2 |    5 |
+| 3-exit       | Oprah_Winfrey |      0.9832 |   0.9832 | 0.9832 |       594 |         594 |  584 |   10 |   10 |
+| 3-exit       | Rabin_Sharma  |      0.9626 |   0.9966 | 0.9793 |       594 |         615 |  592 |   23 |    2 |
+| 3-exit       | Simon_Sinek   |      0.9827 |   0.9579 | 0.9702 |       594 |         579 |  569 |   10 |   25 |
+| 5-exit       | Les_Brown     |      0.9899 |   0.9882 | 0.989  |       594 |         593 |  587 |    6 |    7 |
+| 5-exit       | Mel_Robbins   |      0.9949 |   0.9815 | 0.9881 |       594 |         586 |  583 |    3 |   11 |
+| 5-exit       | Oprah_Winfrey |      0.9927 |   0.9209 | 0.9555 |       594 |         551 |  547 |    4 |   47 |
+| 5-exit       | Rabin_Sharma  |      0.9895 |   0.9529 | 0.9708 |       594 |         572 |  566 |    6 |   28 |
+| 5-exit       | Simon_Sinek   |      0.8802 |   0.9899 | 0.9319 |       594 |         668 |  588 |   80 |    6 |
+
+Important clean5 notes:
+
+- 3-exit selected-policy segment confusion accuracy: `98.48%`.
+- 5-exit selected-policy segment confusion accuracy: `96.67%`.
+- 3-exit clip dynamic-policy confusion accuracy: `100.00%`.
+- 5-exit clip dynamic-policy confusion accuracy: `98.79%`.
+- `Simon_Sinek` is the most recurring weak/confused class.
+- 5-exit over-predicts `Simon_Sinek` in the clean5 selected policy.
+
+---
+
+## 7. Research conclusions
+
+### 7.1 Performance scaling
+
+The staged benchmark shows smooth degradation rather than sharp collapse:
 
 ```text
-kexit_cclass_greedy_multi-label_pos-weight
+3-exit selected Macro-F1:
+clean2 = 0.9898
+clean3 = 0.9808
+clean4 = 0.9789
+clean5 = 0.9758
+
+5-exit selected Macro-F1:
+clean2 = 0.9898
+clean3 = 0.9792
+clean4 = 0.9696
+clean5 = 0.9629
 ```
 
-### Method
+### 7.2 Accuracy baseline
 
-Positive-label weighting was added through:
+The 3-exit model is the stronger accuracy baseline from `clean3` onward.
+
+### 7.3 Efficiency model
+
+The 5-exit model is the efficiency-oriented model:
+
+```text
+5-exit estimated depth-compute saving:
+clean2 = 19.50%
+clean3 = 17.58%
+clean4 = 17.10%
+clean5 = 16.93%
+```
+
+### 7.4 Clip-level robustness
+
+Clip-level confusion accuracy is stronger than segment-level confusion accuracy, which suggests that aggregating windows from a parent clip reduces isolated 1-second mistakes.
+
+### 7.5 Main weakness
+
+The hardest recurring speaker is `Simon_Sinek`, especially at the segment level. This should be investigated using:
+
+- confusion matrices,
+- per-class precision/recall,
+- spectrogram inspection,
+- speaker similarity / background overlap checks.
+
+---
+
+## 8. Commands used
+
+### Run a full stage
 
 ```powershell
---use_pos_weight
---pos_weight_max 20.0
+powershell -ExecutionPolicy Bypass -File .\scripts\run_human_talk_clean_stage_experiment.ps1 `
+  -Stage clean5_balanced `
+  -RawRoot human_talk_dataset `
+  -WorkspaceRoot human_talk_workspace `
+  -Device cpu `
+  -Clean `
+  -ZipResults
 ```
 
-### Why this was done
+### Refresh evaluation only
 
-Some labels were harder or less frequent. Positive weighting was introduced to make the BCE loss pay more attention to positive labels.
-
-### Outcome
-
-Mixed but useful.
-
-It improved label-balanced behaviour and helped macro-F1, but it also increased the risk of over-predicting labels.
-
-### Main lesson
-
-Positive weighting improves recall-sensitive learning, but it can increase false positives and predicted-label count.
-
----
-
-## 6. Static per-exit analysis
-
-### Method
-
-Each exit was evaluated independently:
-
-```text
-Exit 1 quality
-Exit 2 quality
-Exit 3 quality
-Exit 4 quality
-Exit 5 quality
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run_human_talk_clean_stage_experiment.ps1 `
+  -Stage clean5_balanced `
+  -RawRoot human_talk_dataset `
+  -WorkspaceRoot human_talk_workspace `
+  -Device cpu `
+  -SkipPrepare `
+  -SkipFeatures `
+  -SkipTrain3 `
+  -SkipTrain5 `
+  -ZipResults
 ```
 
-Metrics:
+### Export confusion matrices
 
-```text
-macro-F1
-micro-F1
-samples-F1
-exact match
-hamming loss
-average predicted labels
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run_human_talk_confusion_eval_all.ps1 `
+  -WorkspaceRoot human_talk_workspace `
+  -Device cpu `
+  -ZipResults
 ```
 
-### Why this was done
-
-Before using dynamic early exit, we needed to know whether each exit was reliable enough to make predictions.
-
-### Outcome
-
-Very helpful.
-
-### Key findings
-
-```text
-Exit 1 is weak.
-Exit 2 is somewhat useful.
-Exit 4 is the strongest practical intermediate exit.
-The final exit is not always the best exit.
-```
-
-### Important result from greedy-EE baseline
-
-```text
-5exit_posweight Exit 4 macro-F1 = 0.6538
-```
-
-### Main lesson
-
-A multi-exit network should not be judged only by its final head. Intermediate exits can be strong and sometimes better than the final exit for macro-F1.
-
----
-
-## 7. Greedy label-set stability policy
-
-### Branch family
-
-```text
-kexit_cclass_greedy_multi-label_policy
-kexit_multi-label_greedy_EE
-```
-
-### Main script
-
-```text
-scripts/multilabel_greedy_policy.py
-```
-
-### Method
-
-The policy works as follows:
-
-```text
-1. Run all exits.
-2. Convert sigmoid probabilities into multi-label sets using tuned thresholds.
-3. Start checking from min_exit.
-4. Stop when the predicted label set is stable for stable_k consecutive considered exits.
-5. If no stable decision is found, fall back to the final exit.
-```
-
-Example:
-
-```text
-Exit 1 predicts: rain + wind
-Exit 2 predicts: rain + wind
-If stable_k = 2, stop at Exit 2.
-```
-
-### Why this was done
-
-In multi-label early exit, confidence alone is not enough. The whole predicted label set must become stable.
-
-### Outcome
-
-Helpful and necessary. It added dynamic-neural-network evidence:
-
-```text
-where samples exit
-average exit depth
-estimated compute saved
-dynamic macro-F1 and hamming loss
-```
-
-### Main lesson
-
-Label-set stability is a reasonable first dynamic policy for multi-label early-exit inference.
-
----
-
-## 8. Policy 001: conservative policy
-
-### Branch
-
-```text
-kexit_multi-label_greedy_EE
-```
-
-### Setting
-
-```text
-min_exit = 2
-stable_k = 2
-allow_empty_stop = False
-```
-
-### Why this was done
-
-Exit 1 was weak, so this policy intentionally ignored Exit 1.
-
-### Outcome
-
-Helpful for 5-exit models, but not useful for 3-exit compute saving.
-
-For 3-exit models:
-
-```text
-Exit 1 ignored.
-Exit 2 is first considered.
-stable_k=2 requires agreement between Exit 2 and Exit 3.
-Earliest stable stop becomes final Exit 3.
-Compute saved = 0%.
-```
-
-For 5-exit models, it produced useful dynamic behaviour:
-
-```text
-5exit_nohint saved about 16% depth compute.
-5exit_posweight saved about 14% depth compute.
-```
-
-### Verdict
-
-Good conservative policy, but not suitable for proving 3-exit Tiny early-exit behaviour.
-
----
-
-## 9. Policy 002: Exit-1-enabled fair policy
-
-### Branch
-
-```text
-kexit_multi-label_greedy_EE
-```
-
-### Setting
-
-```text
-min_exit = 1
-stable_k = 2
-allow_empty_stop = False
-```
-
-### Why this was done
-
-This policy tested whether the compact 3-exit model could behave as a real early-exit model.
-
-### Outcome
-
-Helpful, but savings were small.
-
-Results from greedy-EE baseline:
-
-```text
-3exit_nohint:    3.84% compute saved
-3exit_posweight: 2.53% compute saved
-```
-
-Macro-F1 dropped slightly compared with the conservative/final-exit result.
-
-### Verdict
-
-Good fairness test. It proved that 3-exit can early-exit, but also showed that early exits were not strong enough yet.
-
----
-
-## 10. Policy 003: aggressive early-exit ablation
-
-### Branch
-
-```text
-kexit_multi-label_greedy_EE
-```
-
-### Setting
-
-```text
-min_exit = 1
-stable_k = 1
-allow_empty_stop = False
-```
-
-### Why this was done
-
-This was an ablation to test what happens if the model stops immediately at Exit 1.
-
-### Outcome
-
-Strongly degraded prediction quality.
-
-Compute saving was large:
-
-```text
-66% to 80%
-```
-
-but macro-F1 collapsed to roughly:
-
-```text
-0.38 to 0.43
-```
-
-### Verdict
-
-Not a successful policy. Useful only as evidence that Exit 1 is not reliable enough for immediate stopping.
-
-### Main lesson
-
-High compute saving is not meaningful if the early prediction is poor.
-
----
-
-## 11. Policy 004: allow empty-label stopping
-
-### Branch
-
-```text
-kexit_multi-label_greedy_EE
-```
-
-### Setting
-
-```text
-min_exit = 1
-stable_k = 2
-allow_empty_stop = True
-```
-
-### Why this was done
-
-To check whether allowing early stopping on an empty predicted label set improves efficiency.
-
-### Outcome
-
-Almost no useful benefit.
-
-It gave tiny extra saving for some 5-exit models, but no meaningful accuracy advantage.
-
-### Verdict
-
-Appendix-only ablation, not a main policy.
-
----
-
-## 12. Best greedy-EE baseline result
-
-### Branch
-
-```text
-kexit_multi-label_greedy_EE
-```
-
-### Best practical result
-
-```text
-Model: 5exit_posweight
-Policy: min_exit=3, stable_k=2
-Macro-F1: 0.6449
-Samples-F1: 0.6690
-Average exit depth: 4.5337 / 5
-Estimated depth-compute saved: 9.33%
-```
-
-### Why it worked
-
-This policy avoids the weakest early exits and waits until later exits are more reliable.
-
-```text
-Exit 1: too weak
-Exit 2: moderate
-Exit 3 onwards: more stable
-Exit 4: strongest static candidate
-```
-
-### Verdict
-
-Strong locked baseline for dynamic multi-label early exit.
-
----
-
-## 13. Loss-weight branch
-
-### Branch
-
-```text
-kexit_multi-label_EE_lossweight
-```
-
-### Method
-
-Only the exit loss weights were changed.
-
-Previous likely weights:
-
-```text
-3-exit: [0.3, 0.3, 1.0]
-5-exit: [0.3, 0.3, 0.6, 0.8, 1.0]
-```
-
-New tested weights:
-
-```text
-3-exit:
-LW060 = [0.6, 0.6, 1.0]
-LW080 = [0.8, 0.6, 1.0]
-
-5-exit:
-LW060 = [0.6, 0.6, 0.7, 0.9, 1.0]
-LW080 = [0.8, 0.7, 0.7, 0.9, 1.0]
-```
-
-### Why this was done
-
-The greedy-EE branch showed:
-
-```text
-Exit 1 is too weak.
-Exit 2 is somewhat useful.
-Exit 4 is strongest.
-```
-
-Therefore, stronger early-exit supervision was tested to improve Exit 1 and Exit 2.
-
----
-
-## 14. Loss-weight results
-
-### Exit 1
-
-Exit 1 remained weak.
-
-```text
-Exit 1 macro-F1 stayed around 0.41 to 0.42.
-```
-
-Correct interpretation:
-
-```text
-Loss weighting alone does not fix Exit 1.
-```
-
-### Exit 2
-
-Exit 2 improved clearly.
-
-```text
-3exit Exit 2:
-0.5727 -> 0.5909
-
-5exit Exit 2:
-0.4777 -> 0.5067
-```
-
-### 3-exit dynamic improvement
-
-Old baseline:
-
-```text
-3exit_posweight Policy 002
-macro-F1 = 0.6293
-compute saved = 2.53%
-```
-
-New loss-weight result:
-
-```text
-3exit_lw080 Policy 002
-macro-F1 = 0.6475
-compute saved = 3.46%
-```
-
-### 5-exit dynamic improvement
-
-Old best:
-
-```text
-5exit_posweight
-min_exit=3, stable_k=2
-macro-F1 = 0.6449
-compute saved = 9.33%
-```
-
-New best:
-
-```text
-5exit_lw080
-min_exit=3, stable_k=2
-macro-F1 = 0.6504
-compute saved = 8.03%
-```
-
-### Verdict
-
-Successful controlled ablation.
-
-```text
-Loss weighting improves Exit 2 and dynamic quality.
-Loss weighting alone does not solve Exit 1.
+### Package existing confusion outputs
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run_human_talk_confusion_eval_all.ps1 `
+  -WorkspaceRoot human_talk_workspace `
+  -ZipOnly `
+  -ZipResults
 ```
 
 ---
 
-## 15. Branch-by-branch memory table
+## 9. Interpretation rules
 
-| Branch / Stage | Main Method | Why We Did It | Helped or Degraded? | Main Lesson |
-|---|---|---|---|---|
-| `kexit_cclass_greedy_multi-label` | Multi-label BCE/sigmoid setup | Move from single-label to overlapping labels | Helped | Multi-label formulation is necessary |
-| Dataset stage | Synthetic two-label mixtures | Create overlapping audio labels | Helped | Controlled test, but real mixed data still needed |
-| Threshold tuning | Per-label/per-exit thresholds | Fixed 0.5 was unreliable | Strongly helped | Threshold tuning is essential |
-| `kexit_cclass_greedy_multi-label_pos-weight` | Positive label weighting | Improve rare/difficult label recall | Mixed but useful | Improves macro-F1 but can increase false positives |
-| Static exit analysis | Evaluate every exit alone | Diagnose exit reliability | Very helpful | Exit 1 weak, Exit 4 strong |
-| `kexit_cclass_greedy_multi-label_policy` | Greedy label-set stability script | Add dynamic early-exit evidence | Helped | Measures exit depth and compute saving |
-| `kexit_multi-label_greedy_EE` | Structured policy experiments | Compare conservative/fair/aggressive policies | Helped | Best baseline: 5exit posweight, min_exit=3, stable_k=2 |
-| `kexit_multi-label_EE_lossweight` | Stronger early-exit loss weights | Strengthen Exit 1 and Exit 2 | Partially helped | Exit 2 improved; Exit 1 still weak |
+Use these rules when writing the paper/report:
 
----
-
-## 16. What improved overall
-
-### Helpful methods
-
-```text
-Multi-label formulation
-Synthetic mixture setup
-Per-label and per-exit threshold tuning
-Positive-label weighting for macro-F1
-Static per-exit diagnosis
-Greedy label-set stability policy
-Policy 002 for fair 3-exit early-exit testing
-min_exit=3, stable_k=2 for 5-exit practical dynamic inference
-Loss weighting for improving Exit 2
-```
-
-### Weak or degraded methods
-
-```text
-Fixed 0.5 threshold alone
-Aggressive Exit 1 stopping with stable_k=1
-Allow-empty-label stopping as a main policy
-Loss weighting alone for fixing Exit 1
-```
+1. Use Macro-F1 as the main result.
+2. Use Hamming Loss / Jaccard / Exact Match as multi-label correctness checks.
+3. Use AUPRC/mAP to discuss probability ranking.
+4. Use confusion matrices as single-label speaker-identification interpretation.
+5. Use 3-exit as the accuracy baseline.
+6. Use 5-exit as the dynamic efficiency model.
+7. Do not claim that 5-exit is more accurate.
 
 ---
 
-## 17. Current thesis story
+## 10. Next experiments
 
-```text
-1. Reformulated audio classification as multi-label prediction.
-2. Built synthetic two-label mixtures to simulate overlapping events.
-3. Trained K-exit multi-label networks with BCE/sigmoid outputs.
-4. Found that fixed 0.5 thresholding was insufficient.
-5. Added per-label and per-exit threshold tuning.
-6. Added positive-label weighting to improve macro-F1.
-7. Diagnosed per-exit reliability and found Exit 1 weak, Exit 4 strong.
-8. Added greedy label-set stability for dynamic early exit.
-9. Showed conservative policy works for 5-exit but not 3-exit compute saving.
-10. Showed Exit-1-enabled policy allows 3-exit early exit but with small savings.
-11. Showed aggressive Exit 1 stopping fails.
-12. Added stronger loss weighting to improve early exits.
-13. Found that loss weighting improves Exit 2 and dynamic quality, but Exit 1 remains weak.
-```
-
----
-
-## 18. Current best conclusion
-
-The multi-label NeuroAccuExit experiments show that dynamic early-exit inference is feasible for overlapping audio events, but exit reliability is critical. Threshold tuning and positive-label weighting are necessary to obtain fair multi-label performance. Greedy label-set stability provides a practical dynamic policy, but immediate Exit 1 stopping is unreliable. The strongest greedy-EE baseline came from the 5-exit positive-weighted model with `min_exit=3, stable_k=2`. The loss-weighting branch improved intermediate-exit quality, especially Exit 2, and produced a better quality-focused 5-exit trade-off, but it did not fully solve the weak Exit 1 problem.
-
----
-
-## 19. Recommended next steps
-
-| Next step | Priority | Reason |
-|---|---:|---|
-| Update `README.md`, `DOC_STRUCTURE.md`, and `docs/APPENDIX.md` for `kexit_multi-label_EE_lossweight` | High | Lock the new results |
-| Keep this file updated after every branch | Very high | Prevent losing experimental memory |
-| Try lower `pos_weight_max`, such as 5.0 or 10.0 | Medium | May reduce over-prediction |
-| Add calibration/mAP/AUC diagnostics | Medium | Reviewer-proof multi-label evaluation |
-| Add sigmoid-aware hint passing | Later | More novel, but should come after documenting loss weighting |
-| Test real mixed audio | High for final paper | Synthetic mixtures are a limitation |
-
----
-
-## 20. Rule for future branches
-
-For every new branch, add a short entry here:
-
-```text
-Branch:
-Method:
-Why:
-Commands:
-Main result:
-Compared with:
-Helped/degraded:
-Decision:
-```
-
-This file should be treated as the memory log for the multi-label research path.
-
----
-
-## 21. Branch update: `kexit_human_talk_incremental_eval`
-
-```text
-Branch: kexit_human_talk_incremental_eval
-Base branch: kexit_multi-label_EE_lossweight
-Task: clean human-talk speaker classification
-Stage: clean2_balanced
-Classes: Les_Brown, Simon_Sinek
-Policy: sigmoid-aware greedy label-set stability
-```
-
-### Why this branch was created
-
-The previous multi-label branches focused on environmental and event-like audio labels. This branch checks whether the same K-exit audio architecture can generalise to a different audio classification setting: clean human-talk speaker identity. The first stage intentionally uses only two clean speakers so that the pipeline can be validated before increasing class difficulty.
-
-### Research question
-
-> Can the K-exit NeuroAccuExit audio model generalise from the previous multi-label environmental setup to a clean human-talk speaker benchmark, and does a 5-exit design create a better early-exit accuracy/compute trade-off than the 3-exit baseline?
-
-### Main result
-
-| Model | Final Macro-F1 | Best dynamic policy | Dynamic Macro-F1 | Avg Exit Depth | Compute Saved |
-|---|---:|---|---:|---:|---:|
-| `human_talk_clean2_3exit_nohint` | 0.9926 | `min_exit=1, stable_k=2` | 0.9836 | 2.1252 / 3 | 29.16% |
-| `human_talk_clean2_5exit_nohint` | 0.9930 | `min_exit=3, stable_k=2` | 0.9883 | 4.0219 / 5 | 19.56% |
-| `human_talk_clean2_5exit_nohint` | 0.9930 | `min_exit=2, stable_k=3` | 0.9898 | 4.0806 / 5 | 18.39% |
-
-### What helped
-
-1. The two-speaker data was clean and balanced.
-2. Parent-level splitting avoided segment leakage across train/validation/test.
-3. The 5-exit model created a smoother intermediate-exit progression.
-4. The label-set stability policy worked better with later exits than with very shallow exits.
-
-### What degraded or remained weak
-
-1. Exit 1 remained weak, similar to previous multi-label experiments.
-2. The selected 3-exit conservative policy `min_exit=2, stable_k=2` gave no saving because it always reached the final exit.
-3. A filename parser bug created duplicated parent IDs such as `Les_Brown__Les_Brown_0450`.
-
-### Decision
-
-Stage 1 passes. Before Stage 2, fix the renamed-format parser and then run `clean3_balanced`. The main question for Stage 2 is whether the 5-exit advantage remains when a third speaker increases class confusion.
-
----
-
-## 22. Updated recommended next steps
-
-| Next step | Priority | Reason |
-|---|---:|---|
-| Fix renamed-format parser in audit/preparation scripts | Very high | Needed for clean parent-child traceability |
-| Rerun Stage 1 metadata preparation after parser fix | High | Ensures reviewer-safe metadata |
-| Run `clean3_balanced` 3-exit and 5-exit models | Very high | Tests whether Stage 1 findings scale |
-| Compare exit progression across Stage 1 and Stage 2 | High | Shows whether 5-exit benefit persists |
-| Keep old loss-weight branch results as reference | High | Maintains continuity of early-exit findings |
+1. Tuned-threshold evaluation.
+2. Measured FLOPs and device latency.
+3. Noisy/raw speaker classes.
+4. True multi-label human-talk + environmental audio mixtures.
+5. Event detection latency only after adding event-onset metadata.

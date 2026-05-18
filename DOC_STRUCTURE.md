@@ -1,116 +1,231 @@
 # Documentation Structure — `kexit_human_talk_incremental_eval`
 
-This document records the report/thesis structure for the human-talk incremental evaluation branch.
+This document defines the reporting structure for the staged human-talk evaluation branch.
 
 ```text
 Branch: kexit_human_talk_incremental_eval
-Base branch: kexit_multi-label_EE_lossweight
-Main idea: test whether the K-exit audio model generalises to clean human-talk speaker classification and whether 5 exits improve the early-exit trade-off
+Study type: staged clean speaker-identification benchmark
+Compared models: 3-exit no-hint vs 5-exit no-hint
+Stages: clean2, clean3, clean4, clean5
+Primary result type: segment-level multi-label early-exit metrics
+Secondary result type: clip-level and segment-level confusion matrices
 ```
 
-## Main research question
+---
 
-> Can the K-exit NeuroAccuExit audio model generalise from the previous multi-label environmental setup to a clean human-talk speaker benchmark, and does a 5-exit design create a better early-exit accuracy/compute trade-off than the 3-exit baseline?
+## 1. Recommended paper/report structure
 
-## Main answer
+### 1.1 Motivation
 
-> Yes for Stage 1. On the clean two-speaker benchmark, both 3-exit and 5-exit models reached near-perfect final-exit performance. The 5-exit model produced a smoother intermediate-exit progression and a practical dynamic policy: macro-F1 `0.9883` with `19.56%` estimated depth-compute saving. However, this is a Stage 1 sanity-check result, not yet evidence of robust multi-speaker or noisy real-world generalisation.
+- NeuroAccuExit was previously evaluated on environmental/multi-label audio settings.
+- The human-talk benchmark tests whether the same architecture can generalise to speaker-discriminative audio patterns.
+- The staged design checks whether performance drops smoothly or sharply as more clean speakers are added.
 
-## Stage design
+### 1.2 Research questions
 
-| Stage | Classes | Data mode | Purpose | Status |
-|---|---:|---|---|---|
-| Stage 1 | 2 clean speakers | balanced | Check whether the model can separate two speakers clearly | Completed |
-| Stage 2 | 3 clean speakers | balanced | Test class scalability | Next |
-| Stage 3 | 4 clean speakers | balanced | Test added speaker confusion | Planned |
-| Stage 4 | 5 clean speakers | balanced | Full clean-speaker benchmark | Planned |
-| Stage 5 | 9 speakers | full / noisy | Realistic multi-speaker stress test | Later |
-
-## Stage 1 models
-
-| Model | Tap blocks | Exits | Loss weights | Main role |
-|---|---|---:|---|---|
-| `human_talk_clean2_3exit_nohint` | `1,3` | 3 | `[0.3, 0.3, 1.0]` | Compact baseline |
-| `human_talk_clean2_5exit_nohint` | `1,2,3,4` | 5 | `[0.3, 0.3, 0.6, 0.8, 1.0]` | More early-exit opportunities |
-
-## Key Stage 1 results
-
-| Result | Value |
-|---|---:|
-| Total selected parent clips | `944` |
-| Total one-second child segments | `8,496` |
-| 3-exit final macro-F1 | `0.9926` |
-| 5-exit final macro-F1 | `0.9930` |
-| 5-exit selected policy | `min_exit=3, stable_k=2` |
-| 5-exit selected-policy macro-F1 | `0.9883` |
-| 5-exit selected-policy estimated saving | `19.56%` |
-| Best accuracy/saving 5-exit policy | `min_exit=2, stable_k=3`, macro-F1 `0.9898`, saved `18.39%` |
-
-## Interpretation
-
-The human-talk Stage 1 experiment is a successful sanity-check. It shows that the same K-exit model can learn clean speaker-discriminative representations, and that adding more exits gives a smoother accuracy-depth curve. The 5-exit model is more useful for dynamic early exiting than the 3-exit model on this task because it can stop near Exit 4 with only a small macro-F1 reduction.
-
-## Recommended thesis wording
-
-> The human-talk Stage 1 experiment validates the generality of the NeuroAccuExit multi-exit audio pipeline on a clean two-speaker benchmark. Both 3-exit and 5-exit models reach near-perfect final-exit performance, while the 5-exit model provides a practical early-exit trade-off, achieving macro-F1 `0.9883` with `19.56%` estimated depth-compute saving under a label-set stability policy. This supports the use of additional exits as a mechanism for improving dynamic inference flexibility, although the result should be treated as a Stage 1 sanity check rather than final evidence of robust multi-speaker generalisation.
-
-## Known issue to document
-
-| Issue | Impact | Action |
+| ID | Question | Current answer |
 |---|---|---|
-| `renamed_format_ok=0` for already renamed files | Does not affect labels or accuracy, but makes parent IDs less clean | Fix parser before Stage 2 |
-| Parent IDs duplicate class prefix | Traceability is less readable | Expected format should be `Les_Brown__0450` |
+| RQ1 | Does NeuroAccuExit generalise to clean human-talk speaker classification? | Yes; all clean stages achieve high Macro-F1. |
+| RQ2 | Does performance collapse as speakers increase from 2 to 5? | No; degradation is smooth. |
+| RQ3 | Is 5-exit more accurate than 3-exit? | No; 3-exit is the stronger accuracy baseline. |
+| RQ4 | Does 5-exit provide an efficiency trade-off? | Yes; it saves about 16.9%–19.5% estimated depth compute. |
+| RQ5 | Does clip aggregation help? | Yes; clip-level confusion accuracy is stronger than segment-level accuracy. |
+| RQ6 | Which classes are most confused? | `Simon_Sinek` is the dominant weak/confused class in segment-level results. |
 
 ---
 
-# Previous reference structure retained below
+## 2. Dataset section
 
-The previous loss-weight documentation structure is retained below so the original result-table style is preserved.
+Report the staged design using this table:
+
+| stage   |   n_labels | labels                                                           |   n_parent_clips |   n_segments |   train_segments |   val_segments |   test_segments |
+|:--------|-----------:|:-----------------------------------------------------------------|-----------------:|-------------:|-----------------:|---------------:|----------------:|
+| clean2  |          2 | Les_Brown, Simon_Sinek                                           |              944 |         8496 |             5940 |           1278 |            1278 |
+| clean3  |          3 | Les_Brown, Simon_Sinek, Rabin_Sharma                             |             1416 |        12744 |             8910 |           1917 |            1917 |
+| clean4  |          4 | Les_Brown, Simon_Sinek, Rabin_Sharma, Oprah_Winfrey              |             1888 |        16992 |            11880 |           2556 |            2556 |
+| clean5  |          5 | Les_Brown, Mel_Robbins, Oprah_Winfrey, Rabin_Sharma, Simon_Sinek |             2205 |        19845 |            13905 |           2970 |            2970 |
+
+Key points to write:
+
+- Each parent clip is approximately 5 seconds.
+- Each parent clip is segmented into 1-second windows with 0.5-second hop.
+- Each parent clip produces 9 segment-level windows.
+- Splits are file/parent based to avoid segment leakage.
+- Stages are balanced by parent clips where possible.
 
 ---
 
-# Documentation Structure — `kexit_multi-label_EE_lossweight`
+## 3. Methodology section
 
-This document records the report/thesis structure for the loss-weight branch.
+### 3.1 Architecture
 
-```text
-Branch: kexit_multi-label_EE_lossweight
-Base branch: kexit_multi-label_greedy_EE
-Main idea: strengthen intermediate exits using larger early-exit loss weights
-```
+- TinyAudioCNN backbone.
+- ExitNet wrapper.
+- 3-exit model: tap blocks `1,3` plus final exit.
+- 5-exit model: tap blocks `1,2,3,4` plus final exit.
+- Sigmoid outputs are retained because the implementation is compatible with future true multi-label audio tagging.
 
-## Main research question
+### 3.2 Evaluation levels
 
-> Can stronger early-exit supervision improve Exit 1 and Exit 2 enough to increase compute savings without major macro-F1 degradation?
+| Level | Description | Main use |
+|---|---|---|
+| Segment-level | Each 1-second window is evaluated independently. | Early-exit quality and depth-compute saving. |
+| Clip-level | Segment/window outputs are aggregated by parent clip. | Robustness and confusion analysis. |
+| Confusion matrix | Single-label view of model output. | Speaker-identification interpretation. |
 
-## Main answer
+### 3.3 Metrics
 
-Stronger loss weighting improves intermediate exits, especially Exit 2, and improves several dynamic policy trade-offs. However, Exit 1 remains weak, so loss weighting alone is insufficient to make the earliest exit reliable.
+Primary thresholded metrics:
 
-## Models
+- Macro-F1
+- Micro-F1
+- Samples-F1
+- Exact Match
+- Hamming Loss / Hamming Accuracy
+- Jaccard Score
+- Label Cardinality Error
 
-| Model | Tap blocks | Exits | Loss weights |
-|---|---|---:|---|
-| `3exit_lw060_posweight` | `1,3` | 3 | `[0.6, 0.6, 1.0]` |
-| `3exit_lw080_posweight` | `1,3` | 3 | `[0.8, 0.6, 1.0]` |
-| `5exit_lw060_posweight` | `1,2,3,4` | 5 | `[0.6, 0.6, 0.7, 0.9, 1.0]` |
-| `5exit_lw080_posweight` | `1,2,3,4` | 5 | `[0.8, 0.7, 0.7, 0.9, 1.0]` |
+Probability-based metrics:
 
-## Key results
+- Macro-AUPRC / mAP
+- Micro-AUPRC
+- Per-label AUPRC
 
-| Result | Value |
-|---|---:|
-| Best static result | `3exit_lw060_posweight`, Exit 3, macro-F1 `0.6671` |
-| Best 3-exit dynamic result | `3exit_lw060_posweight`, Policy 002, macro-F1 `0.6579`, saved `3.56%` |
-| Best 5-exit practical result | `5exit_lw080_posweight`, `min_exit=3, stable_k=2`, macro-F1 `0.6504`, saved `8.03%` |
-| Exit 2 improvement, 3-exit | `0.5727 → 0.5909` |
-| Exit 2 improvement, 5-exit | `0.4777 → 0.5067` |
+Efficiency/stability metrics:
 
-## Interpretation
+- Average exit depth
+- Exit distribution
+- Estimated depth-compute saved
+- Exit consistency
+- Label-set flip-any rate
+- Average label-set flip count
+- Average label-bit flip count
 
-The loss-weight experiment is a successful controlled ablation because it improves Exit 2 and improves the quality-focused dynamic trade-off. It does not fully solve the earliest-exit problem because Exit 1 remains weak.
+Confusion metrics:
 
-## Recommended thesis wording
+- Accuracy
+- Error count
+- Per-class precision, recall, F1
+- TP / FP / TN / FN
+- Worst-class F1
 
-> The early-exit loss-weighting experiment shows that stronger supervision of intermediate exits improves the multi-label early-exit trade-off. Exit 2 improves consistently across both 3-exit and 5-exit models. For the compact 3-exit model, enabling Exit 1 under a label-set stability policy now achieves higher macro-F1 and slightly greater estimated compute saving than the previous greedy-EE baseline. However, Exit 1 remains weak and over-predictive, indicating that loss weighting alone is insufficient to make the earliest head reliable. The strongest practical result is obtained by the 5-exit loss-weighted model with `min_exit=3, stable_k=2`, which achieves macro-F1 `0.6504` with `8.03%` estimated depth-compute saving.
+---
 
+## 4. Results section
+
+### 4.1 Segment-level selected-policy results
+
+| stage   | model_type   |   macro_f1 |   exact_match |   hamming_loss |   hamming_accuracy |   jaccard_score |   macro_auprc |   avg_exit_depth |   depth_compute_saved_pct |   exit_consistency |   label_set_flip_any_rate |
+|:--------|:-------------|-----------:|--------------:|---------------:|-------------------:|----------------:|--------------:|-----------------:|--------------------------:|-------------------:|--------------------------:|
+| clean2  | 3-exit       |     0.9898 |        0.9898 |         0.0102 |             0.9898 |          0.9898 |        0.9996 |           3      |                    0      |             1      |                    0.1369 |
+| clean2  | 5-exit       |     0.9898 |        0.9898 |         0.0102 |             0.9898 |          0.9898 |        0.9989 |           4.025  |                   19.4992 |             0.9953 |                    0.1385 |
+| clean3  | 3-exit       |     0.9808 |        0.975  |         0.0127 |             0.9873 |          0.9763 |        0.9976 |           3      |                    0      |             1      |                    0.4956 |
+| clean3  | 5-exit       |     0.9792 |        0.9729 |         0.0137 |             0.9863 |          0.9755 |        0.9955 |           4.121  |                   17.5796 |             0.987  |                    0.4971 |
+| clean4  | 3-exit       |     0.9789 |        0.9667 |         0.0105 |             0.9895 |          0.9705 |        0.9976 |           3      |                    0      |             1      |                    0.7433 |
+| clean4  | 5-exit       |     0.9696 |        0.9515 |         0.0154 |             0.9846 |          0.9634 |        0.995  |           4.1451 |                   17.097  |             0.9855 |                    0.8075 |
+| clean5  | 3-exit       |     0.9758 |        0.9589 |         0.0096 |             0.9904 |          0.9655 |        0.9976 |           3      |                    0      |             1      |                    0.7428 |
+| clean5  | 5-exit       |     0.9629 |        0.9414 |         0.0152 |             0.9848 |          0.954  |        0.994  |           4.1535 |                   16.9293 |             0.9778 |                    0.731  |
+
+### 4.2 3-exit vs 5-exit selected-policy deltas
+
+| stage   |   macro_f1_3exit |   macro_f1_5exit |   macro_f1_delta_5_minus_3 |   exact_match_3exit |   exact_match_5exit |   compute_saved_3exit_pct |   compute_saved_5exit_pct |   exit_consistency_5exit |   flip_rate_5exit |
+|:--------|-----------------:|-----------------:|---------------------------:|--------------------:|--------------------:|--------------------------:|--------------------------:|-------------------------:|------------------:|
+| clean2  |           0.9898 |           0.9898 |                     0      |              0.9898 |              0.9898 |                         0 |                   19.4992 |                   0.9953 |            0.1385 |
+| clean3  |           0.9808 |           0.9792 |                    -0.0016 |              0.975  |              0.9729 |                         0 |                   17.5796 |                   0.987  |            0.4971 |
+| clean4  |           0.9789 |           0.9696 |                    -0.0093 |              0.9667 |              0.9515 |                         0 |                   17.097  |                   0.9855 |            0.8075 |
+| clean5  |           0.9758 |           0.9629 |                    -0.0129 |              0.9589 |              0.9414 |                         0 |                   16.9293 |                   0.9778 |            0.731  |
+
+### 4.3 Confusion-matrix summary
+
+| stage   | model_type   | level   | policy          |   n_samples |   accuracy |   errors | worst_class   |   worst_class_f1 |
+|:--------|:-------------|:--------|:----------------|------------:|-----------:|---------:|:--------------|-----------------:|
+| clean2  | 3-exit       | clip    | dynamic_policy  |         142 |     0.993  |        1 | Simon_Sinek   |           0.9929 |
+| clean2  | 3-exit       | clip    | full_final      |         142 |     1      |        0 | Les_Brown     |           1      |
+| clean2  | 5-exit       | clip    | dynamic_policy  |         142 |     1      |        0 | Les_Brown     |           1      |
+| clean2  | 5-exit       | clip    | full_final      |         142 |     1      |        0 | Les_Brown     |           1      |
+| clean2  | 3-exit       | segment | selected_policy |        1278 |     0.9898 |       13 | Simon_Sinek   |           0.9898 |
+| clean2  | 5-exit       | segment | selected_policy |        1278 |     0.9898 |       13 | Les_Brown     |           0.9898 |
+| clean3  | 3-exit       | clip    | dynamic_policy  |         213 |     0.9906 |        2 | Simon_Sinek   |           0.9859 |
+| clean3  | 3-exit       | clip    | full_final      |         213 |     1      |        0 | Les_Brown     |           1      |
+| clean3  | 5-exit       | clip    | dynamic_policy  |         213 |     0.9906 |        2 | Simon_Sinek   |           0.9859 |
+| clean3  | 5-exit       | clip    | full_final      |         213 |     1      |        0 | Les_Brown     |           1      |
+| clean3  | 3-exit       | segment | selected_policy |        1917 |     0.9812 |       36 | Simon_Sinek   |           0.9739 |
+| clean3  | 5-exit       | segment | selected_policy |        1917 |     0.9802 |       38 | Simon_Sinek   |           0.9721 |
+| clean4  | 3-exit       | clip    | dynamic_policy  |         284 |     0.993  |        2 | Simon_Sinek   |           0.9859 |
+| clean4  | 3-exit       | clip    | full_final      |         284 |     0.9965 |        1 | Oprah_Winfrey |           0.9929 |
+| clean4  | 5-exit       | clip    | dynamic_policy  |         284 |     1      |        0 | Les_Brown     |           1      |
+| clean4  | 5-exit       | clip    | full_final      |         284 |     1      |        0 | Les_Brown     |           1      |
+| clean4  | 3-exit       | segment | selected_policy |        2556 |     0.9812 |       48 | Simon_Sinek   |           0.9734 |
+| clean4  | 5-exit       | segment | selected_policy |        2556 |     0.98   |       51 | Simon_Sinek   |           0.9719 |
+| clean5  | 3-exit       | clip    | dynamic_policy  |         330 |     1      |        0 | Les_Brown     |           1      |
+| clean5  | 3-exit       | clip    | full_final      |         330 |     1      |        0 | Les_Brown     |           1      |
+| clean5  | 5-exit       | clip    | dynamic_policy  |         330 |     0.9879 |        4 | Oprah_Winfrey |           0.9688 |
+| clean5  | 5-exit       | clip    | full_final      |         330 |     0.9939 |        2 | Oprah_Winfrey |           0.9846 |
+| clean5  | 3-exit       | segment | selected_policy |        2970 |     0.9848 |       45 | Simon_Sinek   |           0.9702 |
+| clean5  | 5-exit       | segment | selected_policy |        2970 |     0.9667 |       99 | Simon_Sinek   |           0.9319 |
+
+### 4.4 Clean5 per-class confusion analysis
+
+| model_type   | label         |   precision |   recall |     f1 |   support |   predicted |   tp |   fp |   fn |
+|:-------------|:--------------|------------:|---------:|-------:|----------:|------------:|-----:|-----:|-----:|
+| 3-exit       | Les_Brown     |      1      |   0.9949 | 0.9975 |       594 |         591 |  591 |    0 |    3 |
+| 3-exit       | Mel_Robbins   |      0.9966 |   0.9916 | 0.9941 |       594 |         591 |  589 |    2 |    5 |
+| 3-exit       | Oprah_Winfrey |      0.9832 |   0.9832 | 0.9832 |       594 |         594 |  584 |   10 |   10 |
+| 3-exit       | Rabin_Sharma  |      0.9626 |   0.9966 | 0.9793 |       594 |         615 |  592 |   23 |    2 |
+| 3-exit       | Simon_Sinek   |      0.9827 |   0.9579 | 0.9702 |       594 |         579 |  569 |   10 |   25 |
+| 5-exit       | Les_Brown     |      0.9899 |   0.9882 | 0.989  |       594 |         593 |  587 |    6 |    7 |
+| 5-exit       | Mel_Robbins   |      0.9949 |   0.9815 | 0.9881 |       594 |         586 |  583 |    3 |   11 |
+| 5-exit       | Oprah_Winfrey |      0.9927 |   0.9209 | 0.9555 |       594 |         551 |  547 |    4 |   47 |
+| 5-exit       | Rabin_Sharma  |      0.9895 |   0.9529 | 0.9708 |       594 |         572 |  566 |    6 |   28 |
+| 5-exit       | Simon_Sinek   |      0.8802 |   0.9899 | 0.9319 |       594 |         668 |  588 |   80 |    6 |
+
+---
+
+## 5. Recommended figures
+
+Use these figures in the main report:
+
+| Figure | File |
+|---|---|
+| Selected Macro-F1 by stage | `docs/figures/human_talk/selected_macro_f1_by_stage.png` |
+| Estimated compute saved | `docs/figures/human_talk/selected_compute_saved_by_stage.png` |
+| Average exit depth | `docs/figures/human_talk/selected_avg_exit_depth_by_stage.png` |
+| Label-set flip rate | `docs/figures/human_talk/selected_flip_rate_by_stage.png` |
+| Segment selected-policy confusion accuracy | `docs/figures/human_talk/segment_selected_confusion_accuracy.png` |
+| Clip dynamic-policy confusion accuracy | `docs/figures/human_talk/clip_dynamic_confusion_accuracy.png` |
+| Clean5 confusion errors | `docs/figures/human_talk/clean5_confusion_errors.png` |
+| Clean2 example confusion matrix | `docs/figures/human_talk/c2__3e__segment_confusion__segment_final_exit_confusion_matrix.png` |
+| Clean5 3-exit selected confusion | `docs/figures/human_talk/c5__3e__segment_confusion__segment_selected_policy_confusion_matrix.png` |
+| Clean5 5-exit selected confusion | `docs/figures/human_talk/c5__5e__segment_confusion__segment_selected_policy_confusion_matrix.png` |
+
+---
+
+## 6. Correct research narrative
+
+### Strong claim supported by results
+
+> NeuroAccuExit remains effective on clean human-talk speaker classification, and performance decreases smoothly rather than sharply as the number of clean speaker classes increases.
+
+### Strong claim for 3-exit
+
+> The 3-exit model is the strongest accuracy baseline in the current human-talk benchmark.
+
+### Strong claim for 5-exit
+
+> The 5-exit model provides the better dynamic early-exit efficiency trade-off, saving estimated depth compute while retaining high performance.
+
+### Claim to avoid
+
+> The 5-exit model is more accurate.
+
+This is not supported by the staged results.
+
+---
+
+## 7. Remaining work
+
+1. Add tuned threshold comparison against fixed threshold `0.5`.
+2. Add measured FLOPs/device latency.
+3. Run noisy/raw speaker stages.
+4. Extend from speaker identity to true multi-label audio tagging.
+5. Add event onset metadata before using detection latency for transient classes.
