@@ -10,7 +10,7 @@
 #   5. Train 5-exit no-hint model
 #   6. Run 5-exit greedy policy
 #   7. Save complete CLI transcript
-#   8. Create compact ZIP package for sharing when -ZipResults is used
+#   8. Create compact ZIP package for sharing
 #
 # Default stage:
 #   clean2_balanced = Les_Brown vs Simon_Sinek
@@ -47,9 +47,6 @@ param(
     [double]$HopSec = 0.5,
     [int]$SampleRate = 16000,
     [int]$Seed = 42,
-    [string]$FilenameSeparator = "__",
-
-    [string]$ThresholdMode = "fixed_0p5",
 
     [switch]$Clean,
     [switch]$SkipPrepare,
@@ -57,11 +54,13 @@ param(
     [switch]$SkipTrain3,
     [switch]$SkipTrain5,
     [switch]$SkipPolicy,
-    [switch]$SkipPolicy3,
-    [switch]$SkipPolicy5,
     [switch]$ZipResults,
-    [switch]$IncludeAllRuns,
-    [switch]$ZipOnly
+    [switch]$ZipOnly,
+
+    # Internal parameters used by the self-logging bootstrap.
+    # Do not pass these manually in normal experiment commands.
+    [switch]$InnerRun,
+    [string]$FullConsoleLogPath = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -102,6 +101,85 @@ function Get-VariantPrefix {
     return "human_talk_$Safe"
 }
 
+
+# -------------------------------------------------------------------------
+# Full console logging bootstrap
+# -------------------------------------------------------------------------
+# Normal user commands enter here first. The script re-runs itself once with
+# -InnerRun and captures every PowerShell output stream into a full-console log
+# while still showing live progress in the terminal.
+#
+# This keeps the public command unchanged:
+#   powershell -ExecutionPolicy Bypass -File .\scripts\run_human_talk_clean_stage_experiment.ps1 ...
+#
+# The inner run still creates the existing Start-Transcript log. The outer run
+# creates the stronger full-console log:
+#   human_talk_workspace\logs\<variant>_full_console_<timestamp>.txt
+if (-not $InnerRun) {
+    $BootstrapLogsRoot = Join-Path $WorkspaceRoot "logs"
+    New-Item -ItemType Directory -Force -Path $BootstrapLogsRoot | Out-Null
+
+    $BootstrapVariantPrefix = Get-VariantPrefix -StageName $Stage
+    $BootstrapTimestamp = Get-TimeStamp
+    $BootstrapFullConsoleLogPath = Join-Path $BootstrapLogsRoot ("${BootstrapVariantPrefix}_full_console_${BootstrapTimestamp}.txt")
+    $BootstrapRunnerPath = $MyInvocation.MyCommand.Path
+
+    $ForwardArgs = @(
+        "-NoProfile",
+        "-ExecutionPolicy", "Bypass",
+        "-File", $BootstrapRunnerPath
+    )
+
+    foreach ($Key in $PSBoundParameters.Keys) {
+        if ($Key -in @("InnerRun", "FullConsoleLogPath")) {
+            continue
+        }
+
+        $Value = $PSBoundParameters[$Key]
+
+        if ($Value -is [System.Management.Automation.SwitchParameter]) {
+            if ($Value.IsPresent) {
+                $ForwardArgs += "-$Key"
+            }
+        }
+        elseif ($null -ne $Value) {
+            $ForwardArgs += "-$Key"
+            $ForwardArgs += "$Value"
+        }
+    }
+
+    $ForwardArgs += "-InnerRun"
+    $ForwardArgs += "-FullConsoleLogPath"
+    $ForwardArgs += $BootstrapFullConsoleLogPath
+
+    Write-Host ""
+    Write-Host "============================================================"
+    Write-Host " Human-talk full-console capture"
+    Write-Host "============================================================"
+    Write-Host "Stage:            $Stage"
+    Write-Host "WorkspaceRoot:    $WorkspaceRoot"
+    Write-Host "Full console log: $BootstrapFullConsoleLogPath"
+    Write-Host "============================================================"
+    Write-Host ""
+
+    & powershell @ForwardArgs *>&1 | Tee-Object -FilePath $BootstrapFullConsoleLogPath
+    $ExitCode = $LASTEXITCODE
+
+    if ($null -eq $ExitCode) {
+        $ExitCode = 0
+    }
+
+    Write-Host ""
+    Write-Host "============================================================"
+    Write-Host " Full console log saved"
+    Write-Host "============================================================"
+    Write-Host "  $BootstrapFullConsoleLogPath"
+    Write-Host "Exit code: $ExitCode"
+    Write-Host "============================================================"
+
+    exit $ExitCode
+}
+
 function Get-LatestRunDir {
     param(
         [string]$RunsRoot,
@@ -137,8 +215,7 @@ function New-ResultsPackage {
         [string]$Stage,
         [string]$TranscriptPath,
         [string]$VariantPrefix,
-        [string]$ScriptPath,
-        [switch]$IncludeAllRuns
+        [string]$ScriptPath
     )
 
     $Timestamp = Get-TimeStamp
@@ -189,10 +266,6 @@ function New-ResultsPackage {
         $Runs = Get-ChildItem $RunsRoot -Directory -Filter $Pattern -ErrorAction SilentlyContinue |
             Sort-Object LastWriteTime -Descending
 
-        if (-not $IncludeAllRuns) {
-            $Runs = $Runs | Select-Object -First 1
-        }
-
         foreach ($Run in $Runs) {
             $DestRun = Join-Path $DestRunsRoot $Run.Name
             New-Item -ItemType Directory -Force -Path $DestRun | Out-Null
@@ -240,14 +313,14 @@ Human-talk $Stage results package
 Included:
 - Stage metadata CSV/MD/JSON
 - Cache metadata only
-- latest 3-exit and 5-exit run summaries/configs by default
+- 3-exit and 5-exit run summaries/configs
 - Greedy early-exit policy outputs
 - Threshold tuning outputs if present
-- Full CLI transcript
+- Standard CLI transcript
 - Experiment runner script copy
 
-Optional:
-- Use -IncludeAllRuns to package all matching runs instead of only the latest matching 3-exit and 5-exit runs.
+Generated beside the ZIP under the workspace logs folder:
+- Full-console log captured by the outer self-logging bootstrap
 
 Excluded:
 - raw dataset
@@ -275,7 +348,7 @@ $StageRoot = Join-Path $WorkspaceRoot ("stages\" + $Stage)
 $DataRoot = Join-Path $StageRoot "data"
 $CacheRoot = Join-Path $StageRoot "cache"
 $RunsRoot = Join-Path $StageRoot "runs"
-$LogsRoot = Join-Path $WorkspaceRoot "logs"
+$LogsRoot = Join-Path $StageRoot "logs"
 $VariantPrefix = Get-VariantPrefix -StageName $Stage
 
 New-Item -ItemType Directory -Force -Path $LogsRoot | Out-Null
@@ -303,11 +376,11 @@ try {
     Write-Host "Epochs:         $Epochs"
     Write-Host "BatchSize:      $BatchSize"
     Write-Host "LR:             $LR"
-    Write-Host "ThresholdMode:  $ThresholdMode"
-    Write-Host "FilenameSep:    $FilenameSeparator"
-    Write-Host "IncludeAllRuns: $IncludeAllRuns"
     Write-Host "VariantPrefix:  $VariantPrefix"
     Write-Host "Transcript:     $TranscriptPath"
+    if ($FullConsoleLogPath) {
+        Write-Host "Full console:   $FullConsoleLogPath"
+    }
     Write-Host "============================================================"
 
     if ($ZipOnly) {
@@ -318,8 +391,7 @@ try {
                 -Stage $Stage `
                 -TranscriptPath $TranscriptPath `
                 -VariantPrefix $VariantPrefix `
-                -ScriptPath $ScriptPath `
-                -IncludeAllRuns:$IncludeAllRuns | Out-Null
+                -ScriptPath $ScriptPath | Out-Null
         }
         return
     }
@@ -338,8 +410,7 @@ try {
                 "-SegmentSec", "$SegmentSec",
                 "-HopSec", "$HopSec",
                 "-SampleRate", "$SampleRate",
-                "-Seed", "$Seed",
-                "-FilenameSeparator", $FilenameSeparator
+                "-Seed", "$Seed"
             )
 
             if ($Clean) {
@@ -358,12 +429,6 @@ try {
     # ---------------------------------------------------------------------
     if (-not $SkipFeatures) {
         Invoke-Step "Extract log-mel features for $Stage" {
-            if ($Clean -and (Test-Path $CacheRoot)) {
-                Write-Host "Clean enabled: removing old feature cache:"
-                Write-Host "  $CacheRoot"
-                Remove-Item $CacheRoot -Recurse -Force -ErrorAction SilentlyContinue
-            }
-
             python .\scripts\extract_multilabel_features.py `
                 --manifest "$DataRoot\metadata\multilabel_train_manifest.csv" `
                 --labels_json "$DataRoot\metadata\labels.json" `
@@ -384,12 +449,6 @@ try {
     $Manifest = "$CacheRoot\metadata\multilabel_features_manifest.csv"
     $FeaturesRoot = "$CacheRoot\features"
     $LabelsJson = "$DataRoot\metadata\labels.json"
-
-    foreach ($RequiredPath in @($Manifest, $FeaturesRoot, $LabelsJson)) {
-        if (!(Test-Path $RequiredPath)) {
-            throw "Required file/folder missing before training: $RequiredPath"
-        }
-    }
 
     # ---------------------------------------------------------------------
     # 3. Train 3-exit
@@ -416,7 +475,7 @@ try {
     # ---------------------------------------------------------------------
     # 4. Policy 3-exit
     # ---------------------------------------------------------------------
-    if ((-not $SkipPolicy) -and (-not $SkipPolicy3)) {
+    if (-not $SkipPolicy) {
         Invoke-Step "Run 3-exit greedy early-exit policy" {
             $Run3 = Get-LatestRunDir -RunsRoot $RunsRoot -Pattern "${VariantPrefix}_3exit_nohint_*"
 
@@ -425,7 +484,7 @@ try {
                 --name "${VariantPrefix}_3exit_nohint" `
                 --device $Device `
                 --split test `
-                --threshold_mode $ThresholdMode `
+                --threshold_mode fixed_0p5 `
                 --min_exit 2 `
                 --stable_k 2 `
                 --sweep_min_exits "1,2" `
@@ -461,7 +520,7 @@ try {
     # ---------------------------------------------------------------------
     # 6. Policy 5-exit
     # ---------------------------------------------------------------------
-    if ((-not $SkipPolicy) -and (-not $SkipPolicy5)) {
+    if (-not $SkipPolicy) {
         Invoke-Step "Run 5-exit greedy early-exit policy" {
             $Run5 = Get-LatestRunDir -RunsRoot $RunsRoot -Pattern "${VariantPrefix}_5exit_nohint_*"
 
@@ -470,7 +529,7 @@ try {
                 --name "${VariantPrefix}_5exit_nohint" `
                 --device $Device `
                 --split test `
-                --threshold_mode $ThresholdMode `
+                --threshold_mode fixed_0p5 `
                 --min_exit 3 `
                 --stable_k 2 `
                 --sweep_min_exits "1,2,3" `
@@ -489,8 +548,7 @@ try {
                 -Stage $Stage `
                 -TranscriptPath $TranscriptPath `
                 -VariantPrefix $VariantPrefix `
-                -ScriptPath $ScriptPath `
-                -IncludeAllRuns:$IncludeAllRuns | Out-Null
+                -ScriptPath $ScriptPath | Out-Null
         }
     }
 
@@ -500,6 +558,10 @@ try {
     Write-Host "============================================================"
     Write-Host "Transcript:"
     Write-Host "  $TranscriptPath"
+    if ($FullConsoleLogPath) {
+        Write-Host "Full console log:"
+        Write-Host "  $FullConsoleLogPath"
+    }
 }
 finally {
     Stop-Transcript | Out-Null
