@@ -14,6 +14,11 @@
 # Outputs:
 #   <out_dir>/human_talk_audit.csv
 #   <out_dir>/human_talk_audit_summary.md
+#
+# Important fix:
+#   Filename stems are normalized without collapsing repeated underscores.
+#   Therefore Les_Brown__0001.wav remains Les_Brown__0001 and is correctly
+#   detected when --filename_separator "__" is used.
 
 from __future__ import annotations
 
@@ -36,12 +41,28 @@ def parse_csv_list(text: str | None) -> list[str]:
 
 
 def safe_name(text: str, preserve_case: bool = True) -> str:
+    """Normalize class/folder names. Repeated underscores may be collapsed here."""
     text = str(text).strip()
     if not preserve_case:
         text = text.lower()
     text = re.sub(r"\s+", "_", text)
     text = re.sub(r"[^A-Za-z0-9_\-]+", "_", text)
     text = re.sub(r"_+", "_", text)
+    return text.strip("_")
+
+
+def safe_stem_preserve_separator(text: str, preserve_case: bool = True) -> str:
+    """
+    Normalize filename stems without collapsing repeated underscores.
+
+    This preserves the rename separator:
+      Les_Brown__0001 -> Les_Brown__0001
+    """
+    text = str(text).strip()
+    if not preserve_case:
+        text = text.lower()
+    text = re.sub(r"\s+", "_", text)
+    text = re.sub(r"[^A-Za-z0-9_\-]+", "_", text)
     return text.strip("_")
 
 
@@ -90,10 +111,17 @@ def collect_audio_files(raw_root: Path, classes: list[str], exts: set[str]) -> l
 
 
 def parse_renamed_sample(path: Path, class_name: str, separator: str) -> dict:
+    """
+    Parse renamed samples such as:
+      Les_Brown__0001.wav
+      Simon_Sinek__0450.wav
+    """
     cls_prefix = safe_name(class_name, preserve_case=True)
-    stem = safe_name(path.stem, preserve_case=True)
+    stem = safe_stem_preserve_separator(path.stem, preserve_case=True)
+
     pattern = rf"^{re.escape(cls_prefix)}{re.escape(separator)}(\d+)$"
     match = re.match(pattern, stem, flags=re.IGNORECASE)
+
     if match:
         return {
             "parent_clip_id": stem,
@@ -101,8 +129,16 @@ def parse_renamed_sample(path: Path, class_name: str, separator: str) -> dict:
             "sample_index": int(match.group(1)),
             "expected_prefix": cls_prefix,
         }
+
+    # Avoid duplicated IDs like Les_Brown__Les_Brown_0450 if the file already
+    # starts with the class prefix but uses an unexpected separator.
+    if stem.lower().startswith(cls_prefix.lower()):
+        fallback_parent_id = stem
+    else:
+        fallback_parent_id = f"{cls_prefix}{separator}{stem}"
+
     return {
-        "parent_clip_id": f"{cls_prefix}{separator}{stem}",
+        "parent_clip_id": fallback_parent_id,
         "renamed_format_ok": 0,
         "sample_index": "",
         "expected_prefix": cls_prefix,

@@ -724,3 +724,61 @@ Decision:
 ```
 
 This file should be treated as the memory log for the multi-label research path.
+
+---
+
+## 21. Branch update: `kexit_human_talk_incremental_eval`
+
+```text
+Branch: kexit_human_talk_incremental_eval
+Base branch: kexit_multi-label_EE_lossweight
+Task: clean human-talk speaker classification
+Stage: clean2_balanced
+Classes: Les_Brown, Simon_Sinek
+Policy: sigmoid-aware greedy label-set stability
+```
+
+### Why this branch was created
+
+The previous multi-label branches focused on environmental and event-like audio labels. This branch checks whether the same K-exit audio architecture can generalise to a different audio classification setting: clean human-talk speaker identity. The first stage intentionally uses only two clean speakers so that the pipeline can be validated before increasing class difficulty.
+
+### Research question
+
+> Can the K-exit NeuroAccuExit audio model generalise from the previous multi-label environmental setup to a clean human-talk speaker benchmark, and does a 5-exit design create a better early-exit accuracy/compute trade-off than the 3-exit baseline?
+
+### Main result
+
+| Model | Final Macro-F1 | Best dynamic policy | Dynamic Macro-F1 | Avg Exit Depth | Compute Saved |
+|---|---:|---|---:|---:|---:|
+| `human_talk_clean2_3exit_nohint` | 0.9926 | `min_exit=1, stable_k=2` | 0.9836 | 2.1252 / 3 | 29.16% |
+| `human_talk_clean2_5exit_nohint` | 0.9930 | `min_exit=3, stable_k=2` | 0.9883 | 4.0219 / 5 | 19.56% |
+| `human_talk_clean2_5exit_nohint` | 0.9930 | `min_exit=2, stable_k=3` | 0.9898 | 4.0806 / 5 | 18.39% |
+
+### What helped
+
+1. The two-speaker data was clean and balanced.
+2. Parent-level splitting avoided segment leakage across train/validation/test.
+3. The 5-exit model created a smoother intermediate-exit progression.
+4. The label-set stability policy worked better with later exits than with very shallow exits.
+
+### What degraded or remained weak
+
+1. Exit 1 remained weak, similar to previous multi-label experiments.
+2. The selected 3-exit conservative policy `min_exit=2, stable_k=2` gave no saving because it always reached the final exit.
+3. A filename parser bug created duplicated parent IDs such as `Les_Brown__Les_Brown_0450`.
+
+### Decision
+
+Stage 1 passes. Before Stage 2, fix the renamed-format parser and then run `clean3_balanced`. The main question for Stage 2 is whether the 5-exit advantage remains when a third speaker increases class confusion.
+
+---
+
+## 22. Updated recommended next steps
+
+| Next step | Priority | Reason |
+|---|---:|---|
+| Fix renamed-format parser in audit/preparation scripts | Very high | Needed for clean parent-child traceability |
+| Rerun Stage 1 metadata preparation after parser fix | High | Ensures reviewer-safe metadata |
+| Run `clean3_balanced` 3-exit and 5-exit models | Very high | Tests whether Stage 1 findings scale |
+| Compare exit progression across Stage 1 and Stage 2 | High | Shows whether 5-exit benefit persists |
+| Keep old loss-weight branch results as reference | High | Maintains continuity of early-exit findings |

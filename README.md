@@ -1,3 +1,201 @@
+# NeuroAccuExit Human-Talk Incremental Evaluation — `kexit_human_talk_incremental_eval`
+
+This branch extends the multi-label early-exit pipeline to a **human-talk / speaker-classification sanity-check benchmark**. The goal is to test whether the same TinyAudioCNN + ExitNet multi-exit design can learn clean speaker-discriminative audio representations and whether additional exits improve the dynamic accuracy/compute trade-off.
+
+```text
+Branch: kexit_human_talk_incremental_eval
+Base branch: kexit_multi-label_EE_lossweight
+Task: clean human-talk speaker classification
+Stage: clean2_balanced
+Classes: Les_Brown vs Simon_Sinek
+Model: TinyAudioCNN + ExitNet
+Outputs: sigmoid/BCE label heads
+Policy: greedy label-set stability
+Workspace: human_talk_workspace/stages/clean2_balanced
+```
+
+---
+
+## Executive summary
+
+1. Stage 1 uses two manually cleaned speaker classes: `Les_Brown` and `Simon_Sinek`.
+2. The dataset was balanced to `472` parent clips per class.
+3. Each 5-second parent clip was segmented into `9` one-second child windows using `segment_sec=1.0` and `hop_sec=0.5`.
+4. The final balanced Stage 1 dataset contains `944` parent clips and `8,496` one-second segments.
+5. The 3-exit baseline reached final-exit macro-F1 `0.9926` on the test set.
+6. The 5-exit baseline reached final-exit macro-F1 `0.9930` on the test set.
+7. The selected 5-exit dynamic policy `min_exit=3, stable_k=2` reached macro-F1 `0.9883` with `19.56%` estimated depth-compute saving.
+8. The 5-exit model shows a smoother exit-quality progression than the 3-exit model.
+9. Exit 1 remains too weak for aggressive early stopping, consistent with the previous multi-label branches.
+10. A metadata parser issue was detected: renamed files are classified correctly, but `renamed_format_ok` is currently `0` and parent IDs duplicate the class prefix. This should be fixed before Stage 2.
+
+---
+
+## Research question
+
+> Can the K-exit NeuroAccuExit audio model generalise from the previous multi-label environmental setup to a clean human-talk speaker benchmark, and does a 5-exit design create a better early-exit accuracy/compute trade-off than the 3-exit baseline?
+
+Answer:
+
+> Yes for Stage 1. On the clean two-speaker benchmark, both 3-exit and 5-exit models reached near-perfect final-exit performance. The 5-exit model produced a smoother intermediate-exit progression and a practical dynamic policy: macro-F1 `0.9883` with `19.56%` estimated depth-compute saving. However, this is a Stage 1 sanity-check result, not yet evidence of robust multi-speaker or noisy real-world generalisation.
+
+---
+
+## Research finding from Stage 1
+
+> The clean two-speaker benchmark confirms that NeuroAccuExit can learn strong speaker-discriminative audio representations and that a 5-exit model can provide a meaningful early-exit trade-off. Compared with the 3-exit model, the 5-exit model has a clearer monotonic improvement from shallow to deep exits and achieves nearly final-exit accuracy while saving about one-fifth of estimated depth-compute units.
+
+---
+
+## Stage 1 dataset summary
+
+| Item | Value |
+|---|---:|
+| Stage | `clean2_balanced` |
+| Raw dataset root | `human_talk_dataset` |
+| Workspace | `human_talk_workspace/stages/clean2_balanced` |
+| Classes | `Les_Brown`, `Simon_Sinek` |
+| Original `Les_Brown` clips | 472 |
+| Original `Simon_Sinek` clips | 608 |
+| Selected clips per class | 472 |
+| Total selected parent clips | 944 |
+| Child segments per parent clip | 9 |
+| Total child segments | 8496 |
+| Sample rate after preparation | 16 kHz |
+| Segment length | 1.0 sec |
+| Hop length | 0.5 sec |
+
+### Parent-clip split
+
+| Split | Les_Brown | Simon_Sinek | Total |
+|---|---:|---:|---:|
+| Train | 330 | 330 | 660 |
+| Val | 71 | 71 | 142 |
+| Test | 71 | 71 | 142 |
+
+### Segment split
+
+| Split | Les_Brown | Simon_Sinek | Total |
+|---|---:|---:|---:|
+| Train | 2970 | 2970 | 5940 |
+| Val | 639 | 639 | 1278 |
+| Test | 639 | 639 | 1278 |
+
+---
+
+## Stage 1 models
+
+| Model | Tap blocks | Exits | Loss weights | Pos-weight | Threshold mode | Purpose |
+|---|---|---:|---|---|---|---|
+| `human_talk_clean2_3exit_nohint` | `1,3` | 3 | `[0.3, 0.3, 1.0]` | No | fixed `0.5` | Compact baseline |
+| `human_talk_clean2_5exit_nohint` | `1,2,3,4` | 5 | `[0.3, 0.3, 0.6, 0.8, 1.0]` | No | fixed `0.5` | More exit opportunities |
+
+---
+
+## Static per-exit test results
+
+### 3-exit model
+
+| Exit | Macro-F1 | Micro-F1 | Samples-F1 | Exact Match | Hamming Loss | Interpretation |
+| ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 1 | 0.8765 | 0.8765 | 0.8732 | 0.8701 | 0.1232 | Too shallow |
+| 2 | 0.9765 | 0.9765 | 0.9765 | 0.9765 | 0.0235 | Strong intermediate exit |
+| 3 | 0.9926 | 0.9926 | 0.9922 | 0.9922 | 0.0074 | Excellent final exit |
+
+### 5-exit model
+
+| Exit | Macro-F1 | Micro-F1 | Samples-F1 | Exact Match | Hamming Loss | Interpretation |
+| ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 1 | 0.8799 | 0.8799 | 0.8785 | 0.8748 | 0.1201 | Too shallow |
+| 2 | 0.9259 | 0.9260 | 0.9244 | 0.9233 | 0.0739 | Improving but not enough |
+| 3 | 0.9703 | 0.9703 | 0.9700 | 0.9695 | 0.0297 | Good intermediate exit |
+| 4 | 0.9883 | 0.9883 | 0.9883 | 0.9883 | 0.0117 | Very strong practical exit |
+| 5 | 0.9930 | 0.9930 | 0.9930 | 0.9930 | 0.0070 | Best final exit |
+
+---
+
+## Dynamic early-exit policy comparison
+
+| Model | Selected policy | Macro-F1 | Samples-F1 | Exact Match | Hamming Loss | Avg Exit Depth | Compute Saved |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `3exit_nohint` | `min_exit=2, stable_k=2` | 0.9926 | 0.9922 | 0.9922 | 0.0074 | 3.0000 / 3 | 0.00% |
+| `5exit_nohint` | `min_exit=3, stable_k=2` | 0.9883 | 0.9883 | 0.9883 | 0.0117 | 4.0219 / 5 | 19.56% |
+
+### 5-exit selected-policy exit distribution
+
+| Exit | Samples | Fraction |
+| ---: | ---: | ---: |
+| 1 | 0 | 0.00% |
+| 2 | 0 | 0.00% |
+| 3 | 0 | 0.00% |
+| 4 | 1250 | 97.81% |
+| 5 | 28 | 2.19% |
+
+---
+
+## Policy sweep highlights
+
+| Model | Policy | Macro-F1 | Samples-F1 | Hamming Loss | Avg Exit Depth | Compute Saved |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `3exit_nohint` | `min_exit=1, stable_k=2` | 0.9836 | 0.9836 | 0.0164 | 2.1252 / 3 | 29.16% |
+| `3exit_nohint` | `min_exit=2, stable_k=1` | 0.9765 | 0.9765 | 0.0235 | 2.0000 / 3 | 33.33% |
+| `3exit_nohint` | `min_exit=2, stable_k=2` | 0.9926 | 0.9922 | 0.0074 | 3.0000 / 3 | 0.00% |
+| `5exit_nohint` | `min_exit=1, stable_k=3` | 0.9765 | 0.9765 | 0.0235 | 3.1854 / 5 | 36.29% |
+| `5exit_nohint` | `min_exit=2, stable_k=3` | 0.9898 | 0.9898 | 0.0102 | 4.0806 / 5 | 18.39% |
+| `5exit_nohint` | `min_exit=3, stable_k=2` | 0.9883 | 0.9883 | 0.0117 | 4.0219 / 5 | 19.56% |
+| `5exit_nohint` | `min_exit=3, stable_k=3` | 0.9930 | 0.9930 | 0.0070 | 5.0000 / 5 | 0.00% |
+
+Recommended reporting options:
+
+| Reporting goal | Recommended policy | Reason |
+|---|---|---|
+| Highest 5-exit dynamic accuracy with saving | `min_exit=2, stable_k=3` | Macro-F1 `0.9898`, saved `18.39%` |
+| Slightly higher compute saving | `min_exit=3, stable_k=2` | Macro-F1 `0.9883`, saved `19.56%` |
+| Accuracy-only reference | `min_exit=3, stable_k=3` | Macro-F1 `0.9930`, but no early-exit saving |
+
+---
+
+## Main Stage 1 findings
+
+1. The preprocessing pipeline works for clean human-talk data.
+2. The parent-child segmentation structure is valid for this benchmark.
+3. Both 3-exit and 5-exit models achieve near-perfect final-exit performance.
+4. The 5-exit model produces a clearer monotonic improvement across exits.
+5. The selected 5-exit dynamic policy exits `97.81%` of samples at Exit 4 and only `2.19%` at Exit 5.
+6. The 5-exit dynamic result gives a practical trade-off: macro-F1 `0.9883` with `19.56%` estimated depth-compute saving.
+7. The 3-exit selected policy `min_exit=2, stable_k=2` is too conservative and gives no saving.
+8. Aggressive Exit 1 stopping remains unreliable, which is consistent with the loss-weight branch findings.
+
+---
+
+## Known metadata caveat before Stage 2
+
+The current Stage 1 output shows a filename parser issue:
+
+```text
+Expected: parent_clip_id = Les_Brown__0450
+Observed: parent_clip_id = Les_Brown__Les_Brown_0450
+```
+
+The model results remain valid because labels, splits, and segments are correct. However, this should be fixed before Stage 2 so that parent-child traceability is clean and reviewer-safe.
+
+---
+
+## Recommended next step
+
+1. Fix `audit_human_talk_dataset.py` and `prepare_human_talk_segments.py` so the renamed format `Class_Name__0001.wav` is recognised correctly.
+2. Rerun Stage 1 preparation and feature extraction only if clean metadata is needed.
+3. Move to `clean3_balanced` after the metadata fix.
+4. Compare whether the 5-exit advantage remains as the number of speakers increases.
+
+---
+
+# Previous reference branch retained below
+
+The previous loss-weight branch documentation is retained below so the old table format and findings are not lost.
+
+---
+
 # NeuroAccuExit Multi-Label Early Exit Loss-Weight Study — `kexit_multi-label_EE_lossweight`
 
 This branch records the controlled **early-exit loss-weighting ablation** for the multi-label NeuroAccuExit-ASHADIP pipeline.
@@ -182,3 +380,4 @@ The next controlled research step should be one of:
 2. explicit exit-to-exit consistency or distillation loss;
 3. a milder positive-weight cap such as `5.0` or `10.0` under the same loss-weight structure;
 4. FLOPs/latency profiling to support the depth-unit saving estimate.
+

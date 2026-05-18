@@ -20,6 +20,13 @@
 #   └─ ...
 #
 # Do NOT use event_dataset if it contains environmental classes.
+#
+# Important:
+#   Preparation is run BEFORE audit.
+#   Reason: prepare_human_talk_segments.py may delete/recreate data/ when -Clean is used.
+#   Audit is therefore written AFTER preparation so these files are preserved:
+#     data/metadata/human_talk_audit.csv
+#     data/metadata/human_talk_audit_summary.md
 
 param(
     [string]$Stage = "clean2_balanced",
@@ -75,6 +82,7 @@ if (!(Test-Path $RawRoot)) {
     throw "RawRoot does not exist: $RawRoot"
 }
 
+# Fail early if the requested human-talk class folders are not present.
 foreach ($ClassName in $Classes.Split(",")) {
     $ClassPath = Join-Path $RawRoot $ClassName
     if (!(Test-Path $ClassPath)) {
@@ -92,13 +100,10 @@ Use:
     }
 }
 
-python .\scripts\audit_human_talk_dataset.py `
-    --raw_root $RawRoot `
-    --out_dir $MetadataRoot `
-    --classes $Classes `
-    --clean_classes $CleanClasses `
-    --filename_separator $FilenameSeparator
-
+# -------------------------------------------------------------------------
+# 1) Prepare segments and core manifests first.
+#    If -Clean is supplied, this step may delete/recreate $DataRoot.
+# -------------------------------------------------------------------------
 $PrepareArgs = @(
     ".\scripts\prepare_human_talk_segments.py",
     "--raw_root", $RawRoot,
@@ -117,6 +122,42 @@ if ($Clean) {
 }
 
 python @PrepareArgs
+
+# -------------------------------------------------------------------------
+# 2) Audit AFTER preparation so audit files are not deleted by --clean.
+# -------------------------------------------------------------------------
+python .\scripts\audit_human_talk_dataset.py `
+    --raw_root $RawRoot `
+    --out_dir $MetadataRoot `
+    --classes $Classes `
+    --clean_classes $CleanClasses `
+    --filename_separator $FilenameSeparator
+
+# -------------------------------------------------------------------------
+# 3) Verify expected files.
+# -------------------------------------------------------------------------
+$ExpectedFiles = @(
+    (Join-Path $MetadataRoot "human_talk_audit.csv"),
+    (Join-Path $MetadataRoot "human_talk_audit_summary.md"),
+    (Join-Path $MetadataRoot "labels.json"),
+    (Join-Path $MetadataRoot "human_talk_parent_manifest.csv"),
+    (Join-Path $MetadataRoot "multilabel_train_manifest.csv")
+)
+
+foreach ($FilePath in $ExpectedFiles) {
+    if (!(Test-Path $FilePath)) {
+        throw "Expected output file missing: $FilePath"
+    }
+}
+
+Write-Host ""
+Write-Host "========================================"
+Write-Host " Stage preparation completed successfully"
+Write-Host "========================================"
+Write-Host "Metadata files:"
+foreach ($FilePath in $ExpectedFiles) {
+    Write-Host "  $FilePath"
+}
 
 Write-Host ""
 Write-Host "========================================"

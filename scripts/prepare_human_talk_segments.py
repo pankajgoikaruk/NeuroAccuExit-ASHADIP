@@ -15,6 +15,11 @@
 #     segments/{train,val,test}/{class}/{segment_id}.wav
 #
 # The output manifest is compatible with scripts/extract_multilabel_features.py.
+#
+# Important fix:
+#   Filename stems are normalized without collapsing repeated underscores.
+#   Therefore Les_Brown__0001.wav remains Les_Brown__0001 and is correctly
+#   detected when --filename_separator "__" is used.
 
 from __future__ import annotations
 
@@ -34,12 +39,28 @@ AUDIO_EXTS_DEFAULT = ".wav,.flac,.mp3,.ogg,.m4a,.aac,.wma"
 
 
 def safe_name(text: str, preserve_case: bool = True) -> str:
+    """Normalize class/folder names. Repeated underscores may be collapsed here."""
     text = str(text).strip()
     if not preserve_case:
         text = text.lower()
     text = re.sub(r"\s+", "_", text)
     text = re.sub(r"[^A-Za-z0-9_\-]+", "_", text)
     text = re.sub(r"_+", "_", text)
+    return text.strip("_")
+
+
+def safe_stem_preserve_separator(text: str, preserve_case: bool = True) -> str:
+    """
+    Normalize filename stems without collapsing repeated underscores.
+
+    This preserves the rename separator:
+      Les_Brown__0001 -> Les_Brown__0001
+    """
+    text = str(text).strip()
+    if not preserve_case:
+        text = text.lower()
+    text = re.sub(r"\s+", "_", text)
+    text = re.sub(r"[^A-Za-z0-9_\-]+", "_", text)
     return text.strip("_")
 
 
@@ -109,12 +130,15 @@ def collect_files(raw_root: Path, classes: list[str], exts: set[str]) -> dict[st
 
 
 def parse_renamed_sample(path: Path, class_name: str, separator: str) -> tuple[bool, int | None, str]:
+    """Parse filenames such as Les_Brown__0001.wav."""
     cls_prefix = safe_name(class_name, preserve_case=True)
-    stem = safe_name(path.stem, preserve_case=True)
+    stem = safe_stem_preserve_separator(path.stem, preserve_case=True)
     pattern = rf"^{re.escape(cls_prefix)}{re.escape(separator)}(\d+)$"
     match = re.match(pattern, stem, flags=re.IGNORECASE)
     if match:
         return True, int(match.group(1)), stem
+    if stem.lower().startswith(cls_prefix.lower()):
+        return False, None, stem
     return False, None, f"{cls_prefix}{separator}{stem}"
 
 
