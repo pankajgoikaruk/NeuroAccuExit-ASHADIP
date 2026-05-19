@@ -1,0 +1,37 @@
+﻿# Agentic preprocessing policy
+# Version 1: non-destructive audit only
+
+mode: audit_only
+delete_raw_files: false
+move_raw_files: false
+copy_flagged_files: false
+
+decisions:
+  - accepted
+  - needs_review
+  - rejected
+  - blocked
+
+target_raw_classes:
+  - Brene_Brown
+  - Eckhart_Tolle
+  - Eric_Thomas
+  - Gary_Vee
+
+quality_checks:
+  duration_mismatch: true
+  silence_percentage: true
+  clipping_distortion: true
+  background_music_suspicion: true
+  background_noise: true
+  low_speech_activity: true
+  duplicate_near_duplicate: true
+  wrong_speaker_suspicion: true
+  low_audio_quality: true
+
+outputs:
+  reports_dir: human_talk_workspace/agentic_preprocessing/reports
+  decision_manifest: agentic_quality_audit.csv
+  json_report: agentic_quality_audit.json
+  markdown_report: agentic_quality_audit.md
+  recommended_actions: recommended_next_actions.json
