@@ -12,6 +12,7 @@ Responsibilities:
 - assign accepted / needs_review / rejected / blocked decisions
 - write dataset audit reports
 - preserve all raw data without deletion or movement
+- show CLI progress so long scans do not look stuck
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from agentic_preprocessing.tools.audio_quality_tool import (
     sha256_file,
 )
 from agentic_preprocessing.tools.audio_scan_tool import discover_audio_files, parse_classes
+from agentic_preprocessing.tools.progress_tool import ProgressBar
 from agentic_preprocessing.tools.report_tool import write_report_bundle
 
 
@@ -40,11 +42,13 @@ class DatasetAuditorAgent:
         out_dir: str | Path,
         classes: str | Iterable[str],
         policy: Optional[Dict[str, Any]] = None,
+        show_progress: bool = True,
     ) -> None:
         self.raw_root = Path(raw_root)
         self.out_dir = Path(out_dir)
         self.classes = parse_classes(classes)
         self.policy = policy or {}
+        self.show_progress = show_progress
 
     def _build_class_issue_row(self, class_label: str, issue: str, path: str) -> Dict[str, Any]:
         return {
@@ -55,6 +59,8 @@ class DatasetAuditorAgent:
             "decision": "blocked",
             "reason_codes": [issue],
             "safe_to_train": False,
+            "requires_preprocessing": False,
+            "preprocessing_actions": [],
             "readable": False,
             "error": issue,
             "duration_sec": "",
@@ -86,8 +92,16 @@ class DatasetAuditorAgent:
         hash_to_files: Dict[str, List[str]] = defaultdict(list)
         file_to_hash: Dict[str, str] = {}
 
+        progress = ProgressBar(
+            total=len(file_records),
+            label="Hashing files for duplicate detection",
+            enabled=self.show_progress,
+            update_every=5,
+        )
+
         for record in file_records:
             path = Path(record.source_file)
+
             try:
                 file_hash = sha256_file(path)
             except Exception:
@@ -97,6 +111,10 @@ class DatasetAuditorAgent:
 
             if file_hash:
                 hash_to_files[file_hash].append(record.source_file)
+
+            progress.update(postfix=record.file_name)
+
+        progress.finish(postfix="duplicate hash pass complete")
 
         duplicate_meta: Dict[str, Dict[str, Any]] = {}
         duplicate_index = 1
@@ -123,7 +141,6 @@ class DatasetAuditorAgent:
                     "is_duplicate_candidate": True,
                 }
 
-        # Files that failed hash generation
         for source_file, file_hash in file_to_hash.items():
             if source_file not in duplicate_meta:
                 duplicate_meta[source_file] = {
@@ -136,11 +153,24 @@ class DatasetAuditorAgent:
         return duplicate_meta
 
     def run(self) -> Dict[str, str]:
+        print("")
+        print("Starting DatasetAuditorAgent")
+        print(f"Raw root: {self.raw_root}")
+        print(f"Output dir: {self.out_dir}")
+        print(f"Classes: {', '.join(self.classes)}")
+        print("Mode: audit-only, non-destructive")
+        print("")
+
+        print("Discovering audio files...")
         file_records, class_issues = discover_audio_files(
             raw_root=self.raw_root,
             class_names=self.classes,
             audio_extensions=self.policy.get("audio_extensions", [".wav"]),
         )
+
+        print(f"Discovered audio files: {len(file_records)}")
+        print(f"Class-level issues: {len(class_issues)}")
+        print("")
 
         rows: List[Dict[str, Any]] = []
 
@@ -154,6 +184,13 @@ class DatasetAuditorAgent:
             )
 
         duplicate_meta = self._compute_duplicate_groups(file_records)
+
+        progress = ProgressBar(
+            total=len(file_records),
+            label="Auditing audio quality",
+            enabled=self.show_progress,
+            update_every=5,
+        )
 
         for record in file_records:
             source_path = Path(record.source_file)
@@ -177,6 +214,8 @@ class DatasetAuditorAgent:
                 "decision": stats.get("decision", "blocked"),
                 "reason_codes": stats.get("reason_codes", []),
                 "safe_to_train": bool(stats.get("safe_to_train", False)),
+                "requires_preprocessing": bool(stats.get("requires_preprocessing", False)),
+                "preprocessing_actions": stats.get("preprocessing_actions", []),
                 "readable": bool(stats.get("readable", False)),
                 "error": stats.get("error", ""),
                 "duration_sec": stats.get("duration_sec", ""),
@@ -199,9 +238,19 @@ class DatasetAuditorAgent:
             }
 
             rows.append(row)
+            progress.update(postfix=f"{record.class_label}/{record.file_name}")
 
-        return write_report_bundle(
+        progress.finish(postfix="audio audit complete")
+
+        print("")
+        print("Writing report bundle...")
+        outputs = write_report_bundle(
             rows=rows,
             out_dir=self.out_dir,
             report_prefix="dataset_audit_agent_report",
         )
+
+        print("Report writing complete.")
+        print("")
+
+        return outputs

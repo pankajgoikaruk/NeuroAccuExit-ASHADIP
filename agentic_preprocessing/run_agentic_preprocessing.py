@@ -124,6 +124,12 @@ def main() -> None:
         help="Expected parent clip duration in seconds.",
     )
 
+    parser.add_argument(
+        "--no_progress",
+        action="store_true",
+        help="Disable CLI progress bars.",
+    )
+
     args = parser.parse_args()
 
     policy = default_policy(
@@ -139,6 +145,7 @@ def main() -> None:
         out_dir=args.out_dir,
         classes=args.classes,
         policy=policy,
+        show_progress=not args.no_progress,
     )
 
     outputs = agent.run()

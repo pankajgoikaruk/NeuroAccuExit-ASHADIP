@@ -3,12 +3,11 @@
 """
 Audio quality utilities for Agentic AI preprocessing.
 
-Version 0.1:
+Version 0.2:
 - Non-destructive
 - WAV-focused
-- No file deletion
-- No file movement
-- Produces interpretable quality indicators and decision reasons
+- Separates quality problems from normal preprocessing actions
+- Does not delete, move, or overwrite raw files
 """
 
 from __future__ import annotations
@@ -21,11 +20,12 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 
-AGENT_VERSION = "v0.1_non_destructive_dataset_auditor"
+AGENT_VERSION = "v0.2_non_destructive_dataset_auditor"
 
 
 DEFAULT_POLICY: Dict[str, Any] = {
     "expected_sample_rate": 16000,
+    "expected_channels": 1,
     "expected_duration_sec": 5.0,
     "duration_tolerance_sec": 1.0,
     "min_duration_sec": 1.0,
@@ -49,12 +49,6 @@ def safe_float(value: Any, default: float = 0.0) -> float:
 
 
 def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
-    """
-    Exact duplicate detector helper.
-
-    This does not detect near-duplicates yet.
-    It is intentionally safe and deterministic for V1.
-    """
     h = hashlib.sha256()
     with path.open("rb") as f:
         while True:
@@ -66,29 +60,14 @@ def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
 
 
 def _decode_pcm_samples(raw: bytes, sample_width: int) -> Tuple[List[int], float]:
-    """
-    Decode integer PCM samples from WAV bytes.
-
-    Supports:
-    - 8-bit unsigned PCM
-    - 16-bit signed PCM
-    - 24-bit signed PCM
-    - 32-bit signed PCM
-
-    Note:
-    Some 32-bit WAV files may store float PCM. This V1 tool treats 32-bit as signed int.
-    Those edge cases can be improved later using soundfile/librosa if needed.
-    """
     if sample_width == 1:
         samples = [b - 128 for b in raw]
-        max_abs_possible = 128.0
-        return samples, max_abs_possible
+        return samples, 128.0
 
     if sample_width == 2:
         n = len(raw) // 2
         samples = list(struct.unpack("<" + "h" * n, raw[: n * 2]))
-        max_abs_possible = 32768.0
-        return samples, max_abs_possible
+        return samples, 32768.0
 
     if sample_width == 3:
         samples: List[int] = []
@@ -97,27 +76,17 @@ def _decode_pcm_samples(raw: bytes, sample_width: int) -> Tuple[List[int], float
             if value & 0x800000:
                 value -= 0x1000000
             samples.append(value)
-        max_abs_possible = 8388608.0
-        return samples, max_abs_possible
+        return samples, 8388608.0
 
     if sample_width == 4:
         n = len(raw) // 4
         samples = list(struct.unpack("<" + "i" * n, raw[: n * 4]))
-        max_abs_possible = 2147483648.0
-        return samples, max_abs_possible
+        return samples, 2147483648.0
 
     raise ValueError(f"unsupported_sample_width_{sample_width}")
 
 
 def read_wav_basic_stats(path: Path) -> Dict[str, Any]:
-    """
-    Read basic WAV quality statistics.
-
-    Non-destructive:
-    - does not modify audio
-    - does not move files
-    - does not delete files
-    """
     with wave.open(str(path), "rb") as wf:
         sample_rate = wf.getframerate()
         channels = wf.getnchannels()
@@ -142,12 +111,9 @@ def read_wav_basic_stats(path: Path) -> Dict[str, Any]:
     peak_db = 20 * math.log10(max(peak / max_abs_possible, 1e-12))
     rms_db = 20 * math.log10(max(rms / max_abs_possible, 1e-12))
 
-    # Simple near-silence estimate.
-    # Samples below -45 dBFS are counted as near-silent.
     silence_threshold = max_abs_possible * (10 ** (-45 / 20))
     silence_ratio = sum(1 for x in abs_samples if x < silence_threshold) / len(abs_samples)
 
-    # Simple clipping estimate.
     clipping_threshold = max_abs_possible * 0.98
     clipping_ratio = sum(1 for x in abs_samples if x >= clipping_threshold) / len(abs_samples)
 
@@ -175,9 +141,6 @@ def build_reason_codes(
     policy: Optional[Dict[str, Any]] = None,
     extra_reasons: Optional[Iterable[str]] = None,
 ) -> List[str]:
-    """
-    Build interpretable reason codes for agentic routing.
-    """
     p = dict(DEFAULT_POLICY)
     if policy:
         p.update(policy)
@@ -190,12 +153,14 @@ def build_reason_codes(
 
     duration = safe_float(stats.get("duration_sec"))
     sample_rate = int(stats.get("sample_rate", 0) or 0)
+    channels = int(stats.get("channels", 0) or 0)
     rms_db = safe_float(stats.get("rms_db"), -120.0)
     silence_ratio = safe_float(stats.get("silence_ratio"))
     clipping_ratio = safe_float(stats.get("clipping_ratio"))
     speech_activity_ratio = safe_float(stats.get("speech_activity_ratio"))
 
     expected_sample_rate = int(p.get("expected_sample_rate", 16000))
+    expected_channels = int(p.get("expected_channels", 1))
     expected_duration_sec = safe_float(p.get("expected_duration_sec"), 5.0)
     duration_tolerance_sec = safe_float(p.get("duration_tolerance_sec"), 1.0)
     min_duration_sec = safe_float(p.get("min_duration_sec"), 1.0)
@@ -206,6 +171,9 @@ def build_reason_codes(
 
     if sample_rate != expected_sample_rate:
         reasons.append("sample_rate_mismatch")
+
+    if channels != expected_channels:
+        reasons.append("channel_mismatch")
 
     if duration < min_duration_sec:
         reasons.append("too_short")
@@ -236,16 +204,29 @@ def build_reason_codes(
     return reasons
 
 
-def decide_from_reasons(reasons: List[str]) -> Tuple[str, bool]:
-    """
-    Convert reason codes into a conservative agentic decision.
+def build_preprocessing_actions(reasons: List[str]) -> List[str]:
+    actions: List[str] = []
 
-    Decision meanings:
-    - accepted: safe enough for training
-    - needs_review: suspicious, human review recommended
-    - rejected: clearly low-quality, but still preserved
-    - blocked: unreadable/corrupted/unsupported
+    if "sample_rate_mismatch" in reasons:
+        actions.append("resample_to_expected_sample_rate")
+
+    if "channel_mismatch" in reasons:
+        actions.append("downmix_to_mono")
+
+    return actions
+
+
+def decide_from_reasons(reasons: List[str]) -> Tuple[str, bool, bool, List[str]]:
     """
+    Returns:
+    - decision
+    - safe_to_train
+    - requires_preprocessing
+    - preprocessing_actions
+    """
+    preprocessing_actions = build_preprocessing_actions(reasons)
+    requires_preprocessing = len(preprocessing_actions) > 0
+
     blocked_reasons = {
         "class_folder_missing",
         "no_audio_files_found",
@@ -260,9 +241,9 @@ def decide_from_reasons(reasons: List[str]) -> Tuple[str, bool]:
 
     for reason in reasons:
         if reason in blocked_reasons:
-            return "blocked", False
+            return "blocked", False, requires_preprocessing, preprocessing_actions
         if any(reason.startswith(prefix) for prefix in blocked_prefixes):
-            return "blocked", False
+            return "blocked", False, requires_preprocessing, preprocessing_actions
 
     rejected_reasons = {
         "too_short",
@@ -272,19 +253,30 @@ def decide_from_reasons(reasons: List[str]) -> Tuple[str, bool]:
     }
 
     if any(reason in rejected_reasons for reason in reasons):
-        return "rejected", False
+        return "rejected", False, requires_preprocessing, preprocessing_actions
 
     review_reasons = {
-        "sample_rate_mismatch",
-        "duration_mismatch",
         "possible_clipping_distortion",
         "exact_duplicate_candidate",
     }
 
     if any(reason in review_reasons for reason in reasons):
-        return "needs_review", False
+        return "needs_review", False, requires_preprocessing, preprocessing_actions
 
-    return "accepted", True
+    # Important V0.2 rule:
+    # sample_rate_mismatch and channel_mismatch are normal preprocessing needs,
+    # not human-review failures.
+    transformable_reasons = {
+        "sample_rate_mismatch",
+        "channel_mismatch",
+        "duration_mismatch",
+        "no_major_issue_detected",
+    }
+
+    if set(reasons).issubset(transformable_reasons):
+        return "accepted", True, requires_preprocessing, preprocessing_actions
+
+    return "needs_review", False, requires_preprocessing, preprocessing_actions
 
 
 def analyse_audio_file(
@@ -292,9 +284,6 @@ def analyse_audio_file(
     policy: Optional[Dict[str, Any]] = None,
     extra_reasons: Optional[Iterable[str]] = None,
 ) -> Dict[str, Any]:
-    """
-    Full single-file audio analysis.
-    """
     try:
         stats = read_wav_basic_stats(path)
     except wave.Error as exc:
@@ -311,10 +300,12 @@ def analyse_audio_file(
         }
 
     reasons = build_reason_codes(stats, policy=policy, extra_reasons=extra_reasons)
-    decision, safe_to_train = decide_from_reasons(reasons)
+    decision, safe_to_train, requires_preprocessing, preprocessing_actions = decide_from_reasons(reasons)
 
     stats["decision"] = decision
     stats["safe_to_train"] = safe_to_train
+    stats["requires_preprocessing"] = requires_preprocessing
+    stats["preprocessing_actions"] = preprocessing_actions
     stats["reason_codes"] = reasons
     stats["agent_version"] = AGENT_VERSION
 

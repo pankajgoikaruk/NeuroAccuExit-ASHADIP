@@ -27,6 +27,7 @@ audio:
   audio_extensions:
     - .wav
   expected_sample_rate: 16000
+  expected_channels: 1
   expected_duration_sec: 5.0
   duration_tolerance_sec: 1.0
   min_duration_sec: 1.0

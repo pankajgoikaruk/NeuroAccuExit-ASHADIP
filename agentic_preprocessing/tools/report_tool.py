@@ -27,6 +27,8 @@ REPORT_FIELDNAMES = [
     "decision",
     "reason_codes",
     "safe_to_train",
+    "requires_preprocessing",
+    "preprocessing_actions",
     "readable",
     "error",
     "duration_sec",
