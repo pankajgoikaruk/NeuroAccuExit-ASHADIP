@@ -1,37 +1,50 @@
-﻿# Agentic preprocessing policy
-# Version 1: non-destructive audit only
+# agentic_preprocessing\policies\preprocessing_policy.yaml
 
-mode: audit_only
-delete_raw_files: false
-move_raw_files: false
-copy_flagged_files: false
+# Agentic preprocessing policy
+# Version 0.1: non-destructive dataset audit only
+
+agent:
+  name: DatasetAuditorAgent
+  version: v0.1_non_destructive_dataset_auditor
+  mode: audit_only
+
+safety:
+  delete_raw_files: false
+  move_raw_files: false
+  overwrite_raw_files: false
+  copy_flagged_files: false
+
+targets:
+  raw_root: human_talk_dataset
+  output_dir: human_talk_workspace/agent_reports
+  raw4_classes:
+    - Brene_Brown
+    - Eckhart_Tolle
+    - Eric_Thomas
+    - Gary_Vee
+
+audio:
+  audio_extensions:
+    - .wav
+  expected_sample_rate: 16000
+  expected_duration_sec: 5.0
+  duration_tolerance_sec: 1.0
+  min_duration_sec: 1.0
+
+quality_thresholds:
+  high_silence_ratio: 0.70
+  very_low_rms_db: -45.0
+  clipping_ratio_threshold: 0.01
+  min_speech_activity_ratio: 0.25
 
 decisions:
-  - accepted
-  - needs_review
-  - rejected
-  - blocked
+  accepted: safe enough for first training subset
+  needs_review: suspicious and requires human review
+  rejected: clearly unsuitable but preserved
+  blocked: unreadable, corrupted, missing, or unsupported
 
-target_raw_classes:
-  - Brene_Brown
-  - Eckhart_Tolle
-  - Eric_Thomas
-  - Gary_Vee
-
-quality_checks:
-  duration_mismatch: true
-  silence_percentage: true
-  clipping_distortion: true
-  background_music_suspicion: true
-  background_noise: true
-  low_speech_activity: true
-  duplicate_near_duplicate: true
-  wrong_speaker_suspicion: true
-  low_audio_quality: true
-
-outputs:
-  reports_dir: human_talk_workspace/agentic_preprocessing/reports
-  decision_manifest: agentic_quality_audit.csv
-  json_report: agentic_quality_audit.json
-  markdown_report: agentic_quality_audit.md
-  recommended_actions: recommended_next_actions.json
+research_notes:
+  - The agent must not delete raw files.
+  - The agent should flag, score, route, explain, and recommend.
+  - The first target is raw4 speaker audit before raw4_agentic_cleaned training.
+  - Human review remains part of the preprocessing loop.

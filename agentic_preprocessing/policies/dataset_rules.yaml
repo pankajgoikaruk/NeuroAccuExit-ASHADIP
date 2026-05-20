@@ -1,0 +1,45 @@
+# agentic_preprocessing\policies\dataset_rules.yaml
+
+# Dataset-specific rules for human-talk agentic preprocessing
+
+dataset:
+  name: human_talk_dataset
+  workspace_root: human_talk_workspace
+
+trusted_clean_classes:
+  - Les_Brown
+  - Mel_Robbins
+  - Oprah_Winfrey
+  - Rabin_Sharma
+  - Simon_Sinek
+
+raw_agentic_target_classes:
+  - Brene_Brown
+  - Eckhart_Tolle
+  - Eric_Thomas
+  - Gary_Vee
+
+planned_stages:
+  clean5_balanced:
+    description: Trusted clean baseline from previous branch.
+    agentic_preprocessing: false
+
+  raw4_uncleaned:
+    description: Raw four-speaker baseline before agentic preprocessing.
+    agentic_preprocessing: false
+
+  raw4_agentic_cleaned:
+    description: Raw four-speaker stage after accepted/manually-approved agentic filtering.
+    agentic_preprocessing: true
+
+  agentic9_balanced:
+    description: Clean5 plus agent-cleaned Raw4 scalability stage.
+    agentic_preprocessing: true
+
+rules:
+  - Never balance before train/val/test parent-level split.
+  - Always preserve source_file traceability.
+  - Do not delete or overwrite raw files.
+  - accepted samples may be used for the first cleaned-stage experiment.
+  - needs_review samples require manual approval before training.
+  - rejected and blocked samples must remain traceable.
