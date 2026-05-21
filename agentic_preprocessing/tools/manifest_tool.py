@@ -178,6 +178,7 @@ def infer_source_path(row: Dict[str, Any]) -> str:
             "path",
             "audio_path",
             "filepath",
+            "source_file",
             "filename",
         ],
         default="",
@@ -202,7 +203,7 @@ def infer_class_name(row: Dict[str, Any]) -> str:
     if direct:
         return direct
 
-    for key in ["source_file", "source_path", "relative_path", "rel_path"]:
+    for key in ["relative_path", "rel_path", "source_path", "source_file"]:
         value = str(row.get(key, "")).strip()
         if value:
             parent = Path(value).parent.name
@@ -233,22 +234,47 @@ def normalize_audit_row(
     dataset_source: str = "dataset_audit",
 ) -> Dict[str, Any]:
     decision = normalize_decision(row)
+
     source_path = infer_source_path(row)
-    source_file = Path(source_path).name if source_path else first_non_empty(row, ["source_file", "old_name", "file"], "")
+    source_path_obj = Path(source_path) if source_path else Path("")
+
+    source_file = first_non_empty(
+        row,
+        ["file_name", "filename", "old_name", "file"],
+        default="",
+    )
+
+    if not source_file and source_path:
+        source_file = source_path_obj.name
+
+    class_name = infer_class_name(row)
+
+    rel_path = first_non_empty(
+        row,
+        ["rel_path", "relative_path"],
+        default="",
+    )
+
+    if not rel_path and class_name and source_file:
+        rel_path = str(Path(class_name) / source_file)
 
     normalized: Dict[str, Any] = {
         "manifest_id": f"audit_{index:06d}",
         "dataset_source": dataset_source,
         "decision": decision,
-        "class_name": infer_class_name(row),
+        "class_name": class_name,
+        "class_label": class_name,
         "source_file": source_file,
         "source_path": source_path,
-        "rel_path": first_non_empty(row, ["rel_path", "relative_path"], default=safe_rel_path(source_path)),
+        "rel_path": rel_path,
         "safe_to_train": normalize_bool_text(first_non_empty(row, ["safe_to_train"], default="")),
         "requires_preprocessing": normalize_bool_text(first_non_empty(row, ["requires_preprocessing"], default="")),
         "preprocessing_actions": first_non_empty(row, ["preprocessing_actions"], default=""),
         "reason_codes": first_non_empty(row, ["reason_codes", "reasons", "issue_codes"], default=""),
         "warning_codes": first_non_empty(row, ["warning_codes", "warnings"], default=""),
+        "quality_reason_codes": first_non_empty(row, ["quality_reason_codes"], default=""),
+        "decision_reason_codes": first_non_empty(row, ["decision_reason_codes"], default=""),
+        "preprocessing_reason_codes": first_non_empty(row, ["preprocessing_reason_codes"], default=""),
     }
 
     # Preserve original audit columns for traceability.
@@ -367,6 +393,23 @@ def collect_triage_seed_manifest(root: Path) -> List[Dict[str, Any]]:
     return rows
 
 
+def add_code_counts(counter: Counter, value: Any) -> None:
+    text = str(value).strip()
+
+    if not text:
+        return
+
+    parts = [
+        p.strip()
+        for p in text.replace(",", "|").split("|")
+        if p.strip()
+    ]
+
+    for part in parts:
+        counter[part] += 1
+
+
+
 def summarize_split_manifests(split: Dict[str, List[Dict[str, Any]]]) -> Dict[str, Any]:
     decision_counts = {name: len(rows) for name, rows in split.items()}
 
@@ -379,43 +422,46 @@ def summarize_split_manifests(split: Dict[str, List[Dict[str, Any]]]) -> Dict[st
             class_counts[class_name][decision] = count
 
     reason_counts = Counter()
-
-    for rows in split.values():
-        for row in rows:
-            reason_text = str(row.get("reason_codes", "")).strip()
-            if not reason_text:
-                continue
-
-            parts = [
-                p.strip()
-                for p in reason_text.replace(",", "|").split("|")
-                if p.strip()
-            ]
-
-            for part in parts:
-                reason_counts[part] += 1
-
     preprocessing_counts = Counter()
+    warning_counts = Counter()
+
+    reason_fields = [
+        "reason_codes",
+        "quality_reason_codes",
+        "decision_reason_codes",
+        "preprocessing_reason_codes",
+        "audit__reason_codes",
+        "audit__quality_reason_codes",
+        "audit__decision_reason_codes",
+        "audit__preprocessing_reason_codes",
+    ]
+
+    warning_fields = [
+        "warning_codes",
+        "audit__warning_codes",
+    ]
+
+    preprocessing_fields = [
+        "preprocessing_actions",
+        "audit__preprocessing_actions",
+    ]
 
     for rows in split.values():
         for row in rows:
-            action_text = str(row.get("preprocessing_actions", "")).strip()
-            if not action_text:
-                continue
+            for field in reason_fields:
+                add_code_counts(reason_counts, row.get(field, ""))
 
-            parts = [
-                p.strip()
-                for p in action_text.replace(",", "|").split("|")
-                if p.strip()
-            ]
+            for field in warning_fields:
+                add_code_counts(warning_counts, row.get(field, ""))
 
-            for part in parts:
-                preprocessing_counts[part] += 1
+            for field in preprocessing_fields:
+                add_code_counts(preprocessing_counts, row.get(field, ""))
 
     return {
         "decision_counts": decision_counts,
         "class_counts": class_counts,
         "reason_counts": dict(reason_counts.most_common()),
+        "warning_counts": dict(warning_counts.most_common()),
         "preprocessing_action_counts": dict(preprocessing_counts.most_common()),
     }
 
