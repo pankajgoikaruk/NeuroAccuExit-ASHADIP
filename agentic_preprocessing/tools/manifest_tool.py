@@ -185,18 +185,31 @@ def infer_source_path(row: Dict[str, Any]) -> str:
 
 
 def infer_class_name(row: Dict[str, Any]) -> str:
-    return first_non_empty(
+    direct = first_non_empty(
         row,
         [
             "class_name",
+            "class_label",
             "label",
             "speaker",
             "class",
             "folder",
             "class_dir",
         ],
-        default="unknown",
+        default="",
     )
+
+    if direct:
+        return direct
+
+    for key in ["source_file", "source_path", "relative_path", "rel_path"]:
+        value = str(row.get(key, "")).strip()
+        if value:
+            parent = Path(value).parent.name
+            if parent:
+                return parent
+
+    return "unknown"
 
 
 def safe_rel_path(source_path: str, root_hint: str = "") -> str:
