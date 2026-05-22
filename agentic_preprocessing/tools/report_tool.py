@@ -378,7 +378,7 @@ def write_markdown_report(
     lines.append("")
     lines.append("| Manifest | Purpose |")
     lines.append("|---|---|")
-    lines.append("| `accepted_manifest.csv` | Use for first raw4_agentic_cleaned stage |")
+    lines.append("| `accepted_manifest.csv` | Use for first current agentic-cleaned dataset stage |")
     lines.append("| `needs_review_manifest.csv` | Human inspection candidates |")
     lines.append("| `rejected_manifest.csv` | Excluded from first cleaned training stage |")
     lines.append("| `blocked_manifest.csv` | Unreadable/missing/unsupported items, if any |")

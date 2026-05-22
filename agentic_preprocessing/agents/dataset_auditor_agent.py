@@ -1,17 +1,18 @@
 # agentic_preprocessing\agents\dataset_auditor_agent.py
 
+
 """
 Dataset Auditor Agent.
 
-This is the first research-grade agentic preprocessing component.
-
-Responsibilities:
+Version 0.3 responsibilities:
 - scan raw class folders
 - compute basic audio quality indicators
 - detect exact duplicate candidates
+- separate preprocessing reasons from quality reasons
+- add warning codes for borderline samples
 - assign accepted / needs_review / rejected / blocked decisions
-- write dataset audit reports
-- preserve all raw data without deletion or movement
+- write dataset audit reports and split manifests
+- preserve all raw data without deletion, movement, or copying
 - show CLI progress so long scans do not look stuck
 """
 
@@ -57,10 +58,14 @@ class DatasetAuditorAgent:
             "file_name": "",
             "class_label": class_label,
             "decision": "blocked",
-            "reason_codes": [issue],
-            "safe_to_train": False,
+            "safe_after_preprocessing": False,
             "requires_preprocessing": False,
             "preprocessing_actions": [],
+            "raw_reason_codes": [issue],
+            "preprocessing_reason_codes": [],
+            "quality_reason_codes": [],
+            "warning_codes": [],
+            "decision_reason_codes": [issue],
             "readable": False,
             "error": issue,
             "duration_sec": "",
@@ -85,9 +90,6 @@ class DatasetAuditorAgent:
     def _compute_duplicate_groups(self, file_records: List[Any]) -> Dict[str, Dict[str, Any]]:
         """
         Detect exact duplicate candidates using SHA256.
-
-        Returns mapping:
-        source_file -> duplicate metadata
         """
         hash_to_files: Dict[str, List[str]] = defaultdict(list)
         file_to_hash: Dict[str, str] = {}
@@ -159,6 +161,7 @@ class DatasetAuditorAgent:
         print(f"Output dir: {self.out_dir}")
         print(f"Classes: {', '.join(self.classes)}")
         print("Mode: audit-only, non-destructive")
+        print("Routed folders: disabled in V0.3")
         print("")
 
         print("Discovering audio files...")
@@ -212,10 +215,14 @@ class DatasetAuditorAgent:
                 "file_name": record.file_name,
                 "class_label": record.class_label,
                 "decision": stats.get("decision", "blocked"),
-                "reason_codes": stats.get("reason_codes", []),
-                "safe_to_train": bool(stats.get("safe_to_train", False)),
+                "safe_after_preprocessing": bool(stats.get("safe_after_preprocessing", False)),
                 "requires_preprocessing": bool(stats.get("requires_preprocessing", False)),
                 "preprocessing_actions": stats.get("preprocessing_actions", []),
+                "raw_reason_codes": stats.get("raw_reason_codes", []),
+                "preprocessing_reason_codes": stats.get("preprocessing_reason_codes", []),
+                "quality_reason_codes": stats.get("quality_reason_codes", []),
+                "warning_codes": stats.get("warning_codes", []),
+                "decision_reason_codes": stats.get("decision_reason_codes", []),
                 "readable": bool(stats.get("readable", False)),
                 "error": stats.get("error", ""),
                 "duration_sec": stats.get("duration_sec", ""),
@@ -243,7 +250,7 @@ class DatasetAuditorAgent:
         progress.finish(postfix="audio audit complete")
 
         print("")
-        print("Writing report bundle...")
+        print("Writing report bundle and split manifests...")
         outputs = write_report_bundle(
             rows=rows,
             out_dir=self.out_dir,
