@@ -1,10 +1,10 @@
 # Experiment Log — Agentic Data Preprocessing Branch
 
-This log records only the current `agentic_data_preprocessing` branch.
+This log records only the current `agentic_data_preprocessing_v0.3` branch.
 
 ```text
 Project: NeuroAccuExit-ASHADIP
-Branch: agentic_data_preprocessing
+Branch: agentic_data_preprocessing_v0.3
 Current completed run: raw5_agentic_cleaned_3exit_greedy_final_001
 Current dataset stage: raw5_agentic_cleaned
 Task: five-speaker human-talk speaker classification

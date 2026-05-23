@@ -1,11 +1,11 @@
 # Documentation Structure — Agentic Data Preprocessing Branch
 
-This document defines the documentation structure for the **current** `agentic_data_preprocessing` branch only.
+This document defines the documentation structure for the **current** `agentic_data_preprocessing_v0.3` branch only.
 
 Previous clean-stage branch results and old execution tables are intentionally excluded.
 
 ```text
-Branch: agentic_data_preprocessing
+Branch: agentic_data_preprocessing_v0.3
 Current dataset stage: raw5_agentic_cleaned
 Current completed run: raw5_agentic_cleaned_3exit_greedy_final_001
 Current task: five-speaker human-talk speaker classification

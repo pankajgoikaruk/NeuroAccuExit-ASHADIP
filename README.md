@@ -4,7 +4,7 @@ This branch documents the **current agentic preprocessing workflow** for the Raw
 Older staged clean-speaker branch results are intentionally removed from this document so that the repository reflects the current branch only.
 
 ```text
-Branch: agentic_data_preprocessing
+Branch: agentic_data_preprocessing_v0.3
 Current experiment: raw5_agentic_cleaned_3exit_greedy_final_001
 Task: five-speaker human-talk classification
 Dataset stage: raw5_agentic_cleaned
@@ -192,5 +192,5 @@ The same model/settings should be run on the uncleaned Raw5 dataset. That will a
 ```powershell
 git add README.md DOC_STRUCTURE.md MULTILABEL_EXPERIMENT_LOG.md APPENDIX.md
 git commit -m "docs: keep current agentic preprocessing results only"
-git push origin agentic_data_preprocessing
+git push origin agentic_data_preprocessing_v0.3
 ```

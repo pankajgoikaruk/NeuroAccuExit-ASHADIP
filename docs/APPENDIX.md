@@ -1,6 +1,6 @@
 # Appendix — Agentic Data Preprocessing Current Branch
 
-This appendix contains reproducibility details for the current `agentic_data_preprocessing` branch only.
+This appendix contains reproducibility details for the current `agentic_data_preprocessing_v0.3` branch only.
 
 Older clean-stage branch commands and results are intentionally removed.
 
@@ -10,7 +10,7 @@ Older clean-stage branch commands and results are intentionally removed.
 
 | Item | Value |
 |---|---|
-| Branch | `agentic_data_preprocessing` |
+| Branch | `agentic_data_preprocessing_v0.3` |
 | Current run | `raw5_agentic_cleaned_3exit_greedy_final_001` |
 | Dataset stage | `raw5_agentic_cleaned` |
 | Task | Five-speaker human-talk classification |
