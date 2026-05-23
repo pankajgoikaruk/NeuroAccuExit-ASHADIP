@@ -1,6 +1,6 @@
-# NeuroAccuExit Human-Talk Incremental Evaluation — `kexit_human_talk_incremental_eval`
+# NeuroAccuExit Human-Talk Incremental Evaluation + Agentic Preprocessing
 
-This branch evaluates the NeuroAccuExit TinyAudioCNN + ExitNet early-exit pipeline on a clean human-talk speaker benchmark. The branch is now documented as a **staged human-talk / speaker-identification study**, not as the earlier loss-weight ablation branch.
+This documentation covers the NeuroAccuExit TinyAudioCNN + ExitNet early-exit pipeline on the clean human-talk benchmark and the newer agentic preprocessing extension for Raw5 speaker data. The branch is now documented as a **staged human-talk / speaker-identification study**, not as the earlier loss-weight ablation branch.
 
 ```text
 Branch: kexit_human_talk_incremental_eval
@@ -25,6 +25,96 @@ Main outputs: segment-level early-exit metrics, clip-level confusion analysis, c
 6. `Simon_Sinek` is the most frequent weak/confused class in the segment-level clean stages, especially under the 5-exit selected policy.
 7. AUPRC remains high across all stages, indicating strong probability ranking even when thresholded F1/exact-match drops.
 8. Confusion matrices are reported as **single-label speaker-identification views** of a model trained through a multi-label pipeline.
+
+---
+
+<!-- AGENTIC_RAW5_RESULTS_START -->
+
+## Latest agentic preprocessing result — Raw5 cleaned speaker stage
+
+This branch now includes the first agentic preprocessing result on the five-speaker Raw5 stage.
+
+```text
+Branch: agentic_data_preprocessing
+Run: raw5_agentic_cleaned_3exit_greedy_final_001
+Timestamp UTC: 2026-05-22T11:32:45Z
+Dataset stage: raw5_agentic_cleaned
+Task: five-speaker human-talk classification
+Model: TinyAudioCNN + ExitNet
+Exits: 3
+Tap blocks: [1, 3]
+Policy: greedy segment policy + full-clip and Depth×Time clip evaluation
+Final cleaned training pool: 3,108 files after one manually verified music-only file was excluded
+```
+
+### Agentic preprocessing status
+
+| Item | Count / value |
+|---|---:|
+| Raw5 files audited | 3,170 |
+| Accepted by agent | 3,109 |
+| Needs review | 27 |
+| Rejected | 34 |
+| Blocked | 0 |
+| Cleaned files built | 3,109 |
+| Manually excluded after cleaned re-audit | 1 |
+| Final training-ready cleaned files | 3,108 |
+
+The manually excluded file is `Eric_Thomas__0175.wav`, which was verified as pure music with no target speaker. It is preserved outside the training root for traceability.
+
+| Class | Final cleaned files |
+|---|---:|
+| `Brene_Brown` | 595 |
+| `Eckhart_Tolle` | 660 |
+| `Eric_Thomas` | 593 |
+| `Gary_Vee` | 642 |
+| `Jay_Shetty` | 618 |
+| **Total** | **3,108** |
+
+### First Raw5 agentic-cleaned result
+
+| Evaluation mode | Accuracy | Samples / windows | Avg exit depth | Avg windows used | Windows saved | Compute saved |
+|---|---:|---:|---:|---:|---:|---:|
+| Segment greedy policy | 96.83% | 4040 windows | 2.089 | — | — | 52.56% vs full-depth segment |
+| Full-clip greedy aggregation | 99.57% | 467 clips / 4040 windows | 2.089 | 8.651 / 8.651 | 0.00% | 0.00% |
+| Depth×Time clip greedy | 98.93% | 467 clips / 975 used windows | 2.092 | 2.088 / 8.651 | 75.87% | 75.82% |
+
+### Per-exit static quality
+
+| Exit | Accuracy | Macro-F1 | Weighted-F1 | Test windows |
+|---|---:|---:|---:|---:|
+| Exit 1 | 65.62% | 64.04% | 64.36% | 4040 |
+| Exit 2 | 92.40% | 92.29% | 92.37% | 4040 |
+| Exit 3 / Final | 97.60% | 97.56% | 97.59% | 4040 |
+
+### Early-exit behaviour
+
+| Metric | Value |
+|---|---:|
+| Exit 1 usage | 18.71% |
+| Exit 2 usage | 53.71% |
+| Exit 3 usage | 27.57% |
+| Average exit depth | 2.089 |
+| Flip-any rate | 35.79% |
+| Average flip count | 0.401 |
+| Exit consistency | 99.13% |
+| Policy threshold `tau` | 0.95 |
+| Policy ECE | 0.0104 |
+
+### Clip-level interpretation
+
+| Evaluation | Mistake summary |
+|---|---|
+| Full-clip greedy | 2 wrong clips: `Brene_Brown → Eric_Thomas` (1), `Gary_Vee → Jay_Shetty` (1) |
+| Depth×Time greedy | 5 wrong clips: `Brene_Brown → Gary_Vee` (3), `Eric_Thomas → Jay_Shetty` (1), `Gary_Vee → Eckhart_Tolle` (1) |
+
+The key result is that Depth×Time retains **98.93%** clip accuracy while using only **24.13%** of available windows. This saves **75.87%** windows and **75.82%** compute relative to full-clip processing.
+
+### Reproducibility note
+
+The cache path records the CLI bandpass setting as `bp50-7600`, while `config_used.yaml` still contains the base YAML bandpass `[100, 3000]`. For reporting this run, treat the CLI/cache setting as the effective run setting and patch the config-save logic in a later reproducibility cleanup.
+
+<!-- AGENTIC_RAW5_RESULTS_END -->
 
 ---
 

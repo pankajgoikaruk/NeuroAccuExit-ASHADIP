@@ -1,4 +1,4 @@
-# Appendix — Human-Talk Incremental Evaluation
+# Appendix — Human-Talk Incremental Evaluation + Agentic Preprocessing
 
 This appendix records the reproducibility protocol, commands, metrics, and result tables for the `kexit_human_talk_incremental_eval` branch.
 
@@ -282,3 +282,134 @@ git add README.md DOC_STRUCTURE.md APPENDIX.md MULTILABEL_EXPERIMENT_LOG.md docs
 git commit -m "docs: update human-talk staged benchmark results"
 git push origin kexit_human_talk_incremental_eval
 ```
+
+---
+
+<!-- AGENTIC_RAW5_RESULTS_START -->
+
+## A14. Agentic Raw5 cleaned experiment
+
+### A14.1 Run metadata
+
+| Item | Value |
+|---|---|
+| Run ID | `raw5_agentic_cleaned_3exit_greedy_final_001` |
+| Timestamp UTC | `2026-05-22T11:32:45Z` |
+| Branch context | `agentic_data_preprocessing` |
+| Dataset stage | `raw5_agentic_cleaned` |
+| Classes | `Brene_Brown`, `Eckhart_Tolle`, `Eric_Thomas`, `Gary_Vee`, `Jay_Shetty` |
+| Final cleaned files | 3,108 |
+| Model | TinyAudioCNN + ExitNet |
+| Exits | 3 |
+| Tap blocks | `[1, 3]` |
+| Feature type | 64-mel log-mel |
+| Segment / hop | 1.0 s / 0.5 s |
+| Greedy threshold `tau` | 0.95 |
+| Temperature scaling | `0.7143, 0.9819, 1.3302` |
+| Exit hint | `false` |
+
+### A14.2 Preprocessing and dataset counts
+
+| Item | Count / value |
+|---|---:|
+| Raw5 files audited | 3,170 |
+| Accepted by agent | 3,109 |
+| Needs review | 27 |
+| Rejected | 34 |
+| Blocked | 0 |
+| Cleaned files built | 3,109 |
+| Manually excluded after cleaned re-audit | 1 |
+| Final training-ready cleaned files | 3,108 |
+
+| Class | Final cleaned files |
+|---|---:|
+| `Brene_Brown` | 595 |
+| `Eckhart_Tolle` | 660 |
+| `Eric_Thomas` | 593 |
+| `Gary_Vee` | 642 |
+| `Jay_Shetty` | 618 |
+| **Total** | **3,108** |
+
+### A14.3 Execution command
+
+```powershell
+.\scripts\run_full.ps1 `
+  -DataRoot "human_talk_workspace\datasets\raw5_agentic_cleaned" `
+  -Variant "raw5_agentic_cleaned_3exit_greedy_final" `
+  -Policy greedy `
+  -Device cpu `
+  -InputMode segment `
+  -Labels "Brene_Brown,Eckhart_Tolle,Eric_Thomas,Gary_Vee,Jay_Shetty" `
+  -SegmentSec 1.0 `
+  -HopSec 0.5 `
+  -SampleRate 16000 `
+  -Bandpass "50,7600" `
+  -NMels 64 `
+  -TapBlocks "1,3" `
+  -SplitUnit file `
+  -RunClipPolicy `
+  -ForceRebuild
+```
+
+### A14.4 Segment and clip results
+
+| Evaluation mode | Accuracy | Samples / windows | Avg exit depth | Avg windows used | Windows saved | Compute saved |
+|---|---:|---:|---:|---:|---:|---:|
+| Segment greedy policy | 96.83% | 4040 windows | 2.089 | — | — | 52.56% vs full-depth segment |
+| Full-clip greedy aggregation | 99.57% | 467 clips / 4040 windows | 2.089 | 8.651 / 8.651 | 0.00% | 0.00% |
+| Depth×Time clip greedy | 98.93% | 467 clips / 975 used windows | 2.092 | 2.088 / 8.651 | 75.87% | 75.82% |
+
+### A14.5 Per-exit static report
+
+| Exit | Accuracy | Macro-F1 | Weighted-F1 | Test windows |
+|---|---:|---:|---:|---:|
+| Exit 1 | 65.62% | 64.04% | 64.36% | 4040 |
+| Exit 2 | 92.40% | 92.29% | 92.37% | 4040 |
+| Exit 3 / Final | 97.60% | 97.56% | 97.59% | 4040 |
+
+### A14.6 Exit behaviour diagnostics
+
+| Metric | Value |
+|---|---:|
+| Exit 1 usage | 18.71% |
+| Exit 2 usage | 53.71% |
+| Exit 3 usage | 27.57% |
+| Average exit depth | 2.089 |
+| Flip-any rate | 35.79% |
+| Average flip count | 0.401 |
+| Exit consistency | 99.13% |
+| Policy threshold `tau` | 0.95 |
+| Policy ECE | 0.0104 |
+
+### A14.7 Full-clip per-class metrics
+
+| Class | Precision | Recall | F1 | Support |
+|---|---:|---:|---:|---:|
+| `Brene_Brown` | 100.00% | 98.88% | 99.44% | 89 |
+| `Eckhart_Tolle` | 100.00% | 100.00% | 100.00% | 99 |
+| `Eric_Thomas` | 98.89% | 100.00% | 99.44% | 89 |
+| `Gary_Vee` | 100.00% | 98.97% | 99.48% | 97 |
+| `Jay_Shetty` | 98.94% | 100.00% | 99.47% | 93 |
+
+### A14.8 Depth×Time per-class metrics
+
+| Class | Precision | Recall | F1 | Support |
+|---|---:|---:|---:|---:|
+| `Brene_Brown` | 100.00% | 96.63% | 98.29% | 89 |
+| `Eckhart_Tolle` | 99.00% | 100.00% | 99.50% | 99 |
+| `Eric_Thomas` | 100.00% | 98.88% | 99.44% | 89 |
+| `Gary_Vee` | 96.97% | 98.97% | 97.96% | 97 |
+| `Jay_Shetty` | 98.94% | 100.00% | 99.47% | 93 |
+
+### A14.9 Clip confusion notes
+
+| Evaluation | Mistake summary |
+|---|---|
+| Full-clip greedy | 2 wrong clips: `Brene_Brown → Eric_Thomas` (1), `Gary_Vee → Jay_Shetty` (1) |
+| Depth×Time greedy | 5 wrong clips: `Brene_Brown → Gary_Vee` (3), `Eric_Thomas → Jay_Shetty` (1), `Gary_Vee → Eckhart_Tolle` (1) |
+
+### A14.10 Reproducibility caveat
+
+`config_used.yaml` records the base YAML bandpass `[100, 3000]`, while the cache path records the effective CLI override `bp50-7600`. The result should be documented as the `50–7600 Hz` run unless the pipeline is rerun after patching config override persistence.
+
+<!-- AGENTIC_RAW5_RESULTS_END -->

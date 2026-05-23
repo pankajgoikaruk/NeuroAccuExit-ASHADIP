@@ -1,4 +1,4 @@
-# Documentation Structure — `kexit_human_talk_incremental_eval`
+# Documentation Structure — Human-Talk Incremental + Agentic Preprocessing Evaluation
 
 This document defines the reporting structure for the staged human-talk evaluation branch.
 
@@ -219,6 +219,61 @@ Use these figures in the main report:
 > The 5-exit model is more accurate.
 
 This is not supported by the staged results.
+
+---
+
+<!-- AGENTIC_RAW5_RESULTS_START -->
+
+## 8. Agentic preprocessing extension — Raw5 cleaned stage
+
+This documentation now includes an agentic preprocessing extension on the Raw5 speaker dataset.
+
+### 8.1 Additional research questions
+
+| ID | Question | Current answer |
+|---|---|---|
+| RQ7 | Can the agentic preprocessing workflow convert noisy raw speaker folders into a training-ready cleaned dataset? | Yes; 3,109 accepted files were built as 16 kHz mono cleaned copies, with one additional music-only file manually excluded after re-audit. |
+| RQ8 | Does the cleaned Raw5 stage produce a strong first speaker-classification result? | Yes; the 3-exit greedy model achieved 96.83% segment accuracy, 99.57% full-clip accuracy, and 98.93% Depth×Time clip accuracy. |
+
+### 8.2 Agentic preprocessing dataset summary
+
+| Item | Count / value |
+|---|---:|
+| Raw5 files audited | 3,170 |
+| Accepted by agent | 3,109 |
+| Needs review | 27 |
+| Rejected | 34 |
+| Blocked | 0 |
+| Cleaned files built | 3,109 |
+| Manually excluded after cleaned re-audit | 1 |
+| Final training-ready cleaned files | 3,108 |
+
+| Class | Final cleaned files |
+|---|---:|
+| `Brene_Brown` | 595 |
+| `Eckhart_Tolle` | 660 |
+| `Eric_Thomas` | 593 |
+| `Gary_Vee` | 642 |
+| `Jay_Shetty` | 618 |
+| **Total** | **3,108** |
+
+### 8.3 Main Raw5 cleaned result
+
+| Evaluation mode | Accuracy | Samples / windows | Avg exit depth | Avg windows used | Windows saved | Compute saved |
+|---|---:|---:|---:|---:|---:|---:|
+| Segment greedy policy | 96.83% | 4040 windows | 2.089 | — | — | 52.56% vs full-depth segment |
+| Full-clip greedy aggregation | 99.57% | 467 clips / 4040 windows | 2.089 | 8.651 / 8.651 | 0.00% | 0.00% |
+| Depth×Time clip greedy | 98.93% | 467 clips / 975 used windows | 2.092 | 2.088 / 8.651 | 75.87% | 75.82% |
+
+### 8.4 Interpretation for reporting
+
+The first Raw5 cleaned result supports the claim that the agentic preprocessing stage can produce a usable speaker dataset without modifying raw data. The strongest headline is the clip-level accuracy-efficiency trade-off: Depth×Time loses only **0.64 percentage points** against full-clip aggregation while saving **75.87%** windows and **75.82%** compute.
+
+### 8.5 Remaining comparison needed
+
+The next required baseline is `raw5_uncleaned_3exit_greedy` with the same architecture and evaluation settings. That comparison is needed before claiming that agentic preprocessing improves accuracy over the uncleaned raw dataset.
+
+<!-- AGENTIC_RAW5_RESULTS_END -->
 
 ---
 

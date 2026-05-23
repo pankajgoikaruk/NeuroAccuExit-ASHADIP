@@ -5,7 +5,7 @@ This log records the current staged human-talk evaluation on the `kexit_human_ta
 ```text
 Project: NeuroAccuExit-ASHADIP
 Branch: kexit_human_talk_incremental_eval
-Current study: clean human-talk staged speaker classification
+Current study: clean human-talk staged speaker classification + Raw5 agentic preprocessing extension
 Compared models: 3-exit no-hint vs 5-exit no-hint
 Evaluation levels: segment, clip, confusion matrix
 ```
@@ -34,7 +34,9 @@ The clean speaker stages are not intended to prove real-world noisy robustness y
 | `clean4_balanced` | Intermediate scalability stage | Completed |
 | `clean5_balanced` | Main clean scalability stage | Completed |
 | Clip/confusion evaluation | Fairer segment + clip comparison | Completed |
-| Noisy/raw speaker stage | Robustness stress test | Not yet run |
+| Noisy/raw speaker stage | Robustness stress test | Started via Raw5 agentic-cleaned experiment |
+| `raw5_agentic_cleaned` | First agentic-cleaned Raw5 speaker experiment | Completed |
+| Matched Raw5 uncleaned baseline | Required comparison against cleaned stage | Not yet run |
 
 ---
 
@@ -242,3 +244,126 @@ Use these rules when writing the paper/report:
 3. Noisy/raw speaker classes.
 4. True multi-label human-talk + environmental audio mixtures.
 5. Event detection latency only after adding event-onset metadata.
+
+---
+
+<!-- AGENTIC_RAW5_RESULTS_START -->
+
+## 11. Agentic Raw5 cleaned experiment
+
+### 11.1 Run identity
+
+```text
+Run ID: raw5_agentic_cleaned_3exit_greedy_final_001
+Timestamp UTC: 2026-05-22T11:32:45Z
+Branch context: agentic_data_preprocessing
+Dataset stage: raw5_agentic_cleaned
+Final cleaned pool: 3,108 files
+Classes: Brene_Brown, Eckhart_Tolle, Eric_Thomas, Gary_Vee, Jay_Shetty
+Model: TinyAudioCNN + ExitNet
+Exits: 3
+Tap blocks: [1, 3]
+Exit hint: false
+Policy tau: 0.95
+```
+
+### 11.2 Command
+
+```powershell
+.\scripts\run_full.ps1 `
+  -DataRoot "human_talk_workspace\datasets\raw5_agentic_cleaned" `
+  -Variant "raw5_agentic_cleaned_3exit_greedy_final" `
+  -Policy greedy `
+  -Device cpu `
+  -InputMode segment `
+  -Labels "Brene_Brown,Eckhart_Tolle,Eric_Thomas,Gary_Vee,Jay_Shetty" `
+  -SegmentSec 1.0 `
+  -HopSec 0.5 `
+  -SampleRate 16000 `
+  -Bandpass "50,7600" `
+  -NMels 64 `
+  -TapBlocks "1,3" `
+  -SplitUnit file `
+  -RunClipPolicy `
+  -ForceRebuild
+```
+
+### 11.3 Dataset outcome
+
+| Item | Count / value |
+|---|---:|
+| Raw5 files audited | 3,170 |
+| Accepted by agent | 3,109 |
+| Needs review | 27 |
+| Rejected | 34 |
+| Blocked | 0 |
+| Cleaned files built | 3,109 |
+| Manually excluded after cleaned re-audit | 1 |
+| Final training-ready cleaned files | 3,108 |
+
+| Class | Final cleaned files |
+|---|---:|
+| `Brene_Brown` | 595 |
+| `Eckhart_Tolle` | 660 |
+| `Eric_Thomas` | 593 |
+| `Gary_Vee` | 642 |
+| `Jay_Shetty` | 618 |
+| **Total** | **3,108** |
+
+### 11.4 Main result table
+
+| Evaluation mode | Accuracy | Samples / windows | Avg exit depth | Avg windows used | Windows saved | Compute saved |
+|---|---:|---:|---:|---:|---:|---:|
+| Segment greedy policy | 96.83% | 4040 windows | 2.089 | — | — | 52.56% vs full-depth segment |
+| Full-clip greedy aggregation | 99.57% | 467 clips / 4040 windows | 2.089 | 8.651 / 8.651 | 0.00% | 0.00% |
+| Depth×Time clip greedy | 98.93% | 467 clips / 975 used windows | 2.092 | 2.088 / 8.651 | 75.87% | 75.82% |
+
+### 11.5 Per-exit test quality
+
+| Exit | Accuracy | Macro-F1 | Weighted-F1 | Test windows |
+|---|---:|---:|---:|---:|
+| Exit 1 | 65.62% | 64.04% | 64.36% | 4040 |
+| Exit 2 | 92.40% | 92.29% | 92.37% | 4040 |
+| Exit 3 / Final | 97.60% | 97.56% | 97.59% | 4040 |
+
+### 11.6 Exit behaviour
+
+| Metric | Value |
+|---|---:|
+| Exit 1 usage | 18.71% |
+| Exit 2 usage | 53.71% |
+| Exit 3 usage | 27.57% |
+| Average exit depth | 2.089 |
+| Flip-any rate | 35.79% |
+| Average flip count | 0.401 |
+| Exit consistency | 99.13% |
+| Policy threshold `tau` | 0.95 |
+| Policy ECE | 0.0104 |
+
+### 11.7 Clip-level mistakes
+
+| Evaluation | Mistake summary |
+|---|---|
+| Full-clip greedy | 2 wrong clips: `Brene_Brown → Eric_Thomas` (1), `Gary_Vee → Jay_Shetty` (1) |
+| Depth×Time greedy | 5 wrong clips: `Brene_Brown → Gary_Vee` (3), `Eric_Thomas → Jay_Shetty` (1), `Gary_Vee → Eckhart_Tolle` (1) |
+
+### 11.8 Research interpretation
+
+This is the first successful agentic-cleaned Raw5 result. It shows that the cleaned Raw5 speaker data is highly trainable and that clip aggregation improves reliability over individual 1-second windows. Depth×Time provides the strongest dynamic result: **98.93%** clip accuracy with **75.87%** windows saved and **75.82%** compute saved.
+
+### 11.9 Next experiment
+
+Run the matched uncleaned baseline:
+
+```text
+raw5_uncleaned_3exit_greedy
+```
+
+This will allow a direct table:
+
+| Dataset stage | Segment Acc | Full Clip Acc | Depth×Time Acc | Windows Saved | Compute Saved |
+|---|---:|---:|---:|---:|---:|
+| Raw5 uncleaned | TBD | TBD | TBD | TBD | TBD |
+| Raw5 agentic cleaned | 96.83% | 99.57% | 98.93% | 75.87% | 75.82% |
+
+<!-- AGENTIC_RAW5_RESULTS_END -->
