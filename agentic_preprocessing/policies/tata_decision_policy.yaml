@@ -1,0 +1,137 @@
+# agentic_preprocessing/policies/tata_decision_policy.yaml
+
+# TinyAudioTriageAgent decision policy for v0.5 TATA.
+#
+# Important distinction:
+#   Model labels describe what is present in the audio.
+#   Policy decisions describe what to do with the clip before final speaker-model training.
+#
+# TATA is a true multi-label sigmoid/BCE triage model, not a replacement for the
+# final softmax speaker classifier.
+
+policy_name: tata_decision_policy_v0_5
+agent_name: TinyAudioTriageAgent
+branch: agentic_data_preprocessing_v0.5_tata
+
+model_task:
+  type: multi_label_audio_triage
+  activation: sigmoid
+  loss: BCEWithLogitsLoss
+  purpose: semantic_preprocessing_before_speaker_classification
+
+labels:
+  - target_speaker_present
+  - other_speaker_present
+  - music_present
+  - applause_present
+  - laughter_present
+  - crowd_noise_present
+  - silence_present
+
+label_groups:
+  speaker:
+    - target_speaker_present
+    - other_speaker_present
+  event_or_background:
+    - music_present
+    - applause_present
+    - laughter_present
+    - crowd_noise_present
+    - silence_present
+
+confidence:
+  default_positive_threshold: 0.50
+  low_confidence_margin: 0.10
+  low_confidence_decision: needs_review
+  notes:
+    - Thresholds should be tuned per label after validation.
+    - Low-confidence clips should be routed to human review, not automatically rejected.
+
+policy_rules:
+  - condition: target_speaker_present
+    decision: accepted
+    reason: target_speaker_present_without_blocking_background
+
+  - condition: target_speaker_present + music_present
+    decision: accepted_with_warning
+    reason: target_speaker_with_music
+
+  - condition: target_speaker_present + crowd_noise_present
+    decision: accepted_with_warning
+    reason: target_speaker_with_crowd_noise
+
+  - condition: target_speaker_present + applause_present
+    decision: accepted_with_warning_or_needs_review
+    reason: target_speaker_with_applause
+
+  - condition: target_speaker_present + laughter_present
+    decision: accepted_with_warning_or_needs_review
+    reason: target_speaker_with_laughter
+
+  - condition: target_speaker_present + strong_music_or_applause_or_laughter_or_crowd_noise
+    decision: needs_review
+    reason: target_speaker_present_but_background_may_reduce_usability
+
+  - condition: target_speaker_present + other_speaker_present
+    decision: needs_review
+    reason: target_and_other_speaker_overlap
+
+  - condition: music_present only
+    decision: rejected
+    reason: music_without_target_speaker
+
+  - condition: applause_present only
+    decision: rejected
+    reason: applause_without_target_speaker
+
+  - condition: laughter_present only
+    decision: rejected
+    reason: laughter_without_target_speaker
+
+  - condition: crowd_noise_present only
+    decision: rejected
+    reason: crowd_noise_without_target_speaker
+
+  - condition: applause_present + laughter_present without target_speaker_present
+    decision: rejected
+    reason: applause_laughter_without_target_speaker
+
+  - condition: applause_present + crowd_noise_present without target_speaker_present
+    decision: rejected
+    reason: applause_crowd_without_target_speaker
+
+  - condition: music_present + applause_present without target_speaker_present
+    decision: rejected
+    reason: music_applause_without_target_speaker
+
+  - condition: music_present + laughter_present without target_speaker_present
+    decision: rejected
+    reason: music_laughter_without_target_speaker
+
+  - condition: silence_present only
+    decision: rejected
+    reason: silence_without_target_speaker
+
+  - condition: other_speaker_present only
+    decision: rejected
+    reason: other_speaker_without_target_speaker
+
+  - condition: low_confidence
+    decision: needs_review
+    reason: low_confidence_prediction
+
+safety_principles:
+  - Do not reject a clip merely because music, applause, laughter, or crowd noise is present.
+  - Reject only when the target speaker is absent or the clip is unusable.
+  - Target speaker plus light background event should usually be accepted_with_warning.
+  - Target speaker plus strong or ambiguous background event should be needs_review.
+  - Event-only, silence-only, or other-speaker-only clips should not enter final target-speaker training.
+  - Human review should be used for uncertain or high-risk routing decisions.
+
+expected_outputs_after_tata_inference:
+  - tata_pseudo_labels.csv
+  - tata_confidence_report.csv
+  - tata_accepted_manifest.csv
+  - tata_accepted_with_warning_manifest.csv
+  - tata_needs_review_manifest.csv
+  - tata_rejected_manifest.csv
