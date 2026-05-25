@@ -2,24 +2,13 @@
 #
 # Build a true multi-label seed manifest for TinyAudioTriageAgent (TATA).
 #
-# Purpose:
-#   - Convert human_talk_triage_seed_dataset into a multi-hot CSV manifest.
-#   - Predict speaker identity labels, interviewer identity labels, and event/background labels.
-#   - Support clean and mixed audio conditions without requiring one folder per combination.
-#   - Produce labels.json and a summary file compatible with scripts/extract_multilabel_features.py
-#     and training/train_multilabel.py.
+# v0.5 label design:
+#   - named target-speaker identities
+#   - generic non-target speech labels: interviewer_present, other_speaker_present
+#   - event/background labels
 #
-# Example:
-#   python -m scripts.build_tata_seed_manifest `
-#     --seed_root human_talk_triage_seed_dataset `
-#     --out_dir human_talk_workspace\tata_seed `
-#     --seed 42
-#
-# Optional manual annotations:
-#   python -m scripts.build_tata_seed_manifest `
-#     --seed_root human_talk_triage_seed_dataset `
-#     --annotations_csv human_talk_workspace\tata_seed\manual_tata_annotations.csv `
-#     --out_dir human_talk_workspace\tata_seed
+# This avoids fragile class-specific interviewer labels such as
+# Brene_Brown_interviewer when the interviewer is not a stable voice identity.
 
 from __future__ import annotations
 
@@ -52,12 +41,9 @@ SPEAKER_LABELS = [
     "Jay_Shetty",
 ]
 
-INTERVIEWER_LABELS = [
-    "Brene_Brown_interviewer",
-    "Eckhart_Tolle_interviewer",
-    "Eric_Thomas_interviewer",
-    "Gary_Vee_interviewer",
-    "Jay_Shetty_interviewer",
+NON_TARGET_SPEECH_LABELS = [
+    "interviewer_present",
+    "other_speaker_present",
 ]
 
 EVENT_LABELS = [
@@ -68,67 +54,38 @@ EVENT_LABELS = [
     "silence_present",
 ]
 
-TATA_LABELS = SPEAKER_LABELS + INTERVIEWER_LABELS + EVENT_LABELS
+TATA_LABELS = SPEAKER_LABELS + NON_TARGET_SPEECH_LABELS + EVENT_LABELS
 
-LABEL_ALIASES: Dict[str, List[str]] = {
+SPEAKER_ALIASES: Dict[str, List[str]] = {
     "Brene_Brown": ["brene_brown", "brene", "brene-brown"],
     "Eckhart_Tolle": ["eckhart_tolle", "eckhart", "eckhart-tolle"],
     "Eric_Thomas": ["eric_thomas", "eric", "eric-thomas"],
     "Gary_Vee": ["gary_vee", "garyvee", "gary", "gary-vee"],
     "Jay_Shetty": ["jay_shetty", "jay", "jay-shetty"],
-    "Brene_Brown_interviewer": [
-        "brene_brown_interviewer",
-        "brene_brown_interviwer",
-        "brene_interviewer",
-        "brene_interviwer",
-        "brene_brown_other_speaker",
+}
+
+LABEL_ALIASES: Dict[str, List[str]] = {
+    **SPEAKER_ALIASES,
+    "interviewer_present": [
+        "interviewer",
+        "interviwer",  # common typo support
+        "host",
+        "questioner",
+        "interview_speech",
     ],
-    "Eckhart_Tolle_interviewer": [
-        "eckhart_tolle_interviewer",
-        "eckhart_tolle_interviwer",
-        "eckhart_interviewer",
-        "eckhart_interviwer",
-        "eckhart_tolle_other_speaker",
+    "other_speaker_present": [
+        "other_speaker",
+        "other-speaker",
+        "other_speech",
+        "non_target_speaker",
+        "nontarget_speaker",
+        "non_target",
+        "non-target",
+        "secondary_speaker",
     ],
-    "Eric_Thomas_interviewer": [
-        "eric_thomas_interviewer",
-        "eric_thomas_interviwer",
-        "eric_interviewer",
-        "eric_interviwer",
-        "eric_thomas_other_speaker",
-    ],
-    "Gary_Vee_interviewer": [
-        "gary_vee_interviewer",
-        "gary_vee_interviwer",
-        "gary_interviewer",
-        "gary_interviwer",
-        "gary_vee_other_speaker",
-    ],
-    "Jay_Shetty_interviewer": [
-        "jay_shetty_interviewer",
-        "jay_shetty_interviwer",
-        "jay_interviewer",
-        "jay_interviwer",
-        "jay_shetty_other_speaker",
-    ],
-    "music_present": [
-        "music",
-        "background_music",
-        "bg_music",
-        "song",
-        "instrumental",
-    ],
-    "applause_present": [
-        "applause",
-        "clap",
-        "claps",
-        "clapping",
-    ],
-    "laughter_present": [
-        "laughter",
-        "laugh",
-        "laughing",
-    ],
+    "music_present": ["music", "background_music", "bg_music", "song", "instrumental"],
+    "applause_present": ["applause", "clap", "claps", "clapping"],
+    "laughter_present": ["laughter", "laugh", "laughing"],
     "crowd_noise_present": [
         "crowd_noise",
         "crowd_moise",  # historical typo support
@@ -139,13 +96,7 @@ LABEL_ALIASES: Dict[str, List[str]] = {
         "cheering",
         "room_noise",
     ],
-    "silence_present": [
-        "silence",
-        "silent",
-        "low_speech",
-        "no_speech",
-        "very_low_signal",
-    ],
+    "silence_present": ["silence", "silent", "low_speech", "no_speech", "very_low_signal"],
 }
 
 SPLITS = ["train", "val", "test"]
@@ -183,12 +134,13 @@ def discover_audio_files(seed_root: Path) -> List[Path]:
     if not seed_root.exists():
         raise FileNotFoundError(f"Seed root not found: {seed_root}")
 
-    files = [
-        p for p in seed_root.rglob("*")
-        if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS
-    ]
-
-    return sorted(files, key=lambda p: str(p).replace("\\", "/").lower())
+    return sorted(
+        [
+            p for p in seed_root.rglob("*")
+            if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS
+        ],
+        key=lambda p: str(p).replace("\\", "/").lower(),
+    )
 
 
 def label_dict_empty() -> Dict[str, int]:
@@ -201,15 +153,26 @@ def _contains_alias(text: str, alias: str) -> bool:
     return alias_norm in norm
 
 
-def apply_label_aliases(text: str, labels: Dict[str, int]) -> None:
+def detect_speaker_context(text: str) -> str:
+    for speaker, aliases in SPEAKER_ALIASES.items():
+        for alias in aliases:
+            if _contains_alias(text, alias):
+                return speaker
+    return ""
+
+
+def apply_label_aliases(text: str, labels: Dict[str, int], allowed_labels: List[str] | None = None) -> None:
+    allowed = set(allowed_labels or TATA_LABELS)
     for label, aliases in LABEL_ALIASES.items():
+        if label not in allowed:
+            continue
         for alias in aliases:
             if _contains_alias(text, alias):
                 labels[label] = 1
                 break
 
 
-def infer_labels_from_path(path: Path, seed_root: Path) -> Tuple[Dict[str, int], str, str]:
+def infer_labels_from_path(path: Path, seed_root: Path) -> Tuple[Dict[str, int], str, str, str]:
     labels = label_dict_empty()
 
     try:
@@ -220,58 +183,46 @@ def infer_labels_from_path(path: Path, seed_root: Path) -> Tuple[Dict[str, int],
     parts = [safe_name(p) for p in rel_path.parts]
     top_group = parts[0] if parts else "unknown"
     full_text = "_".join(parts + [safe_name(path.stem)])
+    interviewer_context = ""
 
-    # Strong layout priors. These avoid accidental activation of speaker labels inside
-    # interviewer labels and make event folders deterministic.
     if top_group == "target_speaker":
-        for label in SPEAKER_LABELS:
-            for alias in LABEL_ALIASES[label]:
-                if _contains_alias(full_text, alias):
-                    labels[label] = 1
-                    break
+        # Speaker identity should come from class/folder/file context.
+        apply_label_aliases(full_text, labels, allowed_labels=SPEAKER_LABELS)
+
+        # Mixed target-speaker clips may explicitly mention interviewer/other speaker.
+        if any(_contains_alias(full_text, a) for a in LABEL_ALIASES["interviewer_present"]):
+            labels["interviewer_present"] = 1
+            labels["other_speaker_present"] = 1
+        elif any(_contains_alias(full_text, a) for a in LABEL_ALIASES["other_speaker_present"]):
+            labels["other_speaker_present"] = 1
+
     elif top_group == "other_speaker":
-        for label in INTERVIEWER_LABELS:
-            for alias in LABEL_ALIASES[label]:
-                if _contains_alias(full_text, alias):
-                    labels[label] = 1
-                    break
+        # Current seed/raw layout uses other_speaker/<speaker>_interviewer as context,
+        # not as a stable interviewer identity class.
+        labels["other_speaker_present"] = 1
+        if any(_contains_alias(full_text, a) for a in LABEL_ALIASES["interviewer_present"]):
+            labels["interviewer_present"] = 1
+        else:
+            # In this dataset, other_speaker seed clips are usually interviewer/non-target speech.
+            labels["interviewer_present"] = 1
+        interviewer_context = detect_speaker_context(full_text)
+
     elif top_group == "events":
-        for label in EVENT_LABELS:
-            for alias in LABEL_ALIASES[label]:
-                if _contains_alias(full_text, alias):
-                    labels[label] = 1
-                    break
+        apply_label_aliases(full_text, labels, allowed_labels=EVENT_LABELS)
+
     else:
         apply_label_aliases(full_text, labels)
+        if labels.get("interviewer_present", 0) == 1:
+            labels["other_speaker_present"] = 1
+        interviewer_context = detect_speaker_context(full_text)
 
-    # Mixed conditions can still be represented by folder names, filenames, or annotations.
-    # For example: Brene_Brown__music__applause.wav should set all three labels.
-    for label in EVENT_LABELS:
-        for alias in LABEL_ALIASES[label]:
-            if _contains_alias(full_text, alias):
-                labels[label] = 1
-                break
-
-    # If a target folder contains a mixed interviewer marker, allow it too.
-    if top_group == "target_speaker":
-        for label in INTERVIEWER_LABELS:
-            for alias in LABEL_ALIASES[label]:
-                if _contains_alias(full_text, alias):
-                    labels[label] = 1
-                    break
-
-    # If an other_speaker folder contains explicit target speaker marker, allow it too.
-    if top_group == "other_speaker":
-        for label in SPEAKER_LABELS:
-            for alias in LABEL_ALIASES[label]:
-                if _contains_alias(full_text, alias):
-                    labels[label] = 1
-                    break
+    # Event/background labels can appear in any folder or filename.
+    apply_label_aliases(full_text, labels, allowed_labels=EVENT_LABELS)
 
     active = [label for label in TATA_LABELS if labels[label] == 1]
     condition_name = "clean_unknown" if not active else "__".join(active)
 
-    return labels, top_group, condition_name
+    return labels, top_group, condition_name, interviewer_context
 
 
 def canonical_label_name(value: str) -> str:
@@ -287,6 +238,10 @@ def canonical_label_name(value: str) -> str:
             if candidate == safe_name(label):
                 return label
 
+    # Backward compatibility: class-specific interviewer labels map to generic labels.
+    if "interviewer" in value_safe or "interviwer" in value_safe:
+        return "interviewer_present"
+
     for label, aliases in LABEL_ALIASES.items():
         if value_safe in {safe_name(a) for a in aliases}:
             return label
@@ -295,19 +250,6 @@ def canonical_label_name(value: str) -> str:
 
 
 def build_annotation_lookup(path: Path | None) -> Dict[str, Dict[str, int]]:
-    """
-    Optional manual annotations CSV.
-
-    Supported matching keys:
-      - rel_path
-      - source_file
-      - source_path
-      - abs_path
-
-    Supported label formats:
-      - binary columns named like Brene_Brown / music_present / etc.
-      - a `labels` column containing labels separated by |, comma, semicolon, or plus.
-    """
     if path is None:
         return {}
 
@@ -326,10 +268,29 @@ def build_annotation_lookup(path: Path | None) -> Dict[str, Dict[str, int]]:
                 if label in row and str(row.get(label, "")).strip() != "":
                     labels[label] = 1 if truthy(row[label]) else 0
 
+            # Backward-compatible support for old class-specific interviewer columns.
+            for old_col in [
+                "Brene_Brown_interviewer",
+                "Eckhart_Tolle_interviewer",
+                "Eric_Thomas_interviewer",
+                "Gary_Vee_interviewer",
+                "Jay_Shetty_interviewer",
+                "Brene_Brown_interviwer",
+                "Eckhart_Tolle_interviwer",
+                "Eric_Thomas_interviwer",
+                "Gary_Vee_interviwer",
+                "Jay_Shetty_interviwer",
+            ]:
+                if old_col in row and truthy(row.get(old_col, "")):
+                    labels["interviewer_present"] = 1
+                    labels["other_speaker_present"] = 1
+
             for raw_label in split_label_text(row.get("labels", "")):
                 label = canonical_label_name(raw_label)
                 if label in labels:
                     labels[label] = 1
+                    if label == "interviewer_present":
+                        labels["other_speaker_present"] = 1
 
             keys = []
             for key in ["rel_path", "source_file", "source_path", "abs_path"]:
@@ -379,14 +340,17 @@ def apply_annotations(
         return labels, False
 
     if mode == "override":
-        return dict(ann), True
+        out = dict(ann)
+    else:
+        out = dict(labels)
+        for label, value in ann.items():
+            if int(value) == 1:
+                out[label] = 1
 
-    merged = dict(labels)
-    for label, value in ann.items():
-        if int(value) == 1:
-            merged[label] = 1
+    if out.get("interviewer_present", 0) == 1:
+        out["other_speaker_present"] = 1
 
-    return merged, True
+    return out, True
 
 
 def label_signature(labels: Dict[str, int]) -> str:
@@ -396,15 +360,16 @@ def label_signature(labels: Dict[str, int]) -> str:
 
 def decision_hint(labels: Dict[str, int]) -> Tuple[str, str]:
     active_speakers = [label for label in SPEAKER_LABELS if labels[label] == 1]
-    active_interviewers = [label for label in INTERVIEWER_LABELS if labels[label] == 1]
+    has_interviewer = labels["interviewer_present"] == 1
+    has_other_speaker = labels["other_speaker_present"] == 1
     active_events = [label for label in EVENT_LABELS if labels[label] == 1]
     active_count = sum(int(labels[label]) for label in TATA_LABELS)
 
     if active_count == 0:
         return "needs_review", "no_positive_tata_label"
 
-    if active_speakers and active_interviewers:
-        return "needs_review", "speaker_and_interviewer_overlap"
+    if active_speakers and (has_interviewer or has_other_speaker):
+        return "needs_review", "target_speaker_with_non_target_speech"
 
     if active_speakers and active_events:
         if labels["silence_present"] == 1:
@@ -414,8 +379,8 @@ def decision_hint(labels: Dict[str, int]) -> Tuple[str, str]:
     if active_speakers:
         return "accepted", "speaker_identity_present"
 
-    if active_interviewers:
-        return "rejected", "interviewer_without_target_speaker"
+    if has_interviewer or has_other_speaker:
+        return "rejected", "non_target_speech_without_target_speaker"
 
     return "rejected", "event_or_silence_without_speaker_identity"
 
@@ -484,7 +449,6 @@ def make_sample_id(row: Dict[str, Any], used: set[str]) -> str:
 def write_csv(path: Path, rows: List[Dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    fieldnames: List[str] = []
     preferred = [
         "sample_id",
         "abs_path",
@@ -497,6 +461,7 @@ def write_csv(path: Path, rows: List[Dict[str, Any]]) -> None:
         "is_clean_seed",
         "is_synthetic",
         "label_group",
+        "interviewer_context",
         "condition_name",
         "label_signature",
         "is_mixed_clip",
@@ -505,10 +470,10 @@ def write_csv(path: Path, rows: List[Dict[str, Any]]) -> None:
         "annotation_applied",
     ] + TATA_LABELS
 
+    fieldnames: List[str] = []
     for field in preferred:
         if field not in fieldnames:
             fieldnames.append(field)
-
     for row in rows:
         for key in row.keys():
             if key not in fieldnames:
@@ -526,10 +491,7 @@ def write_json(path: Path, payload: Dict[str, Any]) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Build TinyAudioTriageAgent multi-label seed manifest."
-    )
-
+    parser = argparse.ArgumentParser(description="Build TinyAudioTriageAgent multi-label seed manifest.")
     parser.add_argument("--seed_root", default="human_talk_triage_seed_dataset")
     parser.add_argument("--out_dir", default="human_talk_workspace/tata_seed")
     parser.add_argument("--annotations_csv", default="")
@@ -543,7 +505,7 @@ def main() -> None:
     parser.add_argument("--train_ratio", type=float, default=0.70)
     parser.add_argument("--val_ratio", type=float, default=0.15)
     parser.add_argument("--test_ratio", type=float, default=0.15)
-    parser.add_argument("--dataset_name", default="tata_seed_v0_5_speaker_event_multilabel")
+    parser.add_argument("--dataset_name", default="tata_seed_v0_5_speaker_event_12label")
 
     args = parser.parse_args()
 
@@ -569,7 +531,7 @@ def main() -> None:
         except Exception:
             rel_path = str(path).replace("\\", "/")
 
-        inferred_labels, label_group, condition_name = infer_labels_from_path(path, seed_root)
+        inferred_labels, label_group, condition_name, interviewer_context = infer_labels_from_path(path, seed_root)
         labels, annotation_applied = apply_annotations(
             path=path,
             seed_root=seed_root,
@@ -603,6 +565,7 @@ def main() -> None:
                 "is_synthetic": 0,
                 "dataset_source": "tata_seed",
                 "label_group": label_group,
+                "interviewer_context": interviewer_context,
                 "condition_name": condition_name if active_labels else "unlabelled",
                 "label_signature": signature,
                 "is_mixed_clip": 1 if len(active_labels) > 1 else 0,
@@ -634,7 +597,6 @@ def main() -> None:
     )
 
     out_dir.mkdir(parents=True, exist_ok=True)
-
     manifest_path = out_dir / "tata_seed_manifest.csv"
     labels_json_path = out_dir / "labels.json"
     summary_path = out_dir / "tata_seed_summary.json"
@@ -644,19 +606,20 @@ def main() -> None:
 
     labels_payload = {
         "dataset_name": args.dataset_name,
-        "task": "tiny_audio_triage_speaker_event_multilabel",
+        "task": "tiny_audio_triage_speaker_event_12label",
         "model_family": "TinyAudioTriageAgent",
         "activation": "sigmoid",
         "loss": "BCEWithLogitsLoss",
         "description": (
-            "True multi-label seed labels for speaker identity, interviewer identity, "
-            "and audio-content triage before final multi-label early-exit training."
+            "Multi-label seed labels for named speakers, generic non-target speech, "
+            "and event/background tags. Source-specific interviewer context is metadata."
         ),
         "label_groups": {
             "speaker_identity": SPEAKER_LABELS,
-            "interviewer_identity": INTERVIEWER_LABELS,
+            "non_target_speech": NON_TARGET_SPEECH_LABELS,
             "event_or_background": EVENT_LABELS,
         },
+        "metadata_fields": ["interviewer_context"],
         "labels": TATA_LABELS,
     }
     write_json(labels_json_path, labels_payload)
@@ -666,10 +629,11 @@ def main() -> None:
     signature_counts = Counter(row["label_signature"] for row in rows)
     decision_counts = Counter(row["decision_hint"] for row in rows)
     group_counts = Counter(row["label_group"] for row in rows)
+    interviewer_context_counts = Counter(row.get("interviewer_context", "") for row in rows if row.get("interviewer_context", ""))
 
     summary = {
         "dataset_name": args.dataset_name,
-        "task": "tiny_audio_triage_speaker_event_multilabel",
+        "task": "tiny_audio_triage_speaker_event_12label",
         "seed_root": str(seed_root),
         "annotations_csv": str(annotations_csv) if annotations_csv else "",
         "annotation_mode": str(args.annotation_mode),
@@ -683,7 +647,7 @@ def main() -> None:
         "labels": TATA_LABELS,
         "label_groups": {
             "speaker_identity": SPEAKER_LABELS,
-            "interviewer_identity": INTERVIEWER_LABELS,
+            "non_target_speech": NON_TARGET_SPEECH_LABELS,
             "event_or_background": EVENT_LABELS,
         },
         "split_counts": dict(split_counts),
@@ -691,6 +655,7 @@ def main() -> None:
         "label_signature_counts": dict(signature_counts.most_common()),
         "decision_hint_counts": dict(decision_counts),
         "label_group_counts": dict(group_counts),
+        "interviewer_context_counts": dict(interviewer_context_counts),
         "mixed_clip_count": int(sum(int(row["is_mixed_clip"]) for row in rows)),
         "annotation_applied_count": int(sum(int(row["annotation_applied"]) for row in rows)),
         "safety": {
@@ -730,8 +695,8 @@ def main() -> None:
         "",
         "- This script writes manifests only; it does not move, delete, or copy audio files.",
         "- Mixed clips are represented by multiple binary label columns, not by separate combination folders.",
-        "- Speaker identity, interviewer identity, and event/background tags are all direct output labels.",
-        "- Common `interviwer` spelling mistakes are accepted as aliases, but canonical labels use `interviewer`.",
+        "- `interviewer_present` is a generic label; source-specific context is stored in `interviewer_context` metadata.",
+        "- Common `interviwer` spelling mistakes are accepted as aliases, but canonical output uses `interviewer_present`.",
     ])
     summary_md_path.write_text("\n".join(md_lines), encoding="utf-8")
 
