@@ -6,20 +6,21 @@
 #   Model labels describe what is present in the audio.
 #   Policy decisions describe how the clip should be routed.
 #
-# v0.5 uses a robust 12-label schema:
+# v0.5 final schema uses 11 labels:
 #   - 5 named target-speaker identities
-#   - generic non-target speech labels: interviewer_present, other_speaker_present
+#   - 1 generic non-target speech label: other_speaker_present
 #   - 5 event/background labels
 #
-# Source-specific interviewer context, such as Brene_Brown or Jay_Shetty interview context,
-# should be stored as metadata, not as a separate output class.
+# `interviewer_present` is intentionally removed because interviewer speech is a
+# subtype of `other_speaker_present` in this dataset. Source-specific interviewer
+# context should be stored as metadata, not as a separate output class.
 
-policy_name: tata_decision_policy_v0_5_speaker_event_12label
+policy_name: tata_decision_policy_v0_5_speaker_event_11label
 agent_name: TinyAudioTriageAgent
 branch: agentic_data_preprocessing_v0.5_tata
 
 model_task:
-  type: speaker_event_12label_audio_triage
+  type: speaker_event_11label_audio_triage
   activation: sigmoid
   loss: BCEWithLogitsLoss
   purpose: rough_seed_trained_multilabel_labelling_for_final_models
@@ -33,7 +34,6 @@ labels:
     - Jay_Shetty
 
   non_target_speech:
-    - interviewer_present
     - other_speaker_present
 
   event_or_background:
@@ -76,10 +76,6 @@ policy_rules:
     decision: accepted_with_warning_or_needs_review
     reason: named_speaker_with_crowd_noise
 
-  - condition: named speaker identity + interviewer_present
-    decision: needs_review
-    reason: target_speaker_with_interviewer_overlap
-
   - condition: named speaker identity + other_speaker_present
     decision: needs_review
     reason: target_speaker_with_other_speaker_overlap
@@ -87,10 +83,6 @@ policy_rules:
   - condition: named speaker identity + strong_or_ambiguous_background_event
     decision: needs_review
     reason: speaker_present_but_background_may_reduce_usability
-
-  - condition: interviewer_present without named speaker identity
-    decision: rejected_or_needs_review
-    reason: interviewer_without_named_target_speaker
 
   - condition: other_speaker_present without named speaker identity
     decision: rejected_or_needs_review
@@ -129,8 +121,8 @@ safety_principles:
   - Do not reject a clip merely because music, applause, laughter, or crowd noise is present.
   - Named speaker plus light background event should usually be accepted_with_warning.
   - Named speaker plus strong or ambiguous background event should be needs_review.
-  - Named speaker plus interviewer/other speaker overlap should usually be needs_review.
-  - Event-only, silence-only, interviewer-only, or other-speaker-only clips should not be treated as clean named-speaker training clips.
+  - Named speaker plus other-speaker overlap should usually be needs_review.
+  - Event-only, silence-only, or other-speaker-only clips should not be treated as clean named-speaker training clips.
   - Human review should be used for uncertain or high-risk routing decisions.
 
 expected_outputs_after_tata_inference:
