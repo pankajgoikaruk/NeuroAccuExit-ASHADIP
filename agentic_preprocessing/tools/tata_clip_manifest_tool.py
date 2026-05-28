@@ -31,6 +31,8 @@ AUDIO_EXTENSIONS = {
     ".m4a",
     ".aac",
     ".wma",
+    ".aiff",
+    ".aif",
 }
 
 

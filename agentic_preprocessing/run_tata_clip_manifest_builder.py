@@ -7,7 +7,7 @@ Example:
 
 python -m agentic_preprocessing.run_tata_clip_manifest_builder `
   --seed_root human_talk_tata_seed_dataset `
-  --out_dir human_talk_workspace\tata_2\metadata
+  --out_dir human_talk_workspace\\tata_2\\metadata
 """
 
 from __future__ import annotations
