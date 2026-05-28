@@ -75,6 +75,8 @@ AUDIO_EXTS = {
     ".m4a",
     ".aac",
     ".wma",
+    ".aiff",
+    ".aif",
 }
 
 
@@ -449,7 +451,7 @@ def main():
             temp_pairs: list[tuple[Path, Path]] = []
 
             for old_path, new_path in rename_items:
-                temp_name = f".tmp_rename_{uuid.uuid4().hex}_{old_path.name}"
+                temp_name = f".tmp_rename_{uuid.uuid4().hex}{old_path.suffix.lower()}"
                 temp_path = old_path.with_name(temp_name)
                 old_path.rename(temp_path)
                 temp_pairs.append((temp_path, new_path))
