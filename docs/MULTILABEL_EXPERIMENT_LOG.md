@@ -1,171 +1,201 @@
-# Experiment Log — agentic_data_preprocessing_v0.4
+# Experiment Log — agentic_data_preprocessing_v0.5_tata_2
 
-This log records the current **`agentic_data_preprocessing_v0.4`** branch outcomes only. Older results are intentionally removed.
+This log records the active **`agentic_data_preprocessing_v0.5_tata_2`** branch outcomes.
 
 ```text
-Branch: agentic_data_preprocessing_v0.4
-Agenda: Agentic AI-based data preprocessing plus softmax-vs-sigmoid ablation on cleaned Raw5 human-talk data
-Dataset stage: raw5_agentic_cleaned
-Task: five-speaker human-talk speaker classification
-Models: TinyAudioCNN + ExitNet, 3-exit and 5-exit
-Classes: Brene_Brown, Eckhart_Tolle, Eric_Thomas, Gary_Vee, Jay_Shetty
-Final cleaned files: 3,108
+Branch: agentic_data_preprocessing_v0.5_tata_2
+Agenda: TinyAudioTriageAgent weak clip-level multi-label preprocessing for human-talk audio
+Dataset stage: TATA reviewed 5-sec clip manifest -> weak 1-sec segment manifest
+Task: multi-label detection of target speaker identity, non-target speech, and event/background audio
+Model: TinyAudioCNN + ExitNet, 3-exit baseline
+Labels: 12 labels = 6 target speakers + other_speaker_present + 5 event/background labels
+Current status: first fixed-threshold TATA 3-exit baseline completed; threshold tuning not yet applied
 ```
 
 ## Branch objective
 
-This branch evaluates whether agentic preprocessing can convert noisy Raw5 speaker folders into a safe cleaned dataset and whether the NeuroAccuExit early-exit architecture behaves better under softmax speaker classification or sigmoid/BCE one-hot speaker supervision.
+This branch builds the first practical TinyAudioTriageAgent pipeline. The aim is not to replace the v0.4 softmax speaker classifier immediately. The aim is to train a sigmoid/BCE triage model that can detect target speakers, non-target speech, and event/background labels so that raw human-talk clips can later be routed into `accepted`, `accepted_with_warning`, `needs_review`, or `rejected` groups.
 
-## Chronology
+## Completed chronology
 
 | Step | Output | Status |
 |---|---|---|
-| Raw5 folder preparation | Brene_Brown, Eckhart_Tolle, Eric_Thomas, Gary_Vee, Jay_Shetty | Completed |
-| DatasetAuditorAgent | Raw5 audit and routing decisions | Completed |
-| ManifestBuilderAgent | accepted / needs_review / rejected / blocked manifests | Completed |
-| DatasetBuilderAgent | cleaned 16 kHz mono dataset | Completed |
-| Cleaned re-audit | one bad file found | Completed |
-| Manual exclusion | `Eric_Thomas__0175.wav` removed from training root | Completed |
-| Softmax baseline | 3-exit and 5-exit on `raw5_agentic_cleaned` | Completed |
-| Sigmoid ablation | 3-exit and 5-exit BCE/sigmoid one-hot runs | Completed |
-| Sigmoid threshold tuning | fixed vs tuned comparison | Completed |
-| Sigmoid label-set policy | dynamic early-exit policy sweep | Completed |
+| Create clean branch from v0.4 | `agentic_data_preprocessing_v0.5_tata_2` | Completed |
+| TATA label schema | 12 labels | Completed |
+| Audio filename standardisation | Standard naming before final manifest editing | Completed |
+| 5-sec clip-level manifest | Manual multi-hot labels with auto-notes | Completed |
+| Training-ready manifest | 2,074 parent clips after excluding 11 rows | Completed |
+| Weak 1-sec segment manifest | 12,469 segments | Completed |
+| Segment-leakage check | 0 parent clips split across splits | Passed |
+| Feature extraction | Log-mel `.npy` feature cache | Completed |
+| TATA 3-exit fixed-threshold training | `tata_2_3exit_weakclip_20260530_121030` | Completed |
+| Threshold tuning | Not applied yet | Next |
+| Multi-label greedy policy | Not applied yet | After tuning |
 
+## Label schema
 
-## Agentic preprocessing outcome
+| Group | Label |
+| --- | --- |
+| Target speaker identity | `Brene_Brown` |
+| Target speaker identity | `Eckhart_Tolle` |
+| Target speaker identity | `Eric_Thomas` |
+| Target speaker identity | `Gary_Vee` |
+| Target speaker identity | `Jay_Shetty` |
+| Target speaker identity | `Nick_Vujicic` |
+| Non-target speech | `other_speaker_present` |
+| Event/background | `music_present` |
+| Event/background | `applause_present` |
+| Event/background | `laughter_present` |
+| Event/background | `crowd_cheer_present` |
+| Event/background | `silence_present` |
 
-The agentic preprocessing layer was kept non-destructive. It audited raw files, separated technical preprocessing requirements from true quality concerns, generated accepted / needs-review / rejected / blocked manifests, built cleaned 16 kHz mono copies, and preserved traceability.
+## Dataset and segment summary
 
-| Item | Result |
+| Item | Value |
+| --- | --- |
+| Reviewed clip-level training-ready rows | 2074 |
+| Weak 1-sec segments created | 12469 |
+| Segment build errors | 0 |
+| Parent clips represented | 2074 |
+| Parents split across train/val/test | 0 |
+| Mean segments per parent clip | 6.01 |
+| Min / max segments per parent clip | 2 / 109 |
+| Mean active labels per segment | 1.6327 |
+| Max active labels in a segment | 5 |
+
+### Split counts
+
+| Split | Segments |
+| --- | --- |
+| train | 8625 |
+| test | 1961 |
+| val | 1883 |
+
+### Label-positive segment counts
+
+| Label | Positive 1-sec segments |
+| --- | --- |
+| `Brene_Brown` | 825 |
+| `Eckhart_Tolle` | 750 |
+| `Eric_Thomas` | 975 |
+| `Gary_Vee` | 1225 |
+| `Jay_Shetty` | 1585 |
+| `Nick_Vujicic` | 1180 |
+| `other_speaker_present` | 3466 |
+| `music_present` | 4065 |
+| `applause_present` | 2582 |
+| `laughter_present` | 1279 |
+| `crowd_cheer_present` | 1857 |
+| `silence_present` | 569 |
+
+## Training configuration
+
+| Setting | Value |
+| --- | --- |
+| Branch | `agentic_data_preprocessing_v0.5_tata_2` |
+| Run variant | `tata_2_3exit_weakclip` |
+| Run directory | `human_talk_workspace\tata_2\runs\tata_2_3exit_weakclip_20260530_121030` |
+| Task | `multi_label_audio` / TinyAudioTriageAgent |
+| Model | TinyAudioCNN + ExitNet |
+| Exits | 3 |
+| Tap blocks | `1,3` |
+| Labels | 12 |
+| Loss / activation | BCEWithLogitsLoss + sigmoid |
+| Threshold | 0.5 |
+| Loss weights | `0.3, 0.3, 1.0` |
+| Exit hint | `disabled` |
+| Epochs | 40 |
+| Batch size | 64 |
+| Learning rate | 0.001 |
+| Device | `cpu` |
+| Seed | 42 |
+| Use positive class weighting | False |
+| Runtime | 811.02 sec (~13.52 min) |
+
+## Training outcome
+
+| Item | Value |
 |---|---:|
-| Raw files audited | 3,170 |
-| Accepted by raw audit | 3,109 |
-| Needs review | 27 |
-| Rejected | 34 |
-| Blocked | 0 |
-| Cleaned files built | 3,109 |
-| Build failures | 0 |
-| Re-audit accepted | 3,108 |
-| Manually excluded | 1 |
-| Final training-ready files | 3,108 |
+| Best epoch | 39 |
+| Best validation final-exit Macro-F1 | 0.7478 |
+| Test final-exit Macro-F1 | 0.7774 |
+| Test final-exit Micro-F1 | 0.7656 |
+| Test final-exit Samples-F1 | 0.7503 |
+| Test final-exit exact match | 0.4895 |
+| Test final-exit Hamming loss | 0.0616 |
+| Runtime | 811.02 sec (~13.52 min) |
 
-Final class counts:
+## Test metrics by exit
 
-| Class | Final files |
-|---|---:|
-| Brene_Brown | 595 |
-| Eckhart_Tolle | 660 |
-| Eric_Thomas | 593 |
-| Gary_Vee | 642 |
-| Jay_Shetty | 618 |
-| **Total** | **3,108** |
-
-Manual exclusion: `Eric_Thomas__0175.wav` was confirmed as pure music with no target speaker and was moved outside the training root while preserving traceability.
-
-
-## Softmax and sigmoid comparison
-
-| Setting | Model | Activation / loss | Final metric | Final Macro-F1 | Accuracy / Exact Match | Hamming loss | Policy metric | Avg exit depth | Compute saved |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Softmax | 3-exit | Softmax + CE | single-label accuracy | 0.9756 | 0.9760 | N/A | 0.9683 | 2.0886 | 52.56% |
-| Softmax | 5-exit | Softmax + CE | single-label accuracy | 0.9610 | 0.9616 | N/A | 0.9520 | 2.7144 | 62.03% |
-| Sigmoid fixed | 3-exit | Sigmoid + BCE | one-hot exact match | 0.9692 | 0.9535 | 0.0121 | N/A | N/A | N/A |
-| Sigmoid fixed | 5-exit | Sigmoid + BCE | one-hot exact match | 0.9627 | 0.9426 | 0.0148 | N/A | N/A | N/A |
-| Sigmoid tuned | 3-exit | Sigmoid + BCE | one-hot exact match | 0.9670 | 0.9505 | 0.0131 | 0.9670 | 3.0000 | 0.00% |
-| Sigmoid tuned | 5-exit | Sigmoid + BCE | one-hot exact match | 0.9647 | 0.9465 | 0.0139 | 0.9561 | 3.4537 | 30.93% |
-
-## Per-exit test quality
-
-| Exit | Softmax 3 Macro-F1 | Softmax 5 Macro-F1 | Sigmoid 3 fixed Macro-F1 | Sigmoid 3 tuned Macro-F1 | Sigmoid 5 fixed Macro-F1 | Sigmoid 5 tuned Macro-F1 |
-| --- | --- | --- | --- | --- | --- | --- |
-| 1 | 0.6404 | 0.6334 | 0.2943 | 0.5675 | 0.3085 | 0.5718 |
-| 2 | 0.9229 | 0.8612 | 0.8854 | 0.9014 | 0.7395 | 0.7810 |
-| 3 | 0.9756 | 0.9189 | 0.9692 | 0.9670 | 0.8872 | 0.9130 |
-| 4 | N/A | 0.9537 | N/A | N/A | 0.9405 | 0.9511 |
-| 5 | N/A | 0.9610 | N/A | N/A | 0.9627 | 0.9647 |
-
-## Dynamic policy results
-
-| Setting | Model | Policy | Metric | Avg exit depth | Compute saved | Exit consistency | Main observation |
+| Exit | Macro-F1 | Micro-F1 | Samples-F1 | Exact match | Hamming loss | Avg predicted labels | Avg true labels |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Softmax | 3-exit | Greedy confidence | accuracy 0.9683 | 2.0886 | 52.56% | 0.9913 | Best segment-level policy balance |
-| Softmax | 5-exit | Greedy confidence | accuracy 0.9520 | 2.7144 | 62.03% | 0.9849 | Highest segment-depth compute saving |
-| Sigmoid tuned | 3-exit | Label-set stability k=2 | macro-F1 0.9670 | 3.0000 | 0.00% | 1.0000 | No early exit; all samples reach final exit |
-| Sigmoid tuned | 5-exit | Label-set stability k=2 | macro-F1 0.9561 | 3.4537 | 30.93% | 0.9673 | Works but less efficient than softmax |
+| 1 | 0.1730 | 0.2890 | 0.2036 | 0.0673 | 0.1219 | 0.4707 | 1.5869 |
+| 2 | 0.5468 | 0.6192 | 0.5304 | 0.2968 | 0.0838 | 1.0551 | 1.5869 |
+| 3 | 0.7774 | 0.7656 | 0.7503 | 0.4895 | 0.0616 | 1.5650 | 1.5869 |
 
-## Sigmoid label-set-stability policy sweep
+## Final-exit per-label results
 
-| Model | Stable K | Macro-F1 | Exact match | Avg exit depth | Compute saved | Exit consistency |
-| --- | --- | --- | --- | --- | --- | --- |
-| Sigmoid 3-exit | 1 | 0.9420 | 0.9183 | 2.0931 | 30.23% | 0.9384 |
-| Sigmoid 3-exit | 2 | 0.9670 | 0.9505 | 3.0000 | 0.00% | 1.0000 |
-| Sigmoid 3-exit | 3 | 0.9670 | 0.9505 | 3.0000 | 0.00% | 1.0000 |
-| Sigmoid 5-exit | 1 | 0.8571 | 0.7832 | 2.2062 | 55.88% | 0.7891 |
-| Sigmoid 5-exit | 2 | 0.9561 | 0.9376 | 3.4537 | 30.93% | 0.9673 |
-| Sigmoid 5-exit | 3 | 0.9649 | 0.9488 | 4.3649 | 12.70% | 0.9923 |
+| Label | Precision | Recall | F1 | Support | Predicted positive |
+| --- | --- | --- | --- | --- | --- |
+| `Brene_Brown` | 0.7751 | 0.8733 | 0.8213 | 150 | 169 |
+| `Eckhart_Tolle` | 0.9254 | 0.9185 | 0.9219 | 135 | 134 |
+| `Eric_Thomas` | 0.8854 | 0.6296 | 0.7359 | 135 | 96 |
+| `Gary_Vee` | 0.9804 | 0.7895 | 0.8746 | 190 | 153 |
+| `Jay_Shetty` | 0.8622 | 0.8423 | 0.8521 | 260 | 254 |
+| `Nick_Vujicic` | 0.8582 | 0.7667 | 0.8099 | 150 | 134 |
+| `other_speaker_present` | 0.5654 | 0.6849 | 0.6195 | 511 | 619 |
+| `music_present` | 0.9768 | 0.7342 | 0.8383 | 632 | 475 |
+| `applause_present` | 0.9072 | 0.8151 | 0.8587 | 384 | 345 |
+| `laughter_present` | 0.5609 | 0.7202 | 0.6306 | 243 | 312 |
+| `crowd_cheer_present` | 0.6036 | 0.7976 | 0.6872 | 252 | 333 |
+| `silence_present` | 0.8667 | 0.5571 | 0.6783 | 70 | 45 |
 
-## Clip-level softmax result
+## Findings
 
-| Model | Clip policy | Clip accuracy | Avg windows used | Avg total windows | Windows saved | Compute saved |
-| --- | --- | --- | --- | --- | --- | --- |
-| Softmax 3-exit | Full-window aggregation | 0.9957 | 8.6510 | 8.6510 | 0.00% | 0.00% |
-| Softmax 3-exit | Depth×Time | 0.9893 | 2.0878 | 8.6510 | 75.87% | 75.82% |
-| Softmax 5-exit | Full-window aggregation | 0.9850 | 8.6510 | 8.6510 | 0.00% | 0.00% |
-| Softmax 5-exit | Depth×Time | 0.9764 | 2.1649 | 8.6510 | 74.98% | 74.64% |
+| Finding | Evidence | Interpretation |
+| --- | --- | --- |
+| TATA baseline is working | Final exit test Macro-F1 = 0.7774 | Useful first baseline for weak clip-level multi-label training. |
+| Exit quality improves with depth | Macro-F1: Exit 1 0.1730 -> Exit 3 0.7774 | Early exits are not ready yet; final exit is the reliable head. |
+| No parent-clip leakage detected | Leakage parents = 0 | Segments from one 5-sec clip stay in the same split. |
+| Weak-label assumption is visible | Exact match = 0.4895 | Inherited clip labels are noisy for short events; threshold tuning and future refinements are needed. |
+| Fixed threshold is likely suboptimal | Some labels have high precision/low recall or low precision/high recall | Per-label threshold tuning is the next step before changing data/model. |
 
-## Per-speaker final-exit F1
+## Notes on warnings and audio handling
 
-| Speaker | Softmax 3 | Softmax 5 | Sigmoid 3 fixed | Sigmoid 3 tuned | Sigmoid 5 fixed | Sigmoid 5 tuned |
-| --- | --- | --- | --- | --- | --- | --- |
-| Brene_Brown | 0.9637 | 0.9427 | 0.9547 | 0.9554 | 0.9266 | 0.9396 |
-| Eckhart_Tolle | 0.9924 | 0.9918 | 0.9930 | 0.9913 | 0.9918 | 0.9918 |
-| Eric_Thomas | 0.9671 | 0.9520 | 0.9510 | 0.9466 | 0.9546 | 0.9513 |
-| Gary_Vee | 0.9708 | 0.9513 | 0.9611 | 0.9594 | 0.9553 | 0.9518 |
-| Jay_Shetty | 0.9842 | 0.9671 | 0.9860 | 0.9823 | 0.9851 | 0.9891 |
+During segment building and feature extraction, some source audio files required fallback decoding through `librosa/audioread`. The run package reported **0 segment-build errors**, and feature extraction completed successfully. This means the current output is usable. Audio standardisation to clean WAV/16kHz/mono can still be introduced later to reduce warnings and improve reproducibility.
 
-## Threshold tuning observations
+## Next strategy
 
-### Sigmoid 3-exit
-
-| Metric | Fixed 0.5 | Tuned | Change |
-|---|---:|---:|---:|
-| Macro-F1 | 0.9692 | 0.9670 | -0.0022 |
-| Micro-F1 | 0.9696 | 0.9674 | -0.0022 |
-| Exact match | 0.9535 | 0.9505 | -0.0030 |
-| Hamming loss | 0.0121 | 0.0131 | worse |
-
-For 3-exit sigmoid, fixed 0.5 performed better than tuned thresholds.
-
-### Sigmoid 5-exit
-
-| Label | Tuned threshold | Fixed F1 | Tuned F1 | ΔF1 | Fixed P | Tuned P | Fixed R | Tuned R |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Brene_Brown | 0.8700 | 0.9266 | 0.9396 | 0.0131 | 0.8924 | 0.9540 | 0.9635 | 0.9257 |
-| Eckhart_Tolle | 0.3000 | 0.9918 | 0.9918 | 0.0000 | 0.9895 | 0.9872 | 0.9941 | 0.9965 |
-| Eric_Thomas | 0.5500 | 0.9546 | 0.9513 | -0.0033 | 0.9516 | 0.9524 | 0.9576 | 0.9501 |
-| Gary_Vee | 0.1900 | 0.9553 | 0.9518 | -0.0035 | 0.9701 | 0.9421 | 0.9409 | 0.9618 |
-| Jay_Shetty | 0.3100 | 0.9851 | 0.9891 | 0.0040 | 0.9974 | 0.9948 | 0.9731 | 0.9834 |
-
-For 5-exit sigmoid, threshold tuning improved the final Macro-F1 from 0.9627 to 0.9647 and improved exact match from 0.9426 to 0.9465.
+| Step | Purpose | Status |
+| --- | --- | --- |
+| Threshold tuning | Tune per-label sigmoid thresholds and compare against fixed 0.5 | Next |
+| Multi-label greedy policy | Check whether a 3-exit TATA model can exit early safely | After threshold tuning |
+| Package tuned outputs | Share metrics/config/policy/log files in one ZIP | After policy |
+| 5-exit TATA weakclip | Compare depth/compute tradeoff against 3-exit | Later |
+| Positive class weighting / sampling | Improve weak labels such as other_speaker, laughter, crowd cheer, silence | Later ablation |
+| Synthetic mixed data | Create controlled target+event/target+other-speaker mixtures | Later improvement |
+| TATA inference on raw dataset | Generate pseudo-labels and routing manifests for main speaker model | After TATA is reliable |
 
 
-### Figures
+## Figures
 
-Generated comparison figures are saved under `figures/human_talk/agentic_data_preprocessing_v0.4/`:
+Generated figures for this branch are stored under `figures/human_talk/agentic_data_preprocessing_v0.5_tata_2/`:
 
-![Final Macro-F1 comparison](figures/human_talk/agentic_data_preprocessing_v0.4/final_macro_f1_comparison.png)
+![Validation progression](figures/human_talk/agentic_data_preprocessing_v0.5_tata_2/tata_3exit_validation_progression.png)
 
-![Dynamic policy quality and compute saving](figures/human_talk/agentic_data_preprocessing_v0.4/dynamic_policy_quality_compute.png)
+![Training loss](figures/human_talk/agentic_data_preprocessing_v0.5_tata_2/tata_3exit_training_loss.png)
 
-![Softmax clip policy comparison](figures/human_talk/agentic_data_preprocessing_v0.4/softmax_clip_policy_comparison.png)
+![Test metrics by exit](figures/human_talk/agentic_data_preprocessing_v0.5_tata_2/tata_test_metrics_by_exit.png)
 
-![Per-exit Macro-F1 comparison](figures/human_talk/agentic_data_preprocessing_v0.4/per_exit_macro_f1_comparison.png)
+![Per-label F1](figures/human_talk/agentic_data_preprocessing_v0.5_tata_2/tata_per_label_f1.png)
 
-Original run plots also retained for reference: `softmax_3exit_val_acc_exits.png`, `softmax_5exit_val_acc_exits.png`, `softmax_3exit_policy_reliability.png`, and `softmax_5exit_policy_reliability.png`.
+![Segment label distribution](figures/human_talk/agentic_data_preprocessing_v0.5_tata_2/tata_segment_label_distribution.png)
+
+![Split distribution](figures/human_talk/agentic_data_preprocessing_v0.5_tata_2/tata_split_distribution.png)
 
 
 
-## Paper-safe conclusion
+## Paper-safe conclusion at this stage
 
-For the cleaned human-talk speaker dataset, the softmax formulation remains the most appropriate setting because each segment has one mutually exclusive speaker label. The 3-exit softmax model achieved the strongest final-exit performance and the best dynamic early-exit balance. The sigmoid/BCE ablation confirmed that the NeuroAccuExit architecture can also learn one-vs-rest speaker targets, but sigmoid is more threshold-sensitive and weaker for early-exit efficiency. Therefore, sigmoid should not replace softmax for the main speaker classifier; instead, sigmoid/BCE should be reserved for the future TinyAudioTriageAgent, where multiple audio-content tags such as target speaker, other speaker, music, silence, applause, and laughter can co-exist.
+The first TinyAudioTriageAgent experiment on `agentic_data_preprocessing_v0.5_tata_2` demonstrates that the NeuroAccuExit architecture can learn a 12-label multi-label audio triage task using BCE/sigmoid supervision and weak clip-level segment labels. The final exit achieved a fixed-threshold test Macro-F1 of **0.7774**, Micro-F1 of **0.7656**, Samples-F1 of **0.7503**, and Hamming loss of **0.0616**. This is a promising first baseline, but it is not yet an early-exit-ready TATA policy. The next required step is per-label threshold tuning, followed by multi-label greedy-policy testing.
 

@@ -1,146 +1,140 @@
-# Appendix — agentic_data_preprocessing_v0.4
+# Appendix — agentic_data_preprocessing_v0.5_tata_2
 
-This appendix contains reproducibility notes for the current **`agentic_data_preprocessing_v0.4`** branch only.
+This appendix contains reproducibility notes and commands for the current **`agentic_data_preprocessing_v0.5_tata_2`** branch.
 
 ```text
-Branch: agentic_data_preprocessing_v0.4
-Agenda: Agentic AI-based data preprocessing plus softmax-vs-sigmoid ablation on cleaned Raw5 human-talk data
-Dataset stage: raw5_agentic_cleaned
-Task: five-speaker human-talk speaker classification
-Models: TinyAudioCNN + ExitNet, 3-exit and 5-exit
-Classes: Brene_Brown, Eckhart_Tolle, Eric_Thomas, Gary_Vee, Jay_Shetty
-Final cleaned files: 3,108
+Branch: agentic_data_preprocessing_v0.5_tata_2
+Agenda: TinyAudioTriageAgent weak clip-level multi-label preprocessing for human-talk audio
+Dataset stage: TATA reviewed 5-sec clip manifest -> weak 1-sec segment manifest
+Task: multi-label detection of target speaker identity, non-target speech, and event/background audio
+Model: TinyAudioCNN + ExitNet, 3-exit baseline
+Labels: 12 labels = 6 target speakers + other_speaker_present + 5 event/background labels
+Current status: first fixed-threshold TATA 3-exit baseline completed; threshold tuning not yet applied
 ```
 
-## A1. Dataset and preprocessing commands
-
-### A1.1 Raw5 audit
+## A1. Branch setup
 
 ```powershell
-python -m agentic_preprocessing.run_agentic_preprocessing `
-  --raw_root human_talk_dataset `
-  --out_dir human_talk_workspace\agent_reports `
-  --classes "Brene_Brown,Eckhart_Tolle,Eric_Thomas,Gary_Vee,Jay_Shetty" `
-  --expected_sample_rate 16000 `
-  --expected_duration_sec 5.0
+git fetch origin
+
+git switch agentic_data_preprocessing_v0.4
+git pull origin agentic_data_preprocessing_v0.4
+
+git switch -c agentic_data_preprocessing_v0.5_tata_2
+git push -u origin agentic_data_preprocessing_v0.5_tata_2
 ```
 
-### A1.2 Manifest builder
+## A2. TATA folder and label design
 
-```powershell
-python -m agentic_preprocessing.run_manifest_builder `
-  --audit_csv human_talk_workspace\agent_reports\dataset_audit_agent_report.csv `
-  --triage_seed_root human_talk_triage_seed_dataset `
-  --out_dir human_talk_workspace\agent_reports
+Recommended seed root:
+
+```text
+human_talk_tata_seed_dataset/
+├─ target_speaker/
+│  ├─ Brene_Brown/
+│  ├─ Eckhart_Tolle/
+│  ├─ Eric_Thomas/
+│  ├─ Gary_Vee/
+│  ├─ Jay_Shetty/
+│  └─ Nick_Vujicic/
+├─ other_speaker/
+└─ events/
+   ├─ music/
+   ├─ applause/
+   ├─ laughter/
+   ├─ crowd_cheer/
+   └─ silence/
 ```
 
-### A1.3 Dataset builder
+Active labels:
+
+```text
+Brene_Brown
+Eckhart_Tolle
+Eric_Thomas
+Gary_Vee
+Jay_Shetty
+Nick_Vujicic
+other_speaker_present
+music_present
+applause_present
+laughter_present
+crowd_cheer_present
+silence_present
+```
+
+## A3. Rename audio before final manifest editing
 
 ```powershell
-python -m agentic_preprocessing.run_dataset_builder `
-  --accepted_manifest human_talk_workspace\agent_reports\accepted_manifest.csv `
-  --raw_root human_talk_dataset `
-  --out_root human_talk_workspace\datasets\raw5_agentic_cleaned `
+python scriptsename_wavs_by_class.py `
+  --root human_talk_tata_seed_dataset	arget_speaker `
+  --manifest human_talk_workspace	ata_2\metadataename_target_speaker_manifest.csv `
+  --separator "__" `
+  --preserve_case `
+  --apply
+
+python scriptsename_wavs_by_class.py `
+  --root human_talk_tata_seed_dataset\other_speaker `
+  --manifest human_talk_workspace	ata_2\metadataename_other_speaker_manifest.csv `
+  --separator "__" `
+  --preserve_case `
+  --apply
+
+python scriptsename_wavs_by_class.py `
+  --root human_talk_tata_seed_dataset\events `
+  --manifest human_talk_workspace	ata_2\metadataename_events_manifest.csv `
+  --separator "__" `
+  --preserve_case `
   --apply
 ```
 
-### A1.4 Final cleaned audit
+## A4. Build 5-sec clip-level manifest
 
 ```powershell
-python -m agentic_preprocessing.run_agentic_preprocessing `
-  --raw_root human_talk_workspace\datasets\raw5_agentic_cleaned `
-  --out_dir human_talk_workspace\agent_reports\raw5_agentic_cleaned_final_audit `
-  --classes "Brene_Brown,Eckhart_Tolle,Eric_Thomas,Gary_Vee,Jay_Shetty" `
-  --expected_sample_rate 16000 `
-  --expected_duration_sec 5.0
+python -m agentic_preprocessing.run_tata_clip_manifest_builder `
+  --seed_root human_talk_tata_seed_dataset `
+  --out_dir human_talk_workspace	ata_2\metadata
 ```
 
-## A2. Softmax baseline commands
+Manual editing is done on the clip-level manifest. The final training-ready file used in this run was:
 
-### A2.1 3-exit softmax
-
-```powershell
-.\scripts\run_full.ps1 `
-  -DataRoot "human_talk_workspace\datasets\raw5_agentic_cleaned" `
-  -CacheRoot "human_talk_workspace\caches" `
-  -Variant "raw5_agentic_cleaned_3exit_greedy_final" `
-  -Policy greedy `
-  -Device cpu `
-  -InputMode segment `
-  -Labels "Brene_Brown,Eckhart_Tolle,Eric_Thomas,Gary_Vee,Jay_Shetty" `
-  -SegmentSec 1.0 `
-  -HopSec 0.5 `
-  -SampleRate 16000 `
-  -Bandpass "50,7600" `
-  -NMels 64 `
-  -TapBlocks "1,3" `
-  -SplitUnit file `
-  -RunClipPolicy `
-  -ForceRebuild
+```text
+human_talk_workspace	ata_2\metadata	ata_clip_level_manifest_training_ready.csv
 ```
 
-### A2.2 5-exit softmax
+## A5. Build weak 1-sec segment manifest
 
 ```powershell
-.\scripts\run_full.ps1 `
-  -DataRoot "human_talk_workspace\datasets\raw5_agentic_cleaned" `
-  -CacheRoot "human_talk_workspace\caches" `
-  -Variant "raw5_agentic_cleaned_5exit_greedy_final" `
-  -Policy greedy `
-  -Device cpu `
-  -InputMode segment `
-  -Labels "Brene_Brown,Eckhart_Tolle,Eric_Thomas,Gary_Vee,Jay_Shetty" `
-  -SegmentSec 1.0 `
-  -HopSec 0.5 `
-  -SampleRate 16000 `
-  -Bandpass "50,7600" `
-  -NMels 64 `
-  -TapBlocks "1,2,3,4" `
-  -SplitUnit file `
-  -RunClipPolicy `
-  -ForceRebuild
-```
-
-## A3. Sigmoid one-hot ablation commands
-
-### A3.1 Build source segment cache
-
-```powershell
-python -m scripts.prep_segments `
-  --root "human_talk_workspace\datasets\raw5_agentic_cleaned" `
-  --cache "human_talk_workspace\sigmoid_ablation\source_segment_cache" `
-  --sr 16000 `
+python -m agentic_preprocessing.run_tata_segment_manifest_builder `
+  --clip_manifest human_talk_workspace	ata_2\metadata	ata_clip_level_manifest_training_ready.csv `
+  --out_dir human_talk_workspace	ata_2\segment_cache `
+  --sample_rate 16000 `
   --segment_sec 1.0 `
-  --hop 0.5 `
-  --silence_dbfs -40 `
-  --config "configs\audio_moth.yaml" `
-  --input_mode segment `
-  --min_keep_sec 0.25 `
-  --split_unit file `
-  --labels Brene_Brown Eckhart_Tolle Eric_Thomas Gary_Vee Jay_Shetty `
-  --bandpass 50 7600 `
-  --export_segment_wavs `
-  --force_rebuild
+  --hop_sec 1.0 `
+  --include_tail
 ```
 
-### A3.2 Build one-hot sigmoid manifest
+Result:
 
-```powershell
-python scripts\build_sigmoid_ablation_manifest.py `
-  --segments_csv "human_talk_workspace\sigmoid_ablation\source_segment_cache\segments.csv" `
-  --cache_dir "human_talk_workspace\sigmoid_ablation\source_segment_cache" `
-  --labels "Brene_Brown,Eckhart_Tolle,Eric_Thomas,Gary_Vee,Jay_Shetty" `
-  --out_dir "human_talk_workspace\sigmoid_ablation\metadata" `
-  --dataset_name "agentic_cleaned_sigmoid_ablation"
-```
+| Item | Value |
+| --- | --- |
+| Reviewed clip-level training-ready rows | 2074 |
+| Weak 1-sec segments created | 12469 |
+| Segment build errors | 0 |
+| Parent clips represented | 2074 |
+| Parents split across train/val/test | 0 |
+| Mean segments per parent clip | 6.01 |
+| Min / max segments per parent clip | 2 / 109 |
+| Mean active labels per segment | 1.6327 |
+| Max active labels in a segment | 5 |
 
-### A3.3 Extract sigmoid-ablation features
+## A6. Extract log-mel features
 
 ```powershell
 python scripts\extract_multilabel_features.py `
-  --manifest "human_talk_workspace\sigmoid_ablation\metadata\sigmoid_onehot_manifest.csv" `
-  --labels_json "human_talk_workspace\sigmoid_ablation\metadata\labels.json" `
-  --out_cache "human_talk_workspace\sigmoid_ablation\feature_cache" `
+  --manifest human_talk_workspace	ata_2\segment_cache\metadata	ata_segment_manifest.csv `
+  --labels_json human_talk_workspace	ata_2\segment_cache\metadata	ata_labels.json `
+  --out_cache human_talk_workspace	ata_2eature_cache `
   --sample_rate 16000 `
   --clip_sec 1.0 `
   --n_mels 64 `
@@ -150,130 +144,110 @@ python scripts\extract_multilabel_features.py `
   --cmvn
 ```
 
-### A3.4 Train sigmoid 3-exit and 5-exit
+## A7. Run 3-exit TATA weakclip training with shareable ZIP output
 
 ```powershell
-python -m training.train_multilabel `
-  --manifest "human_talk_workspace\sigmoid_ablation\feature_cache\metadata\multilabel_features_manifest.csv" `
-  --features_root "human_talk_workspace\sigmoid_ablation\feature_cache\features" `
-  --labels_json "human_talk_workspace\sigmoid_ablation\metadata\labels.json" `
-  --runs_root "human_talk_workspace\sigmoid_ablation\runs" `
-  --variant "agentic_cleaned_sigmoid_ablation_3exit" `
-  --tap_blocks "1,3" `
-  --epochs 40 `
-  --batch_size 64 `
-  --lr 0.001 `
-  --threshold 0.5 `
-  --device cpu
-
-python -m training.train_multilabel `
-  --manifest "human_talk_workspace\sigmoid_ablation\feature_cache\metadata\multilabel_features_manifest.csv" `
-  --features_root "human_talk_workspace\sigmoid_ablation\feature_cache\features" `
-  --labels_json "human_talk_workspace\sigmoid_ablation\metadata\labels.json" `
-  --runs_root "human_talk_workspace\sigmoid_ablation\runs" `
-  --variant "agentic_cleaned_sigmoid_ablation_5exit" `
-  --tap_blocks "1,2,3,4" `
-  --epochs 40 `
-  --batch_size 64 `
-  --lr 0.001 `
-  --threshold 0.5 `
-  --device cpu
+powershell -ExecutionPolicy Bypass -File scriptsun_tata_weakclip_experiment.ps1 `
+  -Manifest "human_talk_workspace	ata_2eature_cache\metadata\multilabel_features_manifest.csv" `
+  -FeaturesRoot "human_talk_workspace	ata_2eature_cacheeatures" `
+  -LabelsJson "human_talk_workspace	ata_2\segment_cache\metadata	ata_labels.json" `
+  -Variant "tata_2_3exit_weakclip" `
+  -TapBlocks "1,3" `
+  -Epochs 40 `
+  -BatchSize 64 `
+  -LR 0.001 `
+  -Threshold 0.5 `
+  -Device cpu
 ```
 
-### A3.5 Threshold tuning and label-set policy
+This script copies selected outputs into a ZIP for sharing and does not move or delete original run files.
 
-```powershell
-python scripts\tune_multilabel_thresholds.py `
-  --run_dir "human_talk_workspace\sigmoid_ablation\runs\agentic_cleaned_sigmoid_ablation_3exit_20260523_194423" `
-  --device cpu
+## A8. Completed experiment settings
 
-python scripts\tune_multilabel_thresholds.py `
-  --run_dir "human_talk_workspace\sigmoid_ablation\runs\agentic_cleaned_sigmoid_ablation_5exit_20260523_202702" `
-  --device cpu
+| Setting | Value |
+| --- | --- |
+| Branch | `agentic_data_preprocessing_v0.5_tata_2` |
+| Run variant | `tata_2_3exit_weakclip` |
+| Run directory | `human_talk_workspace\tata_2\runs\tata_2_3exit_weakclip_20260530_121030` |
+| Task | `multi_label_audio` / TinyAudioTriageAgent |
+| Model | TinyAudioCNN + ExitNet |
+| Exits | 3 |
+| Tap blocks | `1,3` |
+| Labels | 12 |
+| Loss / activation | BCEWithLogitsLoss + sigmoid |
+| Threshold | 0.5 |
+| Loss weights | `0.3, 0.3, 1.0` |
+| Exit hint | `disabled` |
+| Epochs | 40 |
+| Batch size | 64 |
+| Learning rate | 0.001 |
+| Device | `cpu` |
+| Seed | 42 |
+| Use positive class weighting | False |
+| Runtime | 811.02 sec (~13.52 min) |
 
-python scripts\multilabel_greedy_policy.py `
-  --run_dir "human_talk_workspace\sigmoid_ablation\runs\agentic_cleaned_sigmoid_ablation_3exit_20260523_194423" `
-  --threshold_mode tuned_per_exit `
-  --device cpu
+## A9. Completed experiment results
 
-python scripts\multilabel_greedy_policy.py `
-  --run_dir "human_talk_workspace\sigmoid_ablation\runs\agentic_cleaned_sigmoid_ablation_5exit_20260523_202702" `
-  --threshold_mode tuned_per_exit `
-  --device cpu
-```
+### A9.1 Test metrics by exit
 
-## A4. Final tables
-
-### A4.1 Main result table
-
-| Setting | Model | Activation / loss | Final metric | Final Macro-F1 | Accuracy / Exact Match | Hamming loss | Policy metric | Avg exit depth | Compute saved |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Softmax | 3-exit | Softmax + CE | single-label accuracy | 0.9756 | 0.9760 | N/A | 0.9683 | 2.0886 | 52.56% |
-| Softmax | 5-exit | Softmax + CE | single-label accuracy | 0.9610 | 0.9616 | N/A | 0.9520 | 2.7144 | 62.03% |
-| Sigmoid fixed | 3-exit | Sigmoid + BCE | one-hot exact match | 0.9692 | 0.9535 | 0.0121 | N/A | N/A | N/A |
-| Sigmoid fixed | 5-exit | Sigmoid + BCE | one-hot exact match | 0.9627 | 0.9426 | 0.0148 | N/A | N/A | N/A |
-| Sigmoid tuned | 3-exit | Sigmoid + BCE | one-hot exact match | 0.9670 | 0.9505 | 0.0131 | 0.9670 | 3.0000 | 0.00% |
-| Sigmoid tuned | 5-exit | Sigmoid + BCE | one-hot exact match | 0.9647 | 0.9465 | 0.0139 | 0.9561 | 3.4537 | 30.93% |
-
-### A4.2 Dynamic policy table
-
-| Setting | Model | Policy | Metric | Avg exit depth | Compute saved | Exit consistency | Main observation |
+| Exit | Macro-F1 | Micro-F1 | Samples-F1 | Exact match | Hamming loss | Avg predicted labels | Avg true labels |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Softmax | 3-exit | Greedy confidence | accuracy 0.9683 | 2.0886 | 52.56% | 0.9913 | Best segment-level policy balance |
-| Softmax | 5-exit | Greedy confidence | accuracy 0.9520 | 2.7144 | 62.03% | 0.9849 | Highest segment-depth compute saving |
-| Sigmoid tuned | 3-exit | Label-set stability k=2 | macro-F1 0.9670 | 3.0000 | 0.00% | 1.0000 | No early exit; all samples reach final exit |
-| Sigmoid tuned | 5-exit | Label-set stability k=2 | macro-F1 0.9561 | 3.4537 | 30.93% | 0.9673 | Works but less efficient than softmax |
+| 1 | 0.1730 | 0.2890 | 0.2036 | 0.0673 | 0.1219 | 0.4707 | 1.5869 |
+| 2 | 0.5468 | 0.6192 | 0.5304 | 0.2968 | 0.0838 | 1.0551 | 1.5869 |
+| 3 | 0.7774 | 0.7656 | 0.7503 | 0.4895 | 0.0616 | 1.5650 | 1.5869 |
 
-### A4.3 Clip-level softmax table
+### A9.2 Final-exit per-label metrics
 
-| Model | Clip policy | Clip accuracy | Avg windows used | Avg total windows | Windows saved | Compute saved |
-| --- | --- | --- | --- | --- | --- | --- |
-| Softmax 3-exit | Full-window aggregation | 0.9957 | 8.6510 | 8.6510 | 0.00% | 0.00% |
-| Softmax 3-exit | Depth×Time | 0.9893 | 2.0878 | 8.6510 | 75.87% | 75.82% |
-| Softmax 5-exit | Full-window aggregation | 0.9850 | 8.6510 | 8.6510 | 0.00% | 0.00% |
-| Softmax 5-exit | Depth×Time | 0.9764 | 2.1649 | 8.6510 | 74.98% | 74.64% |
+| Label | Precision | Recall | F1 | Support | Predicted positive |
+| --- | --- | --- | --- | --- | --- |
+| `Brene_Brown` | 0.7751 | 0.8733 | 0.8213 | 150 | 169 |
+| `Eckhart_Tolle` | 0.9254 | 0.9185 | 0.9219 | 135 | 134 |
+| `Eric_Thomas` | 0.8854 | 0.6296 | 0.7359 | 135 | 96 |
+| `Gary_Vee` | 0.9804 | 0.7895 | 0.8746 | 190 | 153 |
+| `Jay_Shetty` | 0.8622 | 0.8423 | 0.8521 | 260 | 254 |
+| `Nick_Vujicic` | 0.8582 | 0.7667 | 0.8099 | 150 | 134 |
+| `other_speaker_present` | 0.5654 | 0.6849 | 0.6195 | 511 | 619 |
+| `music_present` | 0.9768 | 0.7342 | 0.8383 | 632 | 475 |
+| `applause_present` | 0.9072 | 0.8151 | 0.8587 | 384 | 345 |
+| `laughter_present` | 0.5609 | 0.7202 | 0.6306 | 243 | 312 |
+| `crowd_cheer_present` | 0.6036 | 0.7976 | 0.6872 | 252 | 333 |
+| `silence_present` | 0.8667 | 0.5571 | 0.6783 | 70 | 45 |
 
-### A4.4 Per-speaker final F1
+## A10. Commands for next threshold-tuning stage
 
-| Speaker | Softmax 3 | Softmax 5 | Sigmoid 3 fixed | Sigmoid 3 tuned | Sigmoid 5 fixed | Sigmoid 5 tuned |
-| --- | --- | --- | --- | --- | --- | --- |
-| Brene_Brown | 0.9637 | 0.9427 | 0.9547 | 0.9554 | 0.9266 | 0.9396 |
-| Eckhart_Tolle | 0.9924 | 0.9918 | 0.9930 | 0.9913 | 0.9918 | 0.9918 |
-| Eric_Thomas | 0.9671 | 0.9520 | 0.9510 | 0.9466 | 0.9546 | 0.9513 |
-| Gary_Vee | 0.9708 | 0.9513 | 0.9611 | 0.9594 | 0.9553 | 0.9518 |
-| Jay_Shetty | 0.9842 | 0.9671 | 0.9860 | 0.9823 | 0.9851 | 0.9891 |
+Run this next, but it has not yet been incorporated into these results:
 
-### A4.5 Best model by goal
+```powershell
+python scripts	une_multilabel_thresholds.py `
+  --run_dir "human_talk_workspace	ata_2uns	ata_2_3exit_weakclip_20260530_121030" `
+  --device cpu
 
-| Goal | Best current choice | Reason |
-| --- | --- | --- |
-| Best final segment classification | Softmax 3-exit | Final accuracy 0.9760, Macro-F1 0.9756 |
-| Best segment-level dynamic early exit | Softmax 3-exit | Accuracy 0.9683 with 52.56% compute saving |
-| Highest segment-depth compute saving | Softmax 5-exit | 62.03% compute saving |
-| Best clip-level accuracy | Softmax 3-exit full aggregation | Clip accuracy 0.9957 |
-| Best clip-level efficiency | Softmax 3-exit Depth×Time | Clip accuracy 0.9893 with 75.82% compute saving |
-| Best sigmoid final result | Sigmoid 3-exit fixed | Macro-F1 0.9692 |
-| Best sigmoid tuned result | Sigmoid 5-exit tuned | Macro-F1 0.9647 |
-| Future true multi-label preprocessing | TinyAudioTriageAgent | Use sigmoid/BCE for co-existing tags: target speaker, other speaker, music, silence, applause, laughter |
-
-
-### Figures
-
-Generated comparison figures are saved under `figures/human_talk/agentic_data_preprocessing_v0.4/`:
-
-![Final Macro-F1 comparison](figures/human_talk/agentic_data_preprocessing_v0.4/final_macro_f1_comparison.png)
-
-![Dynamic policy quality and compute saving](figures/human_talk/agentic_data_preprocessing_v0.4/dynamic_policy_quality_compute.png)
-
-![Softmax clip policy comparison](figures/human_talk/agentic_data_preprocessing_v0.4/softmax_clip_policy_comparison.png)
-
-![Per-exit Macro-F1 comparison](figures/human_talk/agentic_data_preprocessing_v0.4/per_exit_macro_f1_comparison.png)
-
-Original run plots also retained for reference: `softmax_3exit_val_acc_exits.png`, `softmax_5exit_val_acc_exits.png`, `softmax_3exit_policy_reliability.png`, and `softmax_5exit_policy_reliability.png`.
+python scripts\multilabel_greedy_policy.py `
+  --run_dir "human_talk_workspace	ata_2uns	ata_2_3exit_weakclip_20260530_121030" `
+  --threshold_mode tuned_per_exit `
+  --device cpu
+```
 
 
+## Figures
 
-## Paper-safe conclusion
+Generated figures for this branch are stored under `figures/human_talk/agentic_data_preprocessing_v0.5_tata_2/`:
 
-For the cleaned human-talk speaker dataset, the softmax formulation remains the most appropriate setting because each segment has one mutually exclusive speaker label. The 3-exit softmax model achieved the strongest final-exit performance and the best dynamic early-exit balance. The sigmoid/BCE ablation confirmed that the NeuroAccuExit architecture can also learn one-vs-rest speaker targets, but sigmoid is more threshold-sensitive and weaker for early-exit efficiency. Therefore, sigmoid should not replace softmax for the main speaker classifier; instead, sigmoid/BCE should be reserved for the future TinyAudioTriageAgent, where multiple audio-content tags such as target speaker, other speaker, music, silence, applause, and laughter can co-exist.
+![Validation progression](figures/human_talk/agentic_data_preprocessing_v0.5_tata_2/tata_3exit_validation_progression.png)
+
+![Training loss](figures/human_talk/agentic_data_preprocessing_v0.5_tata_2/tata_3exit_training_loss.png)
+
+![Test metrics by exit](figures/human_talk/agentic_data_preprocessing_v0.5_tata_2/tata_test_metrics_by_exit.png)
+
+![Per-label F1](figures/human_talk/agentic_data_preprocessing_v0.5_tata_2/tata_per_label_f1.png)
+
+![Segment label distribution](figures/human_talk/agentic_data_preprocessing_v0.5_tata_2/tata_segment_label_distribution.png)
+
+![Split distribution](figures/human_talk/agentic_data_preprocessing_v0.5_tata_2/tata_split_distribution.png)
+
+
+
+## Paper-safe conclusion at this stage
+
+The first TinyAudioTriageAgent experiment on `agentic_data_preprocessing_v0.5_tata_2` demonstrates that the NeuroAccuExit architecture can learn a 12-label multi-label audio triage task using BCE/sigmoid supervision and weak clip-level segment labels. The final exit achieved a fixed-threshold test Macro-F1 of **0.7774**, Micro-F1 of **0.7656**, Samples-F1 of **0.7503**, and Hamming loss of **0.0616**. This is a promising first baseline, but it is not yet an early-exit-ready TATA policy. The next required step is per-label threshold tuning, followed by multi-label greedy-policy testing.
 
