@@ -1,108 +1,41 @@
 # Appendix — agentic_data_preprocessing_v0.5_tata_2
 
-This appendix contains reproducibility notes and commands for the current **`agentic_data_preprocessing_v0.5_tata_2`** branch.
+This appendix contains reproducibility notes and commands for the current **`agentic_data_preprocessing_v0.5_tata_2`** branch after 3-exit and 5-exit weakclip experiments.
 
 ```text
 Branch: agentic_data_preprocessing_v0.5_tata_2
 Agenda: TinyAudioTriageAgent weak clip-level multi-label preprocessing for human-talk audio
-Dataset stage: TATA reviewed 5-sec clip manifest -> weak 1-sec segment manifest
+Dataset stage: reviewed 5-sec clip manifest -> weak inherited 1-sec segment manifest -> log-mel features
 Task: multi-label detection of target speaker identity, non-target speech, and event/background audio
-Model: TinyAudioCNN + ExitNet, 3-exit baseline
-Labels: 12 labels = 6 target speakers + other_speaker_present + 5 event/background labels
-Current status: first fixed-threshold TATA 3-exit baseline completed; threshold tuning not yet applied
+Models completed: TATA 3-exit and TATA 5-exit weakclip variants
+Labels: 12 = 6 target speakers + other_speaker_present + 5 event/background labels
+Current status: 3-exit fixed/tuned/policy and 5-exit fixed/tuned/policy completed
+Best current quality result: 3-exit tuned threshold, Macro-F1 = 0.7916
 ```
 
-## A1. Branch setup
-
-```powershell
-git fetch origin
-
-git switch agentic_data_preprocessing_v0.4
-git pull origin agentic_data_preprocessing_v0.4
-
-git switch -c agentic_data_preprocessing_v0.5_tata_2
-git push -u origin agentic_data_preprocessing_v0.5_tata_2
-```
-
-## A2. TATA folder and label design
-
-Recommended seed root:
+## A1. Core paths
 
 ```text
-human_talk_tata_seed_dataset/
-├─ target_speaker/
-│  ├─ Brene_Brown/
-│  ├─ Eckhart_Tolle/
-│  ├─ Eric_Thomas/
-│  ├─ Gary_Vee/
-│  ├─ Jay_Shetty/
-│  └─ Nick_Vujicic/
-├─ other_speaker/
-└─ events/
-   ├─ music/
-   ├─ applause/
-   ├─ laughter/
-   ├─ crowd_cheer/
-   └─ silence/
+Clip-level training-ready manifest:
+human_talk_workspace/tata_2/metadata/tata_clip_level_manifest_training_ready.csv
+
+Weak segment manifest:
+human_talk_workspace/tata_2/segment_cache/metadata/tata_segment_manifest.csv
+
+Feature manifest:
+human_talk_workspace/tata_2/feature_cache/metadata/multilabel_features_manifest.csv
+
+Feature root:
+human_talk_workspace/tata_2/feature_cache/features
+
+Labels JSON:
+human_talk_workspace/tata_2/segment_cache/metadata/tata_labels.json
+
+Runs root:
+human_talk_workspace/tata_2/runs
 ```
 
-Active labels:
-
-```text
-Brene_Brown
-Eckhart_Tolle
-Eric_Thomas
-Gary_Vee
-Jay_Shetty
-Nick_Vujicic
-other_speaker_present
-music_present
-applause_present
-laughter_present
-crowd_cheer_present
-silence_present
-```
-
-## A3. Rename audio before final manifest editing
-
-```powershell
-python scriptsename_wavs_by_class.py `
-  --root human_talk_tata_seed_dataset	arget_speaker `
-  --manifest human_talk_workspace	ata_2\metadataename_target_speaker_manifest.csv `
-  --separator "__" `
-  --preserve_case `
-  --apply
-
-python scriptsename_wavs_by_class.py `
-  --root human_talk_tata_seed_dataset\other_speaker `
-  --manifest human_talk_workspace	ata_2\metadataename_other_speaker_manifest.csv `
-  --separator "__" `
-  --preserve_case `
-  --apply
-
-python scriptsename_wavs_by_class.py `
-  --root human_talk_tata_seed_dataset\events `
-  --manifest human_talk_workspace	ata_2\metadataename_events_manifest.csv `
-  --separator "__" `
-  --preserve_case `
-  --apply
-```
-
-## A4. Build 5-sec clip-level manifest
-
-```powershell
-python -m agentic_preprocessing.run_tata_clip_manifest_builder `
-  --seed_root human_talk_tata_seed_dataset `
-  --out_dir human_talk_workspace	ata_2\metadata
-```
-
-Manual editing is done on the clip-level manifest. The final training-ready file used in this run was:
-
-```text
-human_talk_workspace	ata_2\metadata	ata_clip_level_manifest_training_ready.csv
-```
-
-## A5. Build weak 1-sec segment manifest
+## A2. Build weak segment manifest
 
 ```powershell
 python -m agentic_preprocessing.run_tata_segment_manifest_builder `
@@ -114,21 +47,7 @@ python -m agentic_preprocessing.run_tata_segment_manifest_builder `
   --include_tail
 ```
 
-Result:
-
-| Item | Value |
-| --- | --- |
-| Reviewed clip-level training-ready rows | 2074 |
-| Weak 1-sec segments created | 12469 |
-| Segment build errors | 0 |
-| Parent clips represented | 2074 |
-| Parents split across train/val/test | 0 |
-| Mean segments per parent clip | 6.01 |
-| Min / max segments per parent clip | 2 / 109 |
-| Mean active labels per segment | 1.6327 |
-| Max active labels in a segment | 5 |
-
-## A6. Extract log-mel features
+## A3. Extract features
 
 ```powershell
 python scripts\extract_multilabel_features.py `
@@ -144,7 +63,7 @@ python scripts\extract_multilabel_features.py `
   --cmvn
 ```
 
-## A7. Run 3-exit TATA weakclip training with shareable ZIP output
+## A4. Run 3-exit TATA training with shareable package
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scriptsun_tata_weakclip_experiment.ps1 `
@@ -160,94 +79,130 @@ powershell -ExecutionPolicy Bypass -File scriptsun_tata_weakclip_experiment.ps1
   -Device cpu
 ```
 
-This script copies selected outputs into a ZIP for sharing and does not move or delete original run files.
-
-## A8. Completed experiment settings
-
-| Setting | Value |
-| --- | --- |
-| Branch | `agentic_data_preprocessing_v0.5_tata_2` |
-| Run variant | `tata_2_3exit_weakclip` |
-| Run directory | `human_talk_workspace\tata_2\runs\tata_2_3exit_weakclip_20260530_121030` |
-| Task | `multi_label_audio` / TinyAudioTriageAgent |
-| Model | TinyAudioCNN + ExitNet |
-| Exits | 3 |
-| Tap blocks | `1,3` |
-| Labels | 12 |
-| Loss / activation | BCEWithLogitsLoss + sigmoid |
-| Threshold | 0.5 |
-| Loss weights | `0.3, 0.3, 1.0` |
-| Exit hint | `disabled` |
-| Epochs | 40 |
-| Batch size | 64 |
-| Learning rate | 0.001 |
-| Device | `cpu` |
-| Seed | 42 |
-| Use positive class weighting | False |
-| Runtime | 811.02 sec (~13.52 min) |
-
-## A9. Completed experiment results
-
-### A9.1 Test metrics by exit
-
-| Exit | Macro-F1 | Micro-F1 | Samples-F1 | Exact match | Hamming loss | Avg predicted labels | Avg true labels |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | 0.1730 | 0.2890 | 0.2036 | 0.0673 | 0.1219 | 0.4707 | 1.5869 |
-| 2 | 0.5468 | 0.6192 | 0.5304 | 0.2968 | 0.0838 | 1.0551 | 1.5869 |
-| 3 | 0.7774 | 0.7656 | 0.7503 | 0.4895 | 0.0616 | 1.5650 | 1.5869 |
-
-### A9.2 Final-exit per-label metrics
-
-| Label | Precision | Recall | F1 | Support | Predicted positive |
-| --- | --- | --- | --- | --- | --- |
-| `Brene_Brown` | 0.7751 | 0.8733 | 0.8213 | 150 | 169 |
-| `Eckhart_Tolle` | 0.9254 | 0.9185 | 0.9219 | 135 | 134 |
-| `Eric_Thomas` | 0.8854 | 0.6296 | 0.7359 | 135 | 96 |
-| `Gary_Vee` | 0.9804 | 0.7895 | 0.8746 | 190 | 153 |
-| `Jay_Shetty` | 0.8622 | 0.8423 | 0.8521 | 260 | 254 |
-| `Nick_Vujicic` | 0.8582 | 0.7667 | 0.8099 | 150 | 134 |
-| `other_speaker_present` | 0.5654 | 0.6849 | 0.6195 | 511 | 619 |
-| `music_present` | 0.9768 | 0.7342 | 0.8383 | 632 | 475 |
-| `applause_present` | 0.9072 | 0.8151 | 0.8587 | 384 | 345 |
-| `laughter_present` | 0.5609 | 0.7202 | 0.6306 | 243 | 312 |
-| `crowd_cheer_present` | 0.6036 | 0.7976 | 0.6872 | 252 | 333 |
-| `silence_present` | 0.8667 | 0.5571 | 0.6783 | 70 | 45 |
-
-## A10. Commands for next threshold-tuning stage
-
-Run this next, but it has not yet been incorporated into these results:
+## A5. Run 5-exit TATA training with shareable package
 
 ```powershell
+powershell -ExecutionPolicy Bypass -File scriptsun_tata_weakclip_experiment.ps1 `
+  -Manifest "human_talk_workspace	ata_2eature_cache\metadata\multilabel_features_manifest.csv" `
+  -FeaturesRoot "human_talk_workspace	ata_2eature_cacheeatures" `
+  -LabelsJson "human_talk_workspace	ata_2\segment_cache\metadata	ata_labels.json" `
+  -Variant "tata_2_5exit_weakclip" `
+  -TapBlocks "1,2,3,4" `
+  -Epochs 40 `
+  -BatchSize 64 `
+  -LR 0.001 `
+  -Threshold 0.5 `
+  -Device cpu
+```
+
+## A6. Threshold tuning and dynamic policy
+
+```powershell
+$RunDirObj = Get-ChildItem "human_talk_workspace	ata_2uns" -Directory |
+  Where-Object { $_.Name -like "tata_2_3exit_weakclip*" } |
+  Sort-Object LastWriteTime -Descending |
+  Select-Object -First 1
+
+$RunDir = $RunDirObj.FullName
+
 python scripts	une_multilabel_thresholds.py `
-  --run_dir "human_talk_workspace	ata_2uns	ata_2_3exit_weakclip_20260530_121030" `
+  --run_dir "$RunDir" `
   --device cpu
 
 python scripts\multilabel_greedy_policy.py `
-  --run_dir "human_talk_workspace	ata_2uns	ata_2_3exit_weakclip_20260530_121030" `
+  --run_dir "$RunDir" `
   --threshold_mode tuned_per_exit `
   --device cpu
 ```
 
+For the 5-exit run, change the run-name filter to `tata_2_5exit_weakclip*`.
+
+## A7. Main result table
+
+| Result | Macro-F1 | Micro-F1 | Samples-F1 | Exact match | Hamming loss | Avg pred labels | Avg exit depth | Compute saved |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 3-exit fixed threshold | 0.7774 | 0.7656 | 0.7503 | 0.4895 | 0.0616 | 1.5650 | 3.0000 | 0.00% |
+| 3-exit tuned threshold | 0.7916 | 0.7796 | 0.7619 | 0.4732 | 0.0607 | 1.7175 | 3.0000 | 0.00% |
+| 3-exit dynamic policy | 0.7916 | 0.7796 | 0.7619 | 0.4732 | 0.0607 | 1.7175 | 3.0000 | 0.00% |
+| 5-exit fixed threshold | 0.7529 | 0.7665 | 0.7242 | 0.5013 | 0.0574 | 1.3641 | 5.0000 | 0.00% |
+| 5-exit tuned threshold | 0.7578 | 0.7503 | 0.7287 | 0.4314 | 0.0693 | 1.7420 | 5.0000 | 0.00% |
+| 5-exit dynamic policy | 0.7166 | 0.7081 | 0.6848 | 0.3376 | 0.0847 | 1.8970 | 4.1198 | 17.60% |
+
+## A8. Dynamic policy table
+
+| Model | Stable K | Macro-F1 | Micro-F1 | Exact match | Hamming loss | Avg exit depth | Compute saved |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 3-exit | 1 | 0.6622 | 0.6574 | 0.2677 | 0.0995 | 2.0367 | 32.11% |
+| 3-exit | 2 | 0.7916 | 0.7796 | 0.4732 | 0.0607 | 3.0000 | 0.00% |
+| 3-exit | 3 | 0.7916 | 0.7796 | 0.4732 | 0.0607 | 3.0000 | 0.00% |
+| 5-exit | 1 | 0.5034 | 0.5286 | 0.0811 | 0.1638 | 2.0076 | 59.85% |
+| 5-exit | 2 | 0.7166 | 0.7081 | 0.3376 | 0.0847 | 4.1198 | 17.60% |
+| 5-exit | 3 | 0.7569 | 0.7476 | 0.4227 | 0.0703 | 4.8899 | 2.20% |
+
+## A9. Per-label table
+
+| Label | 3 fixed F1 | 3 tuned F1 | 5 tuned F1 | Δ 3 tuned-fixed | Δ 5 tuned-fixed | 3 tuned thr | 5 tuned thr |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Brene_Brown | 0.8213 | 0.8351 | 0.8043 | 0.0138 | -0.0027 | 0.8500 | 0.5800 |
+| Eckhart_Tolle | 0.9219 | 0.9283 | 0.8930 | 0.0064 | -0.0031 | 0.6400 | 0.7100 |
+| Eric_Thomas | 0.7359 | 0.7798 | 0.7385 | 0.0439 | 0.0041 | 0.2000 | 0.4500 |
+| Gary_Vee | 0.8746 | 0.8958 | 0.8835 | 0.0211 | 0.0172 | 0.4100 | 0.2900 |
+| Jay_Shetty | 0.8521 | 0.8394 | 0.8250 | -0.0128 | -0.0064 | 0.2700 | 0.3200 |
+| Nick_Vujicic | 0.8099 | 0.8235 | 0.8188 | 0.0137 | 0.0045 | 0.4400 | 0.3300 |
+| other_speaker_present | 0.6195 | 0.6056 | 0.5701 | -0.0139 | -0.0093 | 0.4000 | 0.2500 |
+| music_present | 0.8383 | 0.8880 | 0.8957 | 0.0497 | -0.0028 | 0.1500 | 0.4900 |
+| applause_present | 0.8587 | 0.8587 | 0.8690 | 0.0000 | 0.0000 | 0.5000 | 0.5000 |
+| laughter_present | 0.6306 | 0.6606 | 0.5135 | 0.0300 | 0.0597 | 0.7200 | 0.2900 |
+| crowd_cheer_present | 0.6872 | 0.7028 | 0.6517 | 0.0156 | -0.0023 | 0.3500 | 0.3500 |
+| silence_present | 0.6783 | 0.6812 | 0.6306 | 0.0029 | 0.0000 | 0.3000 | 0.4700 |
+
 
 ## Figures
 
-Generated figures for this branch are stored under `figures/human_talk/agentic_data_preprocessing_v0.5_tata_2/`:
+Generated comparison figures are saved under `docs/figures/human_talk/agentic_data_preprocessing_v0.5_tata_2/`.
 
-![Validation progression](figures/human_talk/agentic_data_preprocessing_v0.5_tata_2/tata_3exit_validation_progression.png)
+![TATA weakclip Macro-F1 comparison](docs/figures/human_talk/agentic_data_preprocessing_v0.5_tata_2/tata_weakclip_macro_f1_comparison.png)
 
-![Training loss](figures/human_talk/agentic_data_preprocessing_v0.5_tata_2/tata_3exit_training_loss.png)
+![TATA dynamic policy tradeoff](docs/figures/human_talk/agentic_data_preprocessing_v0.5_tata_2/tata_dynamic_policy_tradeoff.png)
 
-![Test metrics by exit](figures/human_talk/agentic_data_preprocessing_v0.5_tata_2/tata_test_metrics_by_exit.png)
+![TATA per-exit tuned Macro-F1](docs/figures/human_talk/agentic_data_preprocessing_v0.5_tata_2/tata_per_exit_tuned_macro_f1.png)
 
-![Per-label F1](figures/human_talk/agentic_data_preprocessing_v0.5_tata_2/tata_per_label_f1.png)
-
-![Segment label distribution](figures/human_talk/agentic_data_preprocessing_v0.5_tata_2/tata_segment_label_distribution.png)
-
-![Split distribution](figures/human_talk/agentic_data_preprocessing_v0.5_tata_2/tata_split_distribution.png)
+![TATA per-label F1 comparison](docs/figures/human_talk/agentic_data_preprocessing_v0.5_tata_2/tata_per_label_f1_comparison_3_vs_5.png)
 
 
 
-## Paper-safe conclusion at this stage
+## Current research conclusion
 
-The first TinyAudioTriageAgent experiment on `agentic_data_preprocessing_v0.5_tata_2` demonstrates that the NeuroAccuExit architecture can learn a 12-label multi-label audio triage task using BCE/sigmoid supervision and weak clip-level segment labels. The final exit achieved a fixed-threshold test Macro-F1 of **0.7774**, Micro-F1 of **0.7656**, Samples-F1 of **0.7503**, and Hamming loss of **0.0616**. This is a promising first baseline, but it is not yet an early-exit-ready TATA policy. The next required step is per-label threshold tuning, followed by multi-label greedy-policy testing.
+The 3-exit tuned-threshold TATA model is the best current configuration for overall multi-label triage quality. It achieves the strongest Macro-F1, Micro-F1, and Samples-F1 among the evaluated TATA variants. The 5-exit model provides more intermediate decision points and achieves limited compute saving under dynamic policy, but it does not improve final detection quality and its dynamic policy loses too much F1. Therefore, the current branch supports TATA primarily as a **final-exit audio triage detector**, not yet as a reliable early-exit detector.
 
+Paper-safe statement:
+
+```text
+The v0.5_tata_2 experiments show that a weakly supervised TinyAudioTriageAgent can learn a 12-label human-talk triage task from reviewed clip-level annotations. Per-label threshold tuning improves the 3-exit model from 0.7774 to 0.7916 Macro-F1. Adding more exits does not automatically improve final quality: the 5-exit model enables limited compute saving, but at a substantial quality cost. The best current configuration is therefore the 3-exit tuned-threshold TATA model, while future work should improve segment-level supervision through synthetic mixtures, label balancing, and calibration before relying on early exits.
+```
+
+
+## A10. Git push reminder
+
+Commit source and documentation only. Do not commit audio, feature caches, run checkpoints, or package ZIPs.
+
+```powershell
+git status --short
+
+git add `
+  agentic_preprocessing\policies	ata_label_schema.yaml `
+  agentic_preprocessing	ools	ata_clip_manifest_tool.py `
+  agentic_preprocessingun_tata_clip_manifest_builder.py `
+  agentic_preprocessingun_tata_segment_manifest_builder.py `
+  scriptsename_wavs_by_class.py `
+  scriptsun_tata_weakclip_experiment.ps1 `
+  README.md `
+  DOC_STRUCTURE.md `
+  docs\APPENDIX.md `
+  docs\MULTILABEL_EXPERIMENT_LOG.md `
+  docsigures `
+  docsesults
+
+git commit -m "docs: update TATA 3-exit and 5-exit weakclip findings"
+git push origin agentic_data_preprocessing_v0.5_tata_2
+```

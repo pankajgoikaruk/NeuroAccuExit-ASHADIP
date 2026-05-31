@@ -1,143 +1,76 @@
 # Documentation Structure — agentic_data_preprocessing_v0.5_tata_2
 
-This document defines the active documentation structure for the **`agentic_data_preprocessing_v0.5_tata_2`** branch.
+This document defines the active documentation structure for **`agentic_data_preprocessing_v0.5_tata_2`** after both 3-exit and 5-exit TATA weakclip experiments.
 
 ```text
 Branch: agentic_data_preprocessing_v0.5_tata_2
 Agenda: TinyAudioTriageAgent weak clip-level multi-label preprocessing for human-talk audio
-Dataset stage: TATA reviewed 5-sec clip manifest -> weak 1-sec segment manifest
+Dataset stage: reviewed 5-sec clip manifest -> weak inherited 1-sec segment manifest -> log-mel features
 Task: multi-label detection of target speaker identity, non-target speech, and event/background audio
-Model: TinyAudioCNN + ExitNet, 3-exit baseline
-Labels: 12 labels = 6 target speakers + other_speaker_present + 5 event/background labels
-Current status: first fixed-threshold TATA 3-exit baseline completed; threshold tuning not yet applied
+Models completed: TATA 3-exit and TATA 5-exit weakclip variants
+Labels: 12 = 6 target speakers + other_speaker_present + 5 event/background labels
+Current status: 3-exit fixed/tuned/policy and 5-exit fixed/tuned/policy completed
+Best current quality result: 3-exit tuned threshold, Macro-F1 = 0.7916
 ```
 
 ## Current documentation scope
 
-This branch documentation should cover:
-
-1. Why the project moved from v0.4 softmax/sigmoid ablation to true TATA multi-label triage.
-2. The 12-label TATA schema and why `other_speaker_present` is collapsed into one non-target speech label.
-3. The reviewed 5-sec clip-level manifest and the decision not to manually annotate event timing.
-4. Weak 1-sec segment generation with parent-clip split protection.
-5. Log-mel feature extraction and first TATA 3-exit BCE/sigmoid training.
-6. Fixed-threshold test results and per-label findings.
-7. Next steps: threshold tuning, multi-label greedy policy, 5-exit comparison, positive weighting/sampling, synthetic mixed data, and raw-data TATA pseudo-label inference.
-
-## Recommended paper/report sections
-
-| Section | Content to include |
-|---|---|
-| Motivation | Raw human-talk data may include target speakers, non-target speech, music, applause, laughter, crowd cheer, and silence. |
-| TATA label design | 6 target speaker labels, `other_speaker_present`, and 5 event/background labels. |
-| Manual manifest design | 5-sec clip-level multi-hot labels; no manual time-span annotation. |
-| Weak segment supervision | 1-sec segments inherit parent clip labels; this is weak supervision. |
-| Leakage control | Parent clip ID preserved; segments from a parent clip remain in one split. |
-| First TATA experiment | 3-exit BCE/sigmoid baseline with fixed 0.5 threshold. |
-| Findings | Final exit works; early exits not ready; threshold tuning required. |
-| Future work | Threshold tuning, policy, 5-exit, positive weighting, synthetic mixing, raw pseudo-labels. |
-
-## Research questions
-
-| ID | Research question | Current answer from v0.5_tata_2 |
-| --- | --- | --- |
-| RQ1 | Can we build a reviewed multi-label TATA manifest from manually corrected 5-sec clips? | Yes: 2,074 training-ready parent clips were used after excluding 11 unusable/holdout rows. |
-| RQ2 | Can clip-level labels be converted into weak 1-sec training segments while avoiding parent leakage? | Yes: 12,469 segments were created with 0 segment-build errors and 0 parent clips split across train/val/test. |
-| RQ3 | Can a 3-exit TinyAudioCNN + ExitNet learn the 12-label TATA task with BCE/sigmoid? | Yes: final-exit test Macro-F1 reached 0.7774 at fixed threshold 0.5. |
-| RQ4 | Is the model early-exit ready? | Not yet: Exit 1 and Exit 2 are weaker; final exit is currently the reliable output. |
-| RQ5 | Which labels are strong and weak? | Strong labels include Eckhart_Tolle, Gary_Vee, Jay_Shetty, Nick_Vujicic, music, applause, and Brene_Brown. Weaker labels include other_speaker_present, laughter, crowd_cheer, silence, and Eric_Thomas recall. |
-| RQ6 | What should happen before changing architecture or data? | Run per-label threshold tuning and a multi-label greedy policy evaluation. |
+1. v0.4 motivation: why softmax is correct for final mutually exclusive speaker classification, but sigmoid/BCE is required for audio triage.
+2. v0.5_tata_2 label schema: 12 labels with `other_speaker_present` collapsed into one non-target speech label.
+3. Reviewed 5-sec clip-level manifest: primary label plus multi-hot labels; no manual event timing.
+4. Weak 1-sec segment generation: parent clip hierarchy and leakage protection.
+5. TATA 3-exit and 5-exit training with BCE/sigmoid.
+6. Fixed threshold, tuned threshold, and dynamic policy comparisons.
+7. Research conclusion: 3-exit tuned is best quality; 5-exit dynamic saves compute but loses too much F1.
+8. Next work: synthetic mixed examples, calibration, balancing, and raw-data pseudo-label routing.
 
 ## Canonical result tables
 
-### Dataset/segment status
+### Main comparison
 
-| Item | Value |
-| --- | --- |
-| Reviewed clip-level training-ready rows | 2074 |
-| Weak 1-sec segments created | 12469 |
-| Segment build errors | 0 |
-| Parent clips represented | 2074 |
-| Parents split across train/val/test | 0 |
-| Mean segments per parent clip | 6.01 |
-| Min / max segments per parent clip | 2 / 109 |
-| Mean active labels per segment | 1.6327 |
-| Max active labels in a segment | 5 |
+| Result | Macro-F1 | Micro-F1 | Samples-F1 | Exact match | Hamming loss | Avg pred labels | Avg exit depth | Compute saved |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 3-exit fixed threshold | 0.7774 | 0.7656 | 0.7503 | 0.4895 | 0.0616 | 1.5650 | 3.0000 | 0.00% |
+| 3-exit tuned threshold | 0.7916 | 0.7796 | 0.7619 | 0.4732 | 0.0607 | 1.7175 | 3.0000 | 0.00% |
+| 3-exit dynamic policy | 0.7916 | 0.7796 | 0.7619 | 0.4732 | 0.0607 | 1.7175 | 3.0000 | 0.00% |
+| 5-exit fixed threshold | 0.7529 | 0.7665 | 0.7242 | 0.5013 | 0.0574 | 1.3641 | 5.0000 | 0.00% |
+| 5-exit tuned threshold | 0.7578 | 0.7503 | 0.7287 | 0.4314 | 0.0693 | 1.7420 | 5.0000 | 0.00% |
+| 5-exit dynamic policy | 0.7166 | 0.7081 | 0.6848 | 0.3376 | 0.0847 | 1.8970 | 4.1198 | 17.60% |
 
-### Experiment settings
+### Dynamic policy sweep
 
-| Setting | Value |
-| --- | --- |
-| Branch | `agentic_data_preprocessing_v0.5_tata_2` |
-| Run variant | `tata_2_3exit_weakclip` |
-| Run directory | `human_talk_workspace\tata_2\runs\tata_2_3exit_weakclip_20260530_121030` |
-| Task | `multi_label_audio` / TinyAudioTriageAgent |
-| Model | TinyAudioCNN + ExitNet |
-| Exits | 3 |
-| Tap blocks | `1,3` |
-| Labels | 12 |
-| Loss / activation | BCEWithLogitsLoss + sigmoid |
-| Threshold | 0.5 |
-| Loss weights | `0.3, 0.3, 1.0` |
-| Exit hint | `disabled` |
-| Epochs | 40 |
-| Batch size | 64 |
-| Learning rate | 0.001 |
-| Device | `cpu` |
-| Seed | 42 |
-| Use positive class weighting | False |
-| Runtime | 811.02 sec (~13.52 min) |
-
-### Fixed-threshold exit metrics
-
-| Exit | Macro-F1 | Micro-F1 | Samples-F1 | Exact match | Hamming loss | Avg predicted labels | Avg true labels |
+| Model | Stable K | Macro-F1 | Micro-F1 | Exact match | Hamming loss | Avg exit depth | Compute saved |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | 0.1730 | 0.2890 | 0.2036 | 0.0673 | 0.1219 | 0.4707 | 1.5869 |
-| 2 | 0.5468 | 0.6192 | 0.5304 | 0.2968 | 0.0838 | 1.0551 | 1.5869 |
-| 3 | 0.7774 | 0.7656 | 0.7503 | 0.4895 | 0.0616 | 1.5650 | 1.5869 |
+| 3-exit | 1 | 0.6622 | 0.6574 | 0.2677 | 0.0995 | 2.0367 | 32.11% |
+| 3-exit | 2 | 0.7916 | 0.7796 | 0.4732 | 0.0607 | 3.0000 | 0.00% |
+| 3-exit | 3 | 0.7916 | 0.7796 | 0.4732 | 0.0607 | 3.0000 | 0.00% |
+| 5-exit | 1 | 0.5034 | 0.5286 | 0.0811 | 0.1638 | 2.0076 | 59.85% |
+| 5-exit | 2 | 0.7166 | 0.7081 | 0.3376 | 0.0847 | 4.1198 | 17.60% |
+| 5-exit | 3 | 0.7569 | 0.7476 | 0.4227 | 0.0703 | 4.8899 | 2.20% |
 
-### Per-label final-exit metrics
+### Best model by goal
 
-| Label | Precision | Recall | F1 | Support | Predicted positive |
-| --- | --- | --- | --- | --- | --- |
-| `Brene_Brown` | 0.7751 | 0.8733 | 0.8213 | 150 | 169 |
-| `Eckhart_Tolle` | 0.9254 | 0.9185 | 0.9219 | 135 | 134 |
-| `Eric_Thomas` | 0.8854 | 0.6296 | 0.7359 | 135 | 96 |
-| `Gary_Vee` | 0.9804 | 0.7895 | 0.8746 | 190 | 153 |
-| `Jay_Shetty` | 0.8622 | 0.8423 | 0.8521 | 260 | 254 |
-| `Nick_Vujicic` | 0.8582 | 0.7667 | 0.8099 | 150 | 134 |
-| `other_speaker_present` | 0.5654 | 0.6849 | 0.6195 | 511 | 619 |
-| `music_present` | 0.9768 | 0.7342 | 0.8383 | 632 | 475 |
-| `applause_present` | 0.9072 | 0.8151 | 0.8587 | 384 | 345 |
-| `laughter_present` | 0.5609 | 0.7202 | 0.6306 | 243 | 312 |
-| `crowd_cheer_present` | 0.6036 | 0.7976 | 0.6872 | 252 | 333 |
-| `silence_present` | 0.8667 | 0.5571 | 0.6783 | 70 | 45 |
-
-### Next strategy
-
-| Step | Purpose | Status |
+| Goal | Best current result | Evidence |
 | --- | --- | --- |
-| Threshold tuning | Tune per-label sigmoid thresholds and compare against fixed 0.5 | Next |
-| Multi-label greedy policy | Check whether a 3-exit TATA model can exit early safely | After threshold tuning |
-| Package tuned outputs | Share metrics/config/policy/log files in one ZIP | After policy |
-| 5-exit TATA weakclip | Compare depth/compute tradeoff against 3-exit | Later |
-| Positive class weighting / sampling | Improve weak labels such as other_speaker, laughter, crowd cheer, silence | Later ablation |
-| Synthetic mixed data | Create controlled target+event/target+other-speaker mixtures | Later improvement |
-| TATA inference on raw dataset | Generate pseudo-labels and routing manifests for main speaker model | After TATA is reliable |
+| Best overall Macro-F1 | 3-exit tuned threshold | Macro-F1 0.7916; Micro-F1 0.7796 |
+| Best exact match | 5-exit fixed threshold | Exact match 0.5013 |
+| Best hamming loss | 5-exit fixed threshold | Hamming loss 0.0574 |
+| Best dynamic compute saving with usable quality | 5-exit stable_k=2 policy | 17.60% saved but Macro-F1 only 0.7166 |
+| Most reliable current TATA configuration | 3-exit tuned threshold | Best F1 quality; should be used as final-exit triage detector, not early-exit policy yet |
 
 ## Figure assets
 
-Use the following generated figures in reports and thesis notes:
-
 | Figure | Path | Purpose |
 |---|---|---|
-| Validation progression | `docs/figures/human_talk/agentic_data_preprocessing_v0.5_tata_2/tata_3exit_validation_progression.png` | Shows validation Macro-F1, Micro-F1, and exact match across epochs. |
-| Training loss | `docs/figures/human_talk/agentic_data_preprocessing_v0.5_tata_2/tata_3exit_training_loss.png` | Shows training-loss progression. |
-| Test metrics by exit | `docs/figures/human_talk/agentic_data_preprocessing_v0.5_tata_2/tata_test_metrics_by_exit.png` | Shows Exit 1 -> Exit 3 improvement. |
-| Per-label F1 | `docs/figures/human_talk/agentic_data_preprocessing_v0.5_tata_2/tata_per_label_f1.png` | Shows which labels are strong/weak. |
-| Segment label distribution | `docs/figures/human_talk/agentic_data_preprocessing_v0.5_tata_2/tata_segment_label_distribution.png` | Shows label imbalance in weak segments. |
-| Split distribution | `docs/figures/human_talk/agentic_data_preprocessing_v0.5_tata_2/tata_split_distribution.png` | Shows train/val/test segment counts. |
+| Main Macro-F1 comparison | `docs/figures/human_talk/agentic_data_preprocessing_v0.5_tata_2/tata_weakclip_macro_f1_comparison.png` | Compare 3-exit and 5-exit fixed/tuned/policy outcomes. |
+| Dynamic policy tradeoff | `docs/figures/human_talk/agentic_data_preprocessing_v0.5_tata_2/tata_dynamic_policy_tradeoff.png` | Show quality vs compute saving. |
+| Per-exit tuned Macro-F1 | `docs/figures/human_talk/agentic_data_preprocessing_v0.5_tata_2/tata_per_exit_tuned_macro_f1.png` | Show exit-depth behaviour. |
+| Per-label F1 comparison | `docs/figures/human_talk/agentic_data_preprocessing_v0.5_tata_2/tata_per_label_f1_comparison_3_vs_5.png` | Compare label-level strengths/weaknesses. |
 
-## Documentation rule
+## Documentation rules
 
-Do not claim TATA is finished. The correct statement is: **the first 3-exit weak-clip TATA baseline completed successfully, fixed-threshold final-exit performance is promising, and threshold tuning is the next required step**.
+- Do not claim that 5-exit is better overall. It is not: 3-exit tuned has the best F1.
+- Do not claim TATA is early-exit ready. The 5-exit dynamic policy saves compute but quality is too low.
+- Do not describe weak 1-sec labels as perfect segment-level labels. They inherit parent clip labels and are weak supervision.
+- Keep `3-exit tuned threshold` as the current best TATA baseline.
+- Keep future work focused on synthetic mixtures, balancing, calibration, and raw pseudo-label routing.
