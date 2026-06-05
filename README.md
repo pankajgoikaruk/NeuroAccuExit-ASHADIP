@@ -267,7 +267,7 @@ Hamming Loss: 0.0271
 
 Generated comparison figures are saved under `docs/figures/human_talk/agentic_data_preprocessing_v0.7/`:
 
-![Final parent mean comparison](docs/figures/human_talk/agentic_data_preprocessing_v0.7/final_holdout_parent_mean_comparison.png)
+![Final parent mean comparison](docs/figures/human_talk/agentic_data_preprocessing_v0.6/final_holdout_parent_mean_comparison.png)
 
 ![Aggregation comparison](docs/figures/human_talk/agentic_data_preprocessing_v0.6/aggregation_comparison_3exit_fixed.png)
 
