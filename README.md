@@ -265,19 +265,19 @@ Hamming Loss: 0.0271
 
 ## Figures
 
-![caption](docs/figures/human_talk/agentic_data_preprocessing_v0.7/final_holdout_parent_mean_comparison.png)
+Generated comparison figures are saved under `docs/figures/human_talk/agentic_data_preprocessing_v0.7/`:
 
-![Final parent mean comparison](figures/human_talk/agentic_data_preprocessing_v0.6/final_holdout_parent_mean_comparison.png)
+![Final parent mean comparison](docs/figures/human_talk/agentic_data_preprocessing_v0.7/final_holdout_parent_mean_comparison.png)
 
-![Aggregation comparison](figures/human_talk/agentic_data_preprocessing_v0.6/aggregation_comparison_3exit_fixed.png)
+![Aggregation comparison](docs/figures/human_talk/agentic_data_preprocessing_v0.6/aggregation_comparison_3exit_fixed.png)
 
-![Hamming loss comparison](figures/human_talk/agentic_data_preprocessing_v0.6/final_holdout_hamming_loss_comparison.png)
+![Hamming loss comparison](docs/figures/human_talk/agentic_data_preprocessing_v0.6/final_holdout_hamming_loss_comparison.png)
 
-![Dynamic policy tradeoff](figures/human_talk/agentic_data_preprocessing_v0.6/dynamic_policy_tradeoff_parent_level.png)
+![Dynamic policy tradeoff](docs/figures/human_talk/agentic_data_preprocessing_v0.6/dynamic_policy_tradeoff_parent_level.png)
 
-![Raw routing counts](figures/human_talk/agentic_data_preprocessing_v0.6/raw_pseudo_routing_counts.png)
+![Raw routing counts](docs/figures/human_talk/agentic_data_preprocessing_v0.6/raw_pseudo_routing_counts.png)
 
-![Per-label F1](figures/human_talk/agentic_data_preprocessing_v0.6/per_label_f1_segment_3exit_fixed.png)
+![Per-label F1](docs/figures/human_talk/agentic_data_preprocessing_v0.6/per_label_f1_segment_3exit_fixed.png)
 
 ## Theoretical notes
 
