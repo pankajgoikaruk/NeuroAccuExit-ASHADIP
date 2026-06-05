@@ -265,7 +265,7 @@ Hamming Loss: 0.0271
 
 ## Figures
 
-![caption](docs/figures/human_talk/agentic_data_preprocessing_v0.7/figure_name.png)
+![caption](docs/figures/human_talk/agentic_data_preprocessing_v0.7/final_holdout_parent_mean_comparison.png)
 
 ![Final parent mean comparison](figures/human_talk/agentic_data_preprocessing_v0.6/final_holdout_parent_mean_comparison.png)
 
