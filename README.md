@@ -265,19 +265,19 @@ Hamming Loss: 0.0271
 
 ## Figures
 
-Generated comparison figures are saved under `docs/figures/human_talk/agentic_data_preprocessing_v0.7/`:
+## Figures
 
-![Final parent mean comparison](docs/figures/human_talk/agentic_data_preprocessing_v0.6/final_holdout_parent_mean_comparison.png)
+![v0.6 vs v0.7 filtered holdout metrics](docs/figures/human_talk/agentic_data_preprocessing_v0.7/v06_vs_v07_filtered_holdout_metrics.png)
 
-![Aggregation comparison](docs/figures/human_talk/agentic_data_preprocessing_v0.6/aggregation_comparison_3exit_fixed.png)
+![v0.7 fixed vs tuned parent mean](docs/figures/human_talk/agentic_data_preprocessing_v0.7/v07_fixed_vs_tuned_parent_mean.png)
 
-![Hamming loss comparison](docs/figures/human_talk/agentic_data_preprocessing_v0.6/final_holdout_hamming_loss_comparison.png)
+![v0.7 hamming loss comparison](docs/figures/human_talk/agentic_data_preprocessing_v0.7/v07_hamming_loss_comparison.png)
 
-![Dynamic policy tradeoff](docs/figures/human_talk/agentic_data_preprocessing_v0.6/dynamic_policy_tradeoff_parent_level.png)
+![v0.7 per-label F1 fixed parent mean](docs/figures/human_talk/agentic_data_preprocessing_v0.7/v07_per_label_f1_fixed_parent_mean.png)
 
-![Raw routing counts](docs/figures/human_talk/agentic_data_preprocessing_v0.6/raw_pseudo_routing_counts.png)
+![v0.7 per-label fixed vs tuned](docs/figures/human_talk/agentic_data_preprocessing_v0.7/v07_per_label_fixed_vs_tuned.png)
 
-![Per-label F1](docs/figures/human_talk/agentic_data_preprocessing_v0.6/per_label_f1_segment_3exit_fixed.png)
+![v0.7 weak label focus](docs/figures/human_talk/agentic_data_preprocessing_v0.7/v07_weak_label_focus.png)
 
 ## Theoretical notes
 
