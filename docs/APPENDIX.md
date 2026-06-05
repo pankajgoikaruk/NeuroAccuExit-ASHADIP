@@ -59,10 +59,12 @@ human_talk_workspace/tata_v0.6_raw_pipeline/metadata/raw_final_holdout_MANUAL_LA
 
 ```powershell
 $RawRoot = "human_talk_workspace	ata_v0.6_raw_pipeline"
-$RawPseudoSegmentCache = "$RawRootaw_pseudo_pool_segment_cache"
+$RawPseudoSegmentCache = "$RawRoot
+aw_pseudo_pool_segment_cache"
 
 python scriptsuild_tata_raw_pseudo_segments.py `
-  --raw_parent_manifest "$RawRoot\metadataaw_pseudo_pool_parent_manifest.csv" `
+  --raw_parent_manifest "$RawRoot\metadata
+aw_pseudo_pool_parent_manifest.csv" `
   --out_dir "$RawPseudoSegmentCache" `
   --sample_rate 16000 `
   --segment_sec 1.0 `
@@ -73,10 +75,12 @@ python scriptsuild_tata_raw_pseudo_segments.py `
 ## A5. Extract raw pseudo-pool features
 
 ```powershell
-$RawPseudoFeatureCache = "$RawRootaw_pseudo_pool_feature_cache"
+$RawPseudoFeatureCache = "$RawRoot
+aw_pseudo_pool_feature_cache"
 
 python scripts\extract_multilabel_features.py `
-  --manifest "$RawPseudoSegmentCache\metadataaw_pseudo_pool_segment_manifest.csv" `
+  --manifest "$RawPseudoSegmentCache\metadata
+aw_pseudo_pool_segment_manifest.csv" `
   --labels_json "$RawPseudoSegmentCache\metadata	ata_v06_labels.json" `
   --out_cache "$RawPseudoFeatureCache" `
   --sample_rate 16000 `
@@ -91,8 +95,10 @@ python scripts\extract_multilabel_features.py `
 ## A6. Run TATA raw inference and routing
 
 ```powershell
-$TataRunDir = "human_talk_workspace	ata_v0.6_scratchuns	ata_v06_3exit_coarse_audience_scratch_retry_20260531_211047"
-$RawRoutingOut = "$RawRootaw_tata_pseudo_routing"
+$TataRunDir = "human_talk_workspace	ata_v0.6_scratch
+uns	ata_v06_3exit_coarse_audience_scratch_retry_20260531_211047"
+$RawRoutingOut = "$RawRoot
+aw_tata_pseudo_routing"
 
 python scripts\predict_tata_raw_pseudo_routing.py `
   --run_dir "$TataRunDir" `
@@ -134,10 +140,14 @@ $RawRoot = "human_talk_workspace	ata_v0.6_raw_pipeline"
 python scriptsuild_tata_v06_final_expanded_training_manifest.py `
   --seed_feature_manifest "$ScratchRooteature_cache\metadata\multilabel_features_manifest.csv" `
   --seed_features_root "$ScratchRooteature_cacheeatures" `
-  --raw_feature_manifest "$RawRootaw_pseudo_pool_feature_cache\metadata\multilabel_features_manifest.csv" `
-  --raw_features_root "$RawRootaw_pseudo_pool_feature_cacheeatures" `
-  --hybrid_accepted_csv "$RawRootaw_tata_pseudo_routing\hybrid\hybrid_accepted.csv" `
-  --hybrid_warning_csv "$RawRootaw_tata_pseudo_routing\hybrid\hybrid_accepted_with_warning.csv" `
+  --raw_feature_manifest "$RawRoot
+aw_pseudo_pool_feature_cache\metadata\multilabel_features_manifest.csv" `
+  --raw_features_root "$RawRoot
+aw_pseudo_pool_feature_cacheeatures" `
+  --hybrid_accepted_csv "$RawRoot
+aw_tata_pseudo_routing\hybrid\hybrid_accepted.csv" `
+  --hybrid_warning_csv "$RawRoot
+aw_tata_pseudo_routing\hybrid\hybrid_accepted_with_warning.csv" `
   --corrected_needs_review_csv "$RawRoot\manual_review_queue_raw_hybrid_needs_review_MANUAL_CORRECTION_FINAL_refreshed.csv" `
   --labels_json "$ScratchRoot\metadata	ata_v06_labels.json" `
   --out_root "$RawRootinal_expanded_training_dataset"
@@ -146,12 +156,14 @@ python scriptsuild_tata_v06_final_expanded_training_manifest.py `
 ## A9. Train main 3-exit model
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scriptsun_tata_weakclip_experiment.ps1 `
+powershell -ExecutionPolicy Bypass -File scripts
+un_tata_weakclip_experiment.ps1 `
   -Manifest "$RawRootinal_expanded_training_dataset\metadata\multilabel_features_manifest.csv" `
   -FeaturesRoot "." `
   -LabelsJson "$RawRootinal_expanded_training_dataset\metadata	ata_v06_labels.json" `
   -WorkspaceRoot "$RawRoot\main_models" `
-  -RunsRoot "$RawRoot\main_modelsuns" `
+  -RunsRoot "$RawRoot\main_models
+uns" `
   -PackagesRoot "$RawRoot\main_models\packages" `
   -LogsRoot "$RawRoot\main_models\logs" `
   -Variant "main_v06_expanded_3exit" `
@@ -167,12 +179,14 @@ powershell -ExecutionPolicy Bypass -File scriptsun_tata_weakclip_experiment.ps1
 ## A10. Train main 5-exit model
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scriptsun_tata_weakclip_experiment.ps1 `
+powershell -ExecutionPolicy Bypass -File scripts
+un_tata_weakclip_experiment.ps1 `
   -Manifest "$RawRootinal_expanded_training_dataset\metadata\multilabel_features_manifest.csv" `
   -FeaturesRoot "." `
   -LabelsJson "$RawRootinal_expanded_training_dataset\metadata	ata_v06_labels.json" `
   -WorkspaceRoot "$RawRoot\main_models" `
-  -RunsRoot "$RawRoot\main_modelsuns" `
+  -RunsRoot "$RawRoot\main_models
+uns" `
   -PackagesRoot "$RawRoot\main_models\packages" `
   -LogsRoot "$RawRoot\main_models\logs" `
   -Variant "main_v06_expanded_5exit" `
@@ -229,7 +243,8 @@ python scripts\extract_multilabel_features.py `
 ## A13. Segment-level final holdout evaluation
 
 ```powershell
-$Run3 = "human_talk_workspace	ata_v0.6_raw_pipeline\main_modelsuns\main_v06_expanded_3exit_20260603_194435"
+$Run3 = "human_talk_workspace	ata_v0.6_raw_pipeline\main_models
+uns\main_v06_expanded_3exit_20260603_194435"
 $HoldoutEvalRoot = "$RawRootinal_holdout_evaluation"
 
 python scripts\evaluate_tata_final_holdout.py `
@@ -270,3 +285,42 @@ Recommended final configuration:
 ```text
 3-exit fixed threshold 0.5 + parent-level mean aggregation
 ```
+
+
+## Appendix: v0.7 filtered ablation methodology
+
+### Purpose
+
+v0.7 tests whether removing five non-target source-speaker folders improves a target-speaker-focused multi-label model. The filtered source classes are:
+
+```text
+Les_Brown
+Mel_Robbins
+Oprah_Winfrey
+Rabin_Sharma
+Simon_Sinek
+```
+
+Rows from these folders are filtered from the raw pseudo/corrected manifests and the final raw holdout CSV. The original v0.6 audio and manifests are preserved for reproducibility.
+
+### Filter operation
+
+For a row \(r\), define an exclusion set \(S\) containing the five source classes above. A row is removed if any source identifier contains an excluded class:
+
+\[
+	ext{remove}(r) = 1 \quad 	ext{if} \quad \exists s \in S: s \in \{	ext{source\_class\_dir}, 	ext{source\_file}, 	ext{source\_path}, 	ext{source\_rel\_path}, 	ext{parent\_clip\_id}\}.
+\]
+
+This creates a filtered target-focused training and evaluation setup while keeping the same 10-label output schema.
+
+### v0.7 result interpretation
+
+The target-speaker labels become very strong after filtering, but weaker labels remain unresolved:
+
+```text
+other_speaker_present
+audience_reaction_present
+silence_present
+```
+
+This shows that source filtering helps speaker clarity but does not replace targeted weak-label curation. In v0.8, these labels should be addressed with targeted data balancing, clearer annotation rules, and label-specific threshold/policy analysis.

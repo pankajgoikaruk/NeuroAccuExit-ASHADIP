@@ -1,15 +1,17 @@
-# NeuroAccuExit-ASHADIP — Agentic Data Preprocessing v0.6
+# NeuroAccuExit-ASHADIP — Agentic Data Preprocessing v0.7
 
-This README documents the active **`agentic_data_preprocessing_v0.6`** branch. The branch extends the earlier TinyAudioTriageAgent work from a 12-label weakclip baseline into a complete **TATA-assisted human-in-the-loop raw-data preprocessing pipeline**.
+This README documents the active **`agentic_data_preprocessing_v0.7`** branch. The branch extends the earlier TinyAudioTriageAgent work from a 12-label weakclip baseline into a complete **TATA-assisted human-in-the-loop raw-data preprocessing pipeline**.
 
 ```text
-Branch: agentic_data_preprocessing_v0.6
+Branch: agentic_data_preprocessing_v0.7
 Agenda: TATA-assisted pseudo-manifest generation for human-talk multi-label audio
 Core idea: train TATA on reviewed seed data, route raw clips, correct uncertain clips, and train main multi-label models
 Label schema: 10 labels = 6 target speakers + other_speaker_present + music_present + audience_reaction_present + silence_present
 Audience label design: applause/laughter/crowd_cheer are merged into audience_reaction_present
-Best final model: main_v06_expanded_3exit + fixed threshold 0.5 + parent-level mean aggregation
-Final raw holdout result: Macro-F1 0.7598, Micro-F1 0.8976, Samples-F1 0.9048, Exact Match 0.8155, Hamming Loss 0.0271
+Best v0.6 broad model: main_v06_expanded_3exit + fixed threshold 0.5 + parent-level mean aggregation
+Best v0.6 broad raw holdout: Macro-F1 0.7598, Micro-F1 0.8976, Samples-F1 0.9048, Exact Match 0.8155, Hamming Loss 0.0271
+Best v0.7 filtered model: main_v07_filtered_3exit + fixed threshold 0.5 + parent-level mean aggregation
+Best v0.7 filtered holdout: Macro-F1 0.7446, Micro-F1 0.8983, Samples-F1 0.9041, Exact Match 0.7596, Hamming Loss 0.0317
 ```
 
 ## Branch agenda
@@ -30,6 +32,90 @@ Reviewed seed manifest
   -> manually label final raw holdout
   -> evaluate segment-level and parent/clip-level generalisation
 ```
+
+
+## Agentic Data Preprocessing v0.7 filtered ablation
+
+The v0.7 branch is a controlled ablation built from `agentic_data_preprocessing_v0.6`. It removes five non-target source-speaker folders from the raw pseudo/corrected training manifests and from the final raw holdout evaluation set:
+
+```text
+Les_Brown
+Mel_Robbins
+Oprah_Winfrey
+Rabin_Sharma
+Simon_Sinek
+```
+
+The original v0.6 data and audio files were not deleted. v0.7 filters rows from CSV manifests only, creating a cleaner six-target-speaker experiment.
+
+### v0.7 filtered dataset summary
+
+| Item | Count / description |
+|---|---:|
+| Final filtered holdout parent clips | 441 |
+| Final filtered holdout 1-second segments | 2,205 |
+| v0.7 final expanded training segments | 24,619 |
+| Seed reviewed segments retained | 12,469 |
+| Filtered raw expanded training segments | 12,150 |
+| Removed source folders | Les/Mel/Oprah/Rabin/Simon |
+
+### v0.7 internal training result
+
+| Model | Best epoch | Macro-F1 | Micro-F1 | Samples-F1 | Exact Match | Hamming Loss |
+|---|---:|---:|---:|---:|---:|---:|
+| v0.7 filtered 3-exit, internal test | 34 | 0.8296 | 0.8343 | 0.8347 | 0.6670 | 0.0453 |
+
+### v0.7 final filtered holdout result
+
+Evaluation setting:
+
+```text
+Model: main_v07_filtered_3exit
+Evaluation: parent/clip-level mean aggregation
+Holdout: filtered target-focused raw holdout, 441 clips
+```
+
+| Setting | Macro-F1 | Micro-F1 | Samples-F1 | Exact Match | Hamming Loss | Avg Pred Labels |
+|---|---:|---:|---:|---:|---:|---:|
+| v0.7 fixed 0.5 | 0.7446 | 0.8983 | 0.9041 | 0.7596 | 0.0317 | 1.4467 |
+| v0.7 tuned per-exit | 0.7468 | 0.8953 | 0.9013 | 0.7347 | 0.0345 | 1.6190 |
+
+Fixed threshold 0.5 remains the best practical v0.7 configuration because tuned thresholds provide only a tiny Macro-F1 gain but reduce Micro-F1, Samples-F1, Exact Match, and Hamming Loss.
+
+### Fair comparison: v0.6 vs v0.7 on the same filtered holdout
+
+| Model | Macro-F1 | Micro-F1 | Samples-F1 | Exact Match | Hamming Loss |
+|---|---:|---:|---:|---:|---:|
+| v0.6 main 3-exit on v0.7 filtered holdout | 0.7308 | 0.9001 | 0.8986 | 0.7483 | 0.0320 |
+| v0.7 filtered 3-exit on v0.7 filtered holdout | 0.7446 | 0.8983 | 0.9041 | 0.7596 | 0.0317 |
+
+Interpretation: v0.7 is slightly better overall on the filtered target-focused holdout, improving Macro-F1, Samples-F1, Exact Match, and Hamming Loss. The Micro-F1 difference is negligible and slightly favours v0.6.
+
+### v0.7 per-label observation
+
+The six target speakers are very strong under v0.7 fixed-threshold parent-level mean evaluation:
+
+| Label | F1 |
+|---|---:|
+| Brene_Brown | 0.9793 |
+| Eckhart_Tolle | 0.9940 |
+| Eric_Thomas | 0.9134 |
+| Gary_Vee | 0.9926 |
+| Jay_Shetty | 0.9836 |
+| Nick_Vujicic | 0.9231 |
+
+Weak labels remain:
+
+| Label | F1 | Main issue |
+|---|---:|---|
+| other_speaker_present | 0.3200 fixed / 0.5133 tuned | Filtering removes many non-target examples, creating a precision/recall trade-off. |
+| audience_reaction_present | 0.4500 fixed / 0.2759 tuned | Low support and ambiguous audience/music/speech mixtures. |
+| silence_present | 0.0000 | Very low support; no positives predicted in the filtered holdout. |
+
+### v0.7 research conclusion
+
+The v0.7 filtered experiment confirms that removing five noisy non-target source-speaker folders creates a cleaner target-speaker-focused setting. It slightly improves target-focused holdout behaviour compared with v0.6 on the same filtered holdout, but it does not solve weak background/event labels. The next strategy should therefore focus on targeted weak-label repair and augmentation rather than additional source filtering alone.
+
 
 ## Label schema
 
@@ -254,3 +340,15 @@ The agentic_data_preprocessing_v0.6 branch demonstrates that TinyAudioTriageAgen
 2. Keep **3-exit fixed + parent mean** as the final reliable result.
 3. Keep **5-exit dynamic mean** as the efficiency/accuracy trade-off baseline.
 4. For future improvement, repair or sample-check non-target background labels and add targeted augmentation for `audience_reaction_present` and `silence_present`.
+
+
+## v0.7 final recommendation
+
+Use v0.6 as the broader realistic setting and v0.7 as the cleaner target-focused ablation:
+
+| Version | Role | Best result |
+|---|---|---|
+| v0.6 | Broad raw-world setting with non-target source speakers | Parent mean: Macro-F1 0.7598, Micro-F1 0.8976, Exact Match 0.8155, Hamming Loss 0.0271 |
+| v0.7 | Filtered target-focused setting without Les/Mel/Oprah/Rabin/Simon | Parent mean: Macro-F1 0.7446, Micro-F1 0.8983, Exact Match 0.7596, Hamming Loss 0.0317 |
+
+The next research direction is **weak-label improvement** for `other_speaker_present`, `audience_reaction_present`, and `silence_present`.

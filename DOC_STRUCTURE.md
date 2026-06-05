@@ -118,3 +118,23 @@ Final raw holdout result: Macro-F1 0.7598, Micro-F1 0.8976, Samples-F1 0.9048, E
 - State clearly that final holdout labels are manually reviewed clip-level ground truth.
 - State clearly that segment labels are weak inherited labels.
 - Mention the known limitation: non-target speaker rows may require future background/event re-checking.
+
+
+## v0.7 filtered experiment additions
+
+The following assets document the v0.7 filtered ablation:
+
+```text
+docs/figures/human_talk/agentic_data_preprocessing_v0.7/
+docs/tables/v07_filtered_dataset_summary.csv
+docs/tables/v07_internal_training_summary.csv
+docs/tables/v07_fixed_vs_tuned_parent_mean.csv
+docs/tables/v06_vs_v07_same_filtered_holdout.csv
+docs/tables/v07_summary_against_v06.csv
+docs/tables/v07_per_label_parent_mean_fixed.csv
+docs/tables/v07_per_label_parent_mean_tuned.csv
+docs/tables/v07_next_strategy_weak_labels.csv
+docs/releases/agentic_data_preprocessing_v0.7_tag.md
+```
+
+v0.7 should be interpreted as a controlled filtered ablation, not as a replacement for v0.6. v0.6 remains the broad setting; v0.7 removes five non-target source-speaker folders to test whether target-speaker clarity improves.

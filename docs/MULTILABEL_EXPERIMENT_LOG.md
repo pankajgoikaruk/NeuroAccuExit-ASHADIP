@@ -145,3 +145,79 @@ The v0.6 experiments show that TinyAudioTriageAgent can act as a human-in-the-lo
 - Segment-level labels are weak inherited labels from parent clips.
 - Mean aggregation works best now, but it should be compared with calibrated pooling in future work.
 - Dynamic early exit needs stronger intermediate exits or improved policy design before becoming the final deployment mode.
+
+
+# Agentic Data Preprocessing v0.7 — Filtered Target-Speaker Ablation
+
+## Motivation
+
+v0.6 included five non-target source-speaker folders as `other_speaker_present`. During analysis, we identified that some non-target rows may have incomplete background/event labels. v0.7 therefore removes these source folders from the CSV manifests to test a cleaner target-speaker-focused setting.
+
+Removed source classes:
+
+```text
+Les_Brown
+Mel_Robbins
+Oprah_Winfrey
+Rabin_Sharma
+Simon_Sinek
+```
+
+## v0.7 filtered dataset
+
+| Item | Count |
+|---|---:|
+| Final filtered holdout parent clips | 441 |
+| Final filtered holdout segments | 2,205 |
+| Final combined training segments | 24,619 |
+| Seed reviewed segments | 12,469 |
+| Filtered raw expanded training segments | 12,150 |
+
+## v0.7 internal test result
+
+| Model | Best epoch | Macro-F1 | Micro-F1 | Samples-F1 | Exact Match | Hamming Loss |
+|---|---:|---:|---:|---:|---:|---:|
+| main_v07_filtered_3exit | 34 | 0.8296 | 0.8343 | 0.8347 | 0.6670 | 0.0453 |
+
+## v0.7 filtered holdout: fixed vs tuned
+
+| Setting | Macro-F1 | Micro-F1 | Samples-F1 | Exact Match | Hamming Loss | Avg Pred Labels |
+|---|---:|---:|---:|---:|---:|---:|
+| Fixed 0.5 | 0.7446 | 0.8983 | 0.9041 | 0.7596 | 0.0317 | 1.4467 |
+| Tuned per-exit | 0.7468 | 0.8953 | 0.9013 | 0.7347 | 0.0345 | 1.6190 |
+
+Decision: fixed threshold 0.5 remains the best practical v0.7 setting because tuned thresholds slightly increase Macro-F1 but reduce reliability metrics.
+
+## Fair comparison on the same filtered holdout
+
+| Model | Macro-F1 | Micro-F1 | Samples-F1 | Exact Match | Hamming Loss |
+|---|---:|---:|---:|---:|---:|
+| v0.6 model on v0.7 filtered holdout | 0.7308 | 0.9001 | 0.8986 | 0.7483 | 0.0320 |
+| v0.7 filtered model on v0.7 filtered holdout | 0.7446 | 0.8983 | 0.9041 | 0.7596 | 0.0317 |
+
+Interpretation: v0.7 improves Macro-F1, Samples-F1, Exact Match, and Hamming Loss on the filtered holdout. Micro-F1 is almost unchanged and slightly favours the v0.6 model. Overall, v0.7 is a useful target-speaker-focused ablation but not a dramatic improvement.
+
+## Per-label finding
+
+Target-speaker labels are strong under v0.7 fixed threshold:
+
+| Label | F1 |
+|---|---:|
+| Brene_Brown | 0.9793 |
+| Eckhart_Tolle | 0.9940 |
+| Eric_Thomas | 0.9134 |
+| Gary_Vee | 0.9926 |
+| Jay_Shetty | 0.9836 |
+| Nick_Vujicic | 0.9231 |
+
+Weak labels:
+
+| Label | Fixed F1 | Tuned F1 | Finding |
+|---|---:|---:|---|
+| other_speaker_present | 0.3200 | 0.5133 | Filtering removed many non-target examples; tuned threshold recovers recall but hurts exact match. |
+| audience_reaction_present | 0.4500 | 0.2759 | Low support and ambiguous acoustic mixtures remain. |
+| silence_present | 0.0000 | 0.0000 | Needs targeted silence examples and threshold analysis. |
+
+## v0.7 conclusion
+
+The v0.7 filtered experiment confirms that removing the five non-target source-speaker folders creates a cleaner target-speaker-focused setting. However, it does not solve weak background/event labels. The next branch should focus on weak-label repair for `other_speaker_present`, `audience_reaction_present`, and `silence_present`.
