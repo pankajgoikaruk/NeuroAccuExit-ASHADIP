@@ -1,4 +1,12 @@
-# scripts\filter_tata_v07_remove_nontarget_sources.py
+# scripts/filter_tata_v07_remove_nontarget_sources.py
+#
+# Reusable manifest filtering script.
+#
+# This version does NOT hard-code source classes or file mappings.
+# It reads them from:
+#   --config configs/filter_v07_target_only.json
+#
+# The script filters CSV manifests only. It does not delete or move audio.
 
 from __future__ import annotations
 
@@ -7,34 +15,70 @@ import json
 import shutil
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
 
-EXCLUDE_CLASSES = {
-    "Les_Brown",
-    "Mel_Robbins",
-    "Oprah_Winfrey",
-    "Rabin_Sharma",
-    "Simon_Sinek",
-}
-
-
-def now_iso():
+def now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
-def is_excluded_row(row) -> bool:
-    text = " ".join(
-        str(row.get(c, ""))
-        for c in ["source_class_dir", "source_file", "source_path", "source_rel_path", "parent_clip_id"]
+def load_json(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        raise FileNotFoundError(f"Config not found: {path}")
+    with path.open("r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def validate_config(config: dict[str, Any]) -> dict[str, Any]:
+    if "exclude_source_classes" not in config or not isinstance(config["exclude_source_classes"], list):
+        raise RuntimeError("Config must contain list: exclude_source_classes")
+
+    if "files" not in config or not isinstance(config["files"], list) or not config["files"]:
+        raise RuntimeError("Config must contain non-empty list: files")
+
+    config = dict(config)
+    config.setdefault("match_columns", ["source_class_dir", "source_file", "source_path", "source_rel_path", "parent_clip_id"])
+    config.setdefault("copy_files", [])
+    config.setdefault("summary_name", "filter_summary")
+    config.setdefault("note", "Filtered manifests are copied/created only; original audio and source manifests are untouched.")
+
+    for i, item in enumerate(config["files"]):
+        if not isinstance(item, dict):
+            raise RuntimeError(f"files[{i}] must be an object")
+        for key in ["name", "src", "dst"]:
+            if key not in item:
+                raise RuntimeError(f"files[{i}] missing required key: {key}")
+
+    return config
+
+
+def resolve_template_path(template: str, src_root: Path, dst_root: Path) -> Path:
+    value = str(template)
+    value = value.replace("{src_root}", str(src_root))
+    value = value.replace("{dst_root}", str(dst_root))
+    return Path(value)
+
+
+def is_excluded_row(row: pd.Series, exclude_classes: list[str], match_columns: list[str]) -> bool:
+    text = " ".join(str(row.get(c, "")) for c in match_columns)
+    return any(cls in text for cls in exclude_classes)
+
+
+def filter_csv(
+    *,
+    src: Path,
+    dst: Path,
+    name: str,
+    exclude_classes: list[str],
+    match_columns: list[str],
+) -> dict[str, Any]:
+    df = pd.read_csv(src, low_memory=False)
+    mask = df.apply(
+        lambda row: is_excluded_row(row, exclude_classes, match_columns),
+        axis=1,
     )
-    return any(cls in text for cls in EXCLUDE_CLASSES)
-
-
-def filter_csv(src: Path, dst: Path, name: str) -> dict:
-    df = pd.read_csv(src)
-    mask = df.apply(is_excluded_row, axis=1)
 
     kept = df[~mask].copy()
     removed = df[mask].copy()
@@ -42,7 +86,7 @@ def filter_csv(src: Path, dst: Path, name: str) -> dict:
     dst.parent.mkdir(parents=True, exist_ok=True)
     kept.to_csv(dst, index=False)
 
-    removed_path = dst.with_name(dst.stem + "_REMOVED_NON_TARGET_ROWS.csv")
+    removed_path = dst.with_name(dst.stem + "_REMOVED_ROWS.csv")
     removed.to_csv(removed_path, index=False)
 
     return {
@@ -53,122 +97,173 @@ def filter_csv(src: Path, dst: Path, name: str) -> dict:
         "original_rows": int(len(df)),
         "kept_rows": int(len(kept)),
         "removed_rows": int(len(removed)),
+        "status": "ok",
     }
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--v06_root", default="human_talk_workspace/tata_v0.6_raw_pipeline")
-    parser.add_argument("--v07_root", default="human_talk_workspace/tata_v0.7_raw_pipeline")
-    args = parser.parse_args()
+def copy_optional_files(
+    *,
+    config: dict[str, Any],
+    src_root: Path,
+    dst_root: Path,
+) -> list[dict[str, Any]]:
+    outputs = []
 
-    v06 = Path(args.v06_root)
-    v07 = Path(args.v07_root)
+    for item in config.get("copy_files", []):
+        name = str(item.get("name", "copy_file"))
+        src = resolve_template_path(str(item["src"]), src_root, dst_root)
+        dst = resolve_template_path(str(item["dst"]), src_root, dst_root)
 
-    summary = {
-        "generated_at": now_iso(),
-        "v06_root": str(v06),
-        "v07_root": str(v07),
-        "excluded_source_classes": sorted(EXCLUDE_CLASSES),
-        "outputs": [],
-        "note": "v0.7 filtered experiment removes Les/Mel/Oprah/Rabin/Simon rows from manifests only; original audio is untouched.",
-    }
-
-    # Create folder structure
-    (v07 / "manual_review_queue").mkdir(parents=True, exist_ok=True)
-    (v07 / "raw_tata_pseudo_routing" / "hybrid").mkdir(parents=True, exist_ok=True)
-    (v07 / "metadata").mkdir(parents=True, exist_ok=True)
-
-    files = [
-        (
-            v06 / "manual_review_queue" / "01_raw_final_holdout_GROUND_TRUTH_FINAL_refreshed.csv",
-            v07 / "manual_review_queue" / "01_raw_final_holdout_GROUND_TRUTH_FINAL_refreshed_FILTERED_TARGET_ONLY.csv",
-            "final_holdout_ground_truth",
-        ),
-        (
-            v06 / "manual_review_queue" / "02_raw_hybrid_needs_review_MANUAL_CORRECTION_FINAL_refreshed.csv",
-            v07 / "manual_review_queue" / "02_raw_hybrid_needs_review_MANUAL_CORRECTION_FINAL_refreshed_FILTERED_TARGET_ONLY.csv",
-            "corrected_hybrid_needs_review",
-        ),
-        (
-            v06 / "raw_tata_pseudo_routing" / "hybrid" / "hybrid_accepted.csv",
-            v07 / "raw_tata_pseudo_routing" / "hybrid" / "hybrid_accepted_FILTERED_TARGET_ONLY.csv",
-            "hybrid_accepted",
-        ),
-        (
-            v06 / "raw_tata_pseudo_routing" / "hybrid" / "hybrid_accepted_with_warning.csv",
-            v07 / "raw_tata_pseudo_routing" / "hybrid" / "hybrid_accepted_with_warning_FILTERED_TARGET_ONLY.csv",
-            "hybrid_accepted_with_warning",
-        ),
-        (
-            v06 / "raw_tata_pseudo_routing" / "hybrid" / "hybrid_needs_review.csv",
-            v07 / "raw_tata_pseudo_routing" / "hybrid" / "hybrid_needs_review_FILTERED_TARGET_ONLY.csv",
-            "original_hybrid_needs_review",
-        ),
-        (
-            v06 / "metadata" / "raw_pseudo_pool_parent_manifest.csv",
-            v07 / "metadata" / "raw_pseudo_pool_parent_manifest_FILTERED_TARGET_ONLY.csv",
-            "raw_pseudo_pool_parent_manifest",
-        ),
-        (
-            v06 / "metadata" / "raw_final_holdout_parent_manifest.csv",
-            v07 / "metadata" / "raw_final_holdout_parent_manifest_FILTERED_TARGET_ONLY.csv",
-            "raw_final_holdout_parent_manifest",
-        ),
-    ]
-
-    for src, dst, name in files:
         if src.exists():
-            summary["outputs"].append(filter_csv(src, dst, name))
-        else:
-            summary["outputs"].append({
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+            outputs.append({
                 "name": name,
                 "src": str(src),
+                "dst": str(dst),
+                "status": "copied",
+            })
+        else:
+            outputs.append({
+                "name": name,
+                "src": str(src),
+                "dst": str(dst),
                 "status": "missing",
             })
 
-    # Copy label json from v0.6 final dataset if exists
-    src_labels = v06 / "final_expanded_training_dataset" / "metadata" / "tata_v06_labels.json"
-    dst_labels = v07 / "metadata" / "tata_v07_labels.json"
-    if src_labels.exists():
-        shutil.copy2(src_labels, dst_labels)
+    return outputs
 
-    summary_path = v07 / "metadata" / "v07_filter_summary.json"
-    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
-    md = []
-    md.append("# TATA v0.7 Filter Summary")
-    md.append("")
-    md.append(f"Generated: `{summary['generated_at']}`")
-    md.append("")
-    md.append("## Removed source classes")
-    md.append("")
-    for cls in sorted(EXCLUDE_CLASSES):
-        md.append(f"- `{cls}`")
-    md.append("")
-    md.append("## Counts")
-    md.append("")
-    md.append("| File | Original | Kept | Removed |")
-    md.append("|---|---:|---:|---:|")
+def write_summary_md(path: Path, summary: dict[str, Any]) -> None:
+    lines = []
+    lines.append(f"# {summary.get('title', 'Manifest Filter Summary')}")
+    lines.append("")
+    lines.append(f"Generated: `{summary['generated_at']}`")
+    lines.append("")
+    lines.append("## Excluded source classes")
+    lines.append("")
+    for cls in summary["exclude_source_classes"]:
+        lines.append(f"- `{cls}`")
+
+    lines.append("")
+    lines.append("## Match columns")
+    lines.append("")
+    for col in summary["match_columns"]:
+        lines.append(f"- `{col}`")
+
+    lines.append("")
+    lines.append("## Counts")
+    lines.append("")
+    lines.append("| File | Original | Kept | Removed | Status |")
+    lines.append("|---|---:|---:|---:|---|")
+
     for item in summary["outputs"]:
-        if item.get("status") == "missing":
-            md.append(f"| `{item['name']}` | missing | missing | missing |")
+        if item.get("status") != "ok":
+            lines.append(f"| `{item['name']}` | - | - | - | `{item.get('status', 'unknown')}` |")
         else:
-            md.append(f"| `{item['name']}` | {item['original_rows']} | {item['kept_rows']} | {item['removed_rows']} |")
-    md.append("")
-    md.append("Original v0.6 files and audio were not deleted.")
+            lines.append(
+                f"| `{item['name']}` | {item['original_rows']} | {item['kept_rows']} | {item['removed_rows']} | `{item['status']}` |"
+            )
 
-    (v07 / "metadata" / "v07_filter_summary.md").write_text("\n".join(md), encoding="utf-8")
+    if summary.get("copied_files"):
+        lines.append("")
+        lines.append("## Copied files")
+        lines.append("")
+        lines.append("| File | Status |")
+        lines.append("|---|---|")
+        for item in summary["copied_files"]:
+            lines.append(f"| `{item['name']}` | `{item['status']}` |")
 
-    print("v0.7 filtered manifests created")
+    lines.append("")
+    lines.append(summary.get("note", "Original files were not modified."))
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Reusable CSV manifest source-class filter.")
+    parser.add_argument("--config", required=True)
+    parser.add_argument("--src_root", default="human_talk_workspace/tata_v0.6_raw_pipeline")
+    parser.add_argument("--dst_root", default="human_talk_workspace/tata_v0.7_raw_pipeline")
+    args = parser.parse_args()
+
+    config_path = Path(args.config)
+    config = validate_config(load_json(config_path))
+
+    src_root = Path(args.src_root)
+    dst_root = Path(args.dst_root)
+
+    exclude_classes = [str(x) for x in config["exclude_source_classes"]]
+    match_columns = [str(x) for x in config["match_columns"]]
+
+    outputs = []
+
+    for item in config["files"]:
+        name = str(item["name"])
+        src = resolve_template_path(str(item["src"]), src_root, dst_root)
+        dst = resolve_template_path(str(item["dst"]), src_root, dst_root)
+
+        if src.exists():
+            outputs.append(
+                filter_csv(
+                    src=src,
+                    dst=dst,
+                    name=name,
+                    exclude_classes=exclude_classes,
+                    match_columns=match_columns,
+                )
+            )
+        else:
+            outputs.append({
+                "name": name,
+                "src": str(src),
+                "dst": str(dst),
+                "status": "missing",
+            })
+
+    copied_files = copy_optional_files(
+        config=config,
+        src_root=src_root,
+        dst_root=dst_root,
+    )
+
+    metadata_dir = dst_root / str(config.get("metadata_dir", "metadata"))
+    metadata_dir.mkdir(parents=True, exist_ok=True)
+
+    summary_name = str(config.get("summary_name", "filter_summary"))
+    summary_json = metadata_dir / f"{summary_name}.json"
+    summary_md = metadata_dir / f"{summary_name}.md"
+
+    summary = {
+        "generated_at": now_iso(),
+        "title": config.get("title", "Manifest Filter Summary"),
+        "config": str(config_path),
+        "src_root": str(src_root),
+        "dst_root": str(dst_root),
+        "exclude_source_classes": sorted(exclude_classes),
+        "match_columns": match_columns,
+        "outputs": outputs,
+        "copied_files": copied_files,
+        "note": config.get("note", "Original files were not modified."),
+    }
+
+    summary_json.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    write_summary_md(summary_md, summary)
+
+    print("Filtered manifests created")
     print("-" * 90)
-    print(f"Output root: {v07}")
-    print(f"Summary:     {summary_path}")
-    for item in summary["outputs"]:
-        if item.get("status") == "missing":
-            print(f"{item['name']}: missing")
+    print(f"Config:      {config_path}")
+    print(f"Source root: {src_root}")
+    print(f"Output root: {dst_root}")
+    print(f"Summary:     {summary_json}")
+
+    for item in outputs:
+        if item.get("status") == "ok":
+            print(
+                f"{item['name']}: original={item['original_rows']} "
+                f"kept={item['kept_rows']} removed={item['removed_rows']}"
+            )
         else:
-            print(f"{item['name']}: original={item['original_rows']} kept={item['kept_rows']} removed={item['removed_rows']}")
+            print(f"{item['name']}: {item.get('status', 'unknown')}")
 
 
 if __name__ == "__main__":
