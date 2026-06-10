@@ -176,20 +176,16 @@ Fixed 0.5 is the final recommended setting. Threshold tuning improved internal v
 - ![v0.8 vs v0.6 corrected holdout bar](docs/figures/human_talk/agentic_data_preprocessing_v0.8/v08_vs_v06_corrected_holdout_bar.png)
 - ![Per-label corrected holdout F1](docs/figures/human_talk/agentic_data_preprocessing_v0.8/v08_corrected_holdout_per_label_f1_bar.png)
 
-- ![Training validation curve](docs/figures/human_talk/agentic_data_preprocessing_v0.8/v08_avg_true_vs_pred_labels_bar.png)
-- ![Training validation curve](docs/figures/human_talk/agentic_data_preprocessing_v0.8/v08_corrected_holdout_fixed_by_exit_lineplot.png)
 - ![Training validation curve](docs/figures/human_talk/agentic_data_preprocessing_v0.8/v08_internal_test_by_exit_lineplot.png)
+  
 - ![Training validation curve](docs/figures/human_talk/agentic_data_preprocessing_v0.8/v08_label_counts_before_after_balance.png)
-- ![Training validation curve](docs/figures/human_talk/agentic_data_preprocessing_v0.8/v08_training_loss_hamming_curve.png)
-- ![Training validation curve](docs/figures/human_talk/agentic_data_preprocessing_v0.8/v08_vs_v06_hamming_loss_bar.png)
-- ![Training validation curve](docs/figures/human_talk/agentic_data_preprocessing_v0.8/v08_training_validation_curve.png)
+
 - ![Training loss and hamming curve](docs/figures/human_talk/agentic_data_preprocessing_v0.8/v08_training_loss_hamming_curve.png)
 - ![Label balance plot](docs/figures/human_talk/agentic_data_preprocessing_v0.8/v08_label_counts_before_after_balance.png)
 - ![Internal test by exit](docs/figures/human_talk/agentic_data_preprocessing_v0.8/v08_internal_test_by_exit_lineplot.png)
 - ![Corrected holdout by exit](docs/figures/human_talk/agentic_data_preprocessing_v0.8/v08_corrected_holdout_fixed_by_exit_lineplot.png)
-- ![v0.8 vs v0.6 corrected holdout](docs/figures/human_talk/agentic_data_preprocessing_v0.8/v08_vs_v06_corrected_holdout_bar.png)
+
 - ![v0.8 vs v0.6 hamming loss](docs/figures/human_talk/agentic_data_preprocessing_v0.8/v08_vs_v06_hamming_loss_bar.png)
-- ![Per-label corrected holdout F1](docs/figures/human_talk/agentic_data_preprocessing_v0.8/v08_corrected_holdout_per_label_f1_bar.png)
 - ![Average true vs predicted labels](docs/figures/human_talk/agentic_data_preprocessing_v0.8/v08_avg_true_vs_pred_labels_bar.png)
 - ![Aggregation strategy comparison](docs/figures/human_talk/agentic_data_preprocessing_v0.8/v08_hcb_aggregation_strategy_lineplot.png)
 - ![Aggregation hamming loss](docs/figures/human_talk/agentic_data_preprocessing_v0.8/v08_hcb_aggregation_hamming_loss_lineplot.png)
