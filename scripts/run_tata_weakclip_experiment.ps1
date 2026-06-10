@@ -13,6 +13,7 @@
 
   [int]$Epochs = 40,
   [int]$BatchSize = 64,
+  [int]$LogEvery = 0,
   [double]$LR = 0.001,
   [double]$Threshold = 0.5,
   [string]$Device = "cpu",
@@ -55,6 +56,7 @@ try {
     Write-Host "TapBlocks    = $TapBlocks"
     Write-Host "Epochs       = $Epochs"
     Write-Host "BatchSize    = $BatchSize"
+    Write-Host "LogEvery     = $LogEvery"
     Write-Host "LR           = $LR"
     Write-Host "Threshold    = $Threshold"
     Write-Host "Device       = $Device"
@@ -82,6 +84,7 @@ try {
         "--tap_blocks", $TapBlocks,
         "--epochs", "$Epochs",
         "--batch_size", "$BatchSize",
+        "--log_every", "$LogEvery",
         "--lr", "$LR",
         "--threshold", "$Threshold",
         "--device", $Device
@@ -135,6 +138,7 @@ try {
         device = $Device
         epochs = $Epochs
         batch_size = $BatchSize
+        log_every = $LogEvery
         lr = $LR
         threshold = $Threshold
         use_pos_weight = [bool]$UsePosWeight

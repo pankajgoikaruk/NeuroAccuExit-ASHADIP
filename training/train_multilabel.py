@@ -28,6 +28,7 @@
 #     --tap_blocks "1,3" `
 #     --epochs 40 `
 #     --batch_size 64 `
+#     --log_every 25 `
 #     --lr 0.001 `
 #     --device cpu
 
@@ -310,13 +311,19 @@ def train_one_epoch(
     device: str,
     loss_weights: list[float],
     pos_weight: torch.Tensor | None = None,
+    epoch: int | None = None,
+    total_epochs: int | None = None,
+    log_every: int = 0,
 ):
     model.train()
 
     loss_sum = 0.0
     n = 0
 
-    for x, y in dl:
+    total_batches = len(dl)
+    log_every = int(log_every or 0)
+
+    for batch_idx, (x, y) in enumerate(dl, start=1):
         x = x.to(device)
         y = y.to(device)
 
@@ -336,6 +343,25 @@ def train_one_epoch(
         bs = x.size(0)
         loss_sum += float(loss.item()) * bs
         n += bs
+
+        if log_every > 0 and (
+            batch_idx == 1
+            or batch_idx % log_every == 0
+            or batch_idx == total_batches
+        ):
+            avg_loss = loss_sum / max(n, 1)
+            epoch_text = ""
+            if epoch is not None and total_epochs is not None:
+                epoch_text = f"Epoch {epoch:03d}/{total_epochs} | "
+
+            print(
+                f"{epoch_text}"
+                f"batch {batch_idx:05d}/{total_batches:05d} | "
+                f"samples={n} | "
+                f"batch_loss={float(loss.item()):.4f} | "
+                f"avg_loss={avg_loss:.4f}",
+                flush=True,
+            )
 
     return loss_sum / max(n, 1)
 
@@ -375,6 +401,12 @@ def main():
     parser.add_argument("--epochs", type=int, default=40)
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--num_workers", type=int, default=0)
+    parser.add_argument(
+        "--log_every",
+        type=int,
+        default=0,
+        help="Print training batch progress every N batches. 0 disables batch progress logging.",
+    )
 
     parser.add_argument("--lr", type=float, default=0.001)
     parser.add_argument("--weight_decay", type=float, default=0.0)
@@ -447,6 +479,7 @@ def main():
     print(f"Tap blocks:    {args.tap_blocks}")
     print(f"Epochs:        {args.epochs}")
     print(f"Batch size:    {args.batch_size}")
+    print(f"Log every:     {args.log_every}")
     print(f"LR:            {args.lr}")
     print(f"Threshold:     {args.threshold}")
     print("-" * 90)
@@ -532,6 +565,7 @@ def main():
         "epochs": int(args.epochs),
         "batch_size": int(args.batch_size),
         "num_workers": int(args.num_workers),
+        "log_every": int(args.log_every),
         "lr": float(args.lr),
         "weight_decay": float(args.weight_decay),
         "seed": int(args.seed),
@@ -565,6 +599,9 @@ def main():
             device=device,
             loss_weights=loss_weights,
             pos_weight=pos_weight,
+            epoch=epoch,
+            total_epochs=int(args.epochs),
+            log_every=int(args.log_every),
         )
 
         val_metrics = evaluate_multilabel(

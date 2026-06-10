@@ -131,7 +131,7 @@ class MultiLabelLogMelDataset(Dataset):
         if not features_root.exists():
             raise FileNotFoundError(f"Features root not found: {features_root}")
 
-        df = pd.read_csv(manifest_csv)
+        df = pd.read_csv(manifest_csv, low_memory=False)
 
         if "split" not in df.columns:
             raise ValueError(f"'split' column not found in {manifest_csv}")

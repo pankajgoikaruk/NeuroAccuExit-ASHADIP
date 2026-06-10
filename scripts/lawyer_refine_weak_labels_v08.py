@@ -2,27 +2,14 @@
 #
 # LAWYER: Label-Aware Weak-label Yield Estimation and Refinement
 #
-# Config-driven version.
+# Config-driven version with signal-event support.
 #
-# Why this version?
-# -----------------
-# The earlier prototype hard-coded human-talk labels directly inside Python.
-# This version moves dataset-specific label names, source-class names, thresholds,
-# and label groups into a JSON config file.
-#
-# The Python code now contains only the general LAWYER algorithm:
-#   - stable aggregation for identity labels
-#   - open-set refinement for unknown/non-target speakers
-#   - top-k aggregation for transient/bursty events
-#   - optional acoustic/TATA evidence for signal-like labels such as silence
-#
-# Example:
-#   python scripts/lawyer_refine_weak_labels_v08.py ^
-#     --config configs/lawyer_v08_human_talk.json ^
-#     --segment_predictions_csv human_talk_workspace\tata_v0.6_raw_pipeline\raw_tata_pseudo_routing\raw_segment_predictions.csv ^
-#     --parent_csv human_talk_workspace\tata_v0.6_raw_pipeline\raw_tata_pseudo_routing\hybrid\hybrid_parent_predictions_all.csv ^
-#     --out_dir human_talk_workspace\tata_v0.8_raw_pipeline\raw_tata_pseudo_routing\lawyer_v08 ^
-#     --mode_name lawyer_v08
+# Dataset-specific labels, source classes, and thresholds are loaded from JSON.
+# For silence_present, this version can combine:
+#   - TATA probability evidence
+#   - acoustic binary column, e.g. silence_is_acoustic_silent
+#   - acoustic RMS column, e.g. silence_rms_dbfs
+#   - acoustic activity column, e.g. silence_speech_activity_ratio
 
 from __future__ import annotations
 
@@ -87,14 +74,6 @@ def score_to_zone(score: float, low: float, high: float) -> str:
     return "uncertain_zone"
 
 
-def as_list(value: Any) -> list:
-    if value is None:
-        return []
-    if isinstance(value, list):
-        return value
-    return [value]
-
-
 def require_list(config: dict[str, Any], key: str) -> list[str]:
     value = config.get(key)
     if not isinstance(value, list) or not value:
@@ -114,7 +93,6 @@ def validate_config(config: dict[str, Any]) -> dict[str, Any]:
     event_labels = [str(x) for x in groups.get("event_labels", [])]
     focus_labels = [str(x) for x in groups.get("focus_labels", [])]
     open_set_label = groups.get("open_set_label")
-
     if open_set_label is not None:
         open_set_label = str(open_set_label)
 
@@ -130,7 +108,6 @@ def validate_config(config: dict[str, Any]) -> dict[str, Any]:
     if open_set_label is not None and open_set_label not in label_set:
         raise RuntimeError(f"open_set_label is not present in labels: {open_set_label}")
 
-    # Safe defaults.
     config = dict(config)
     config["labels"] = labels
     config["label_groups"] = {
@@ -172,7 +149,6 @@ def validate_config(config: dict[str, Any]) -> dict[str, Any]:
     config["rules"]["known_non_target_override"].setdefault("enabled", True)
     config["rules"]["known_non_target_override"].setdefault("zero_target_labels", True)
     config["rules"]["known_non_target_override"].setdefault("force_open_set_label", True)
-    config["rules"]["known_non_target_override"].setdefault("keep_event_labels", True)
 
     config["rules"].setdefault("routing", {})
     config["rules"]["routing"].setdefault("other_only_decision", "accepted_with_warning")
@@ -192,13 +168,10 @@ def get_configured_threshold(config: dict[str, Any], label: str) -> float:
 
     if label in groups.get("target_labels", []):
         return float(rules["speaker_identity"].get("threshold", 0.50))
-
     if label == groups.get("open_set_label"):
         return float(rules["open_set"].get("direct_threshold", 0.55))
-
     if label in rules.get("transient_events", {}):
         return float(rules["transient_events"][label].get("threshold", 0.50))
-
     if label in rules.get("signal_events", {}):
         return float(rules["signal_events"][label].get("threshold", 0.50))
 
@@ -213,9 +186,89 @@ def is_known_non_target_source(row: dict[str, Any], config: dict[str, Any]) -> b
     source_cfg = config.get("source_matching", {})
     match_columns = [str(c) for c in source_cfg.get("columns", [])]
     non_target_classes = [str(c) for c in source_cfg.get("known_non_target_source_classes", [])]
-
     text = " ".join(str(row.get(c, "")) for c in match_columns)
     return any(cls in text for cls in non_target_classes)
+
+
+def aggregate_probs(p: np.ndarray, aggregation: str, top_k: int = 2) -> float:
+    if len(p) == 0:
+        return 0.0
+    aggregation = str(aggregation)
+    if aggregation == "max":
+        return float(np.max(p))
+    if aggregation == "mean":
+        return float(np.mean(p))
+    if aggregation == "topk_mean":
+        return topk_mean(p, int(top_k))
+    raise RuntimeError(f"Unknown aggregation: {aggregation}")
+
+
+def signal_acoustic_score(
+    *,
+    label: str,
+    group: pd.DataFrame,
+    rule: dict[str, Any],
+    base_row: dict[str, Any],
+) -> float:
+    """
+    Compute acoustic evidence for a signal-like label.
+
+    Supported config fields:
+      binary_col: acoustic binary flag column. If any segment has 1, acoustic score = 1.
+      energy_col + energy_threshold: e.g. silence_rms_dbfs <= -45.
+      activity_col + activity_threshold: e.g. silence_speech_activity_ratio <= 0.15.
+      acoustic_logic: "and" or "or" for energy/activity tests.
+
+    For silence, "and" is safer:
+      low RMS AND low speech activity.
+    """
+    reasons = []
+    evidence_flags = []
+
+    binary_col = rule.get("binary_col")
+    if binary_col and binary_col in group.columns:
+        binary_vals = pd.to_numeric(group[binary_col], errors="coerce").fillna(0).astype(int)
+        flag = bool((binary_vals == 1).any())
+        evidence_flags.append(flag)
+        reasons.append(f"binary_col={binary_col},any={int(flag)}")
+
+    energy_col = rule.get("energy_col")
+    activity_col = rule.get("activity_col")
+
+    energy_flag = None
+    activity_flag = None
+
+    if energy_col and energy_col in group.columns:
+        threshold = float(rule.get("energy_threshold", -45.0))
+        vals = pd.to_numeric(group[energy_col], errors="coerce")
+        energy_flag = bool((vals <= threshold).any())
+        reasons.append(f"energy_col={energy_col},threshold={threshold},any={int(energy_flag)}")
+
+    if activity_col and activity_col in group.columns:
+        threshold = float(rule.get("activity_threshold", 0.15))
+        vals = pd.to_numeric(group[activity_col], errors="coerce")
+        activity_flag = bool((vals <= threshold).any())
+        reasons.append(f"activity_col={activity_col},threshold={threshold},any={int(activity_flag)}")
+
+    acoustic_logic = str(rule.get("acoustic_logic", "or")).lower().strip()
+    if energy_flag is not None and activity_flag is not None:
+        if acoustic_logic == "and":
+            evidence_flags.append(bool(energy_flag and activity_flag))
+        elif acoustic_logic == "or":
+            evidence_flags.append(bool(energy_flag or activity_flag))
+        else:
+            raise RuntimeError(f"Unknown acoustic_logic for {label}: {acoustic_logic}")
+    elif energy_flag is not None:
+        evidence_flags.append(bool(energy_flag))
+    elif activity_flag is not None:
+        evidence_flags.append(bool(activity_flag))
+
+    acoustic_score = 1.0 if any(evidence_flags) else 0.0
+
+    base_row[f"lawyer_score_{label}_acoustic"] = float(acoustic_score)
+    base_row[f"lawyer_{label}_acoustic_reason"] = ";".join(reasons) if reasons else "not_used"
+
+    return float(acoustic_score)
 
 
 def compute_label_score(
@@ -231,66 +284,49 @@ def compute_label_score(
 
     p = safe_float_array(group[label_prob_col(label)])
 
-    # Transient/bursty event, e.g. audience reaction.
     if label in transient_rules:
         rule = transient_rules[label]
-        aggregation = str(rule.get("aggregation", "topk_mean"))
-        if aggregation == "topk_mean":
-            return topk_mean(p, int(rule.get("top_k", 2)))
-        if aggregation == "max":
-            return float(np.max(p)) if len(p) else 0.0
-        if aggregation == "mean":
-            return float(np.mean(p)) if len(p) else 0.0
-        raise RuntimeError(f"Unknown transient aggregation for {label}: {aggregation}")
+        return aggregate_probs(
+            p,
+            str(rule.get("aggregation", "topk_mean")),
+            int(rule.get("top_k", 2)),
+        )
 
-    # Signal-like label, e.g. silence. TATA score can be combined with optional acoustic columns.
     if label in signal_rules:
         rule = signal_rules[label]
-        aggregation = str(rule.get("aggregation", "max"))
+        tata_score = aggregate_probs(
+            p,
+            str(rule.get("aggregation", "max")),
+            int(rule.get("top_k", 2)),
+        )
+        acoustic_score = signal_acoustic_score(
+            label=label,
+            group=group,
+            rule=rule,
+            base_row=base_row,
+        )
 
-        if aggregation == "max":
-            tata_score = float(np.max(p)) if len(p) else 0.0
-        elif aggregation == "mean":
-            tata_score = float(np.mean(p)) if len(p) else 0.0
-        elif aggregation == "topk_mean":
-            tata_score = topk_mean(p, int(rule.get("top_k", 2)))
+        combine = str(rule.get("combine", "max")).lower().strip()
+        if combine == "max":
+            final_score = max(tata_score, acoustic_score)
+        elif combine == "tata_only":
+            final_score = tata_score
+        elif combine == "acoustic_only":
+            final_score = acoustic_score
+        elif combine == "mean":
+            final_score = float(np.mean([tata_score, acoustic_score]))
         else:
-            raise RuntimeError(f"Unknown signal aggregation for {label}: {aggregation}")
+            raise RuntimeError(f"Unknown signal combine rule for {label}: {combine}")
 
-        acoustic_score = 0.0
-        acoustic_reasons = []
+        base_row[f"lawyer_score_{label}_tata"] = float(tata_score)
+        return float(final_score)
 
-        energy_col = rule.get("energy_col")
-        if energy_col and energy_col in group.columns:
-            threshold = float(rule.get("energy_threshold", -45.0))
-            energy = pd.to_numeric(group[energy_col], errors="coerce")
-            if bool((energy <= threshold).any()):
-                acoustic_score = max(acoustic_score, 1.0)
-            acoustic_reasons.append(f"energy_col={energy_col},threshold={threshold}")
-
-        vad_col = rule.get("vad_col")
-        if vad_col and vad_col in group.columns:
-            threshold = float(rule.get("vad_threshold", 0.15))
-            vad = pd.to_numeric(group[vad_col], errors="coerce")
-            if bool((vad <= threshold).any()):
-                acoustic_score = max(acoustic_score, 1.0)
-            acoustic_reasons.append(f"vad_col={vad_col},threshold={threshold}")
-
-        base_row[f"lawyer_score_{label}_tata"] = tata_score
-        base_row[f"lawyer_score_{label}_acoustic"] = acoustic_score
-        base_row[f"lawyer_{label}_acoustic_reason"] = ";".join(acoustic_reasons) if acoustic_reasons else "not_used"
-
-        return max(tata_score, acoustic_score)
-
-    # Default event/background rule.
     aggregation = str(rules.get("default_event", {}).get("aggregation", "max"))
-    if aggregation == "max":
-        return float(np.max(p)) if len(p) else 0.0
-    if aggregation == "mean":
-        return float(np.mean(p)) if len(p) else 0.0
-    if aggregation == "topk_mean":
-        return topk_mean(p, int(rules.get("default_event", {}).get("top_k", 2)))
-    raise RuntimeError(f"Unknown default event aggregation: {aggregation}")
+    return aggregate_probs(
+        p,
+        aggregation,
+        int(rules.get("default_event", {}).get("top_k", 2)),
+    )
 
 
 def aggregate_segment_evidence(seg_df: pd.DataFrame, config: dict[str, Any]) -> pd.DataFrame:
@@ -313,26 +349,21 @@ def aggregate_segment_evidence(seg_df: pd.DataFrame, config: dict[str, Any]) -> 
     meta_cols = [str(c) for c in config.get("source_matching", {}).get("columns", [])]
     meta_cols = ["parent_clip_id", *[c for c in meta_cols if c != "parent_clip_id"]]
 
-    rows: list[dict[str, Any]] = []
+    rows = []
 
     for parent_id, group in seg_df.groupby("parent_clip_id", dropna=False):
-        row: dict[str, Any] = {
-            "parent_clip_id": str(parent_id),
-            "num_segments": int(len(group)),
-        }
+        row = {"parent_clip_id": str(parent_id), "num_segments": int(len(group))}
 
         for col in meta_cols:
             if col in group.columns:
                 row[col] = group[col].iloc[0]
 
-        # Generic segment evidence for all configured labels.
         for label in labels:
             p = safe_float_array(group[label_prob_col(label)])
             row[f"lawyer_seg_max_{label}"] = float(np.max(p)) if len(p) else 0.0
             row[f"lawyer_seg_mean_{label}"] = float(np.mean(p)) if len(p) else 0.0
             row[f"lawyer_seg_top2_{label}"] = topk_mean(p, 2)
 
-        # Speaker identity score.
         for label in target_labels:
             mean_p = float(row[f"lawyer_seg_mean_{label}"])
             max_p = float(row[f"lawyer_seg_max_{label}"])
@@ -344,7 +375,6 @@ def aggregate_segment_evidence(seg_df: pd.DataFrame, config: dict[str, Any]) -> 
         row["lawyer_target_second_score"] = float(target_sorted[1]) if len(target_sorted) > 1 else 0.0
         row["lawyer_target_margin"] = float(row["lawyer_target_max_score"] - row["lawyer_target_second_score"])
 
-        # Open-set score, if configured.
         if open_set_label:
             other_direct = float(row[f"lawyer_seg_max_{open_set_label}"])
             max_target_seg = max([float(row[f"lawyer_seg_max_{label}"]) for label in target_labels], default=0.0)
@@ -360,7 +390,6 @@ def aggregate_segment_evidence(seg_df: pd.DataFrame, config: dict[str, Any]) -> 
             source_bonus = 1.0 if row["lawyer_is_known_non_target_source"] == 1 else 0.0
             row[f"lawyer_score_{open_set_label}"] = max(other_direct, open_set_score, source_bonus)
 
-        # Non-speaker labels.
         for label in labels:
             if label in target_labels:
                 continue
@@ -381,7 +410,6 @@ def aggregate_segment_evidence(seg_df: pd.DataFrame, config: dict[str, Any]) -> 
 def attach_parent_context(evidence_df: pd.DataFrame, parent_csv: Path | None) -> pd.DataFrame:
     if parent_csv is None:
         return evidence_df
-
     if not parent_csv.exists():
         raise FileNotFoundError(f"parent_csv not found: {parent_csv}")
 
@@ -403,6 +431,21 @@ def attach_parent_context(evidence_df: pd.DataFrame, parent_csv: Path | None) ->
     return evidence_df.merge(parent_df[keep_cols], on="parent_clip_id", how="left")
 
 
+def get_configured_threshold(config: dict[str, Any], label: str) -> float:
+    groups = config["label_groups"]
+    rules = config["rules"]
+
+    if label in groups.get("target_labels", []):
+        return float(rules["speaker_identity"].get("threshold", 0.50))
+    if label == groups.get("open_set_label"):
+        return float(rules["open_set"].get("direct_threshold", 0.55))
+    if label in rules.get("transient_events", {}):
+        return float(rules["transient_events"][label].get("threshold", 0.50))
+    if label in rules.get("signal_events", {}):
+        return float(rules["signal_events"][label].get("threshold", 0.50))
+    return float(rules.get("default_event", {}).get("threshold", 0.50))
+
+
 def apply_lawyer_decisions(evidence_df: pd.DataFrame, config: dict[str, Any]) -> pd.DataFrame:
     labels = config["labels"]
     groups = config["label_groups"]
@@ -420,17 +463,15 @@ def apply_lawyer_decisions(evidence_df: pd.DataFrame, config: dict[str, Any]) ->
     target_threshold = float(speaker_rule.get("threshold", 0.50))
     target_margin_threshold = float(speaker_rule.get("margin_threshold", 0.10))
 
-    df = evidence_df.copy()
-    rows: list[dict[str, Any]] = []
+    rows = []
 
-    for _, row in df.iterrows():
+    for _, row in evidence_df.iterrows():
         out = row.to_dict()
-        uncertain_reasons: list[str] = []
-        routing_reasons: list[str] = []
+        uncertain_reasons = []
+        routing_reasons = []
 
         is_known_non_target = int(out.get("lawyer_is_known_non_target_source", 0)) == 1
 
-        # 1) Target speaker decisions.
         target_active = []
         target_scores = {}
 
@@ -459,7 +500,6 @@ def apply_lawyer_decisions(evidence_df: pd.DataFrame, config: dict[str, Any]) ->
         out["lawyer_second_target_score"] = second_target_score
         out["lawyer_target_margin_after_refine"] = target_margin
 
-        # 2) Known non-target override.
         if (
             is_known_non_target
             and bool(override_rule.get("enabled", True))
@@ -475,7 +515,6 @@ def apply_lawyer_decisions(evidence_df: pd.DataFrame, config: dict[str, Any]) ->
             if len(target_active) > 1 and target_margin < target_margin_threshold:
                 uncertain_reasons.append("multi_target_low_margin")
 
-        # 3) Open-set label decision.
         if open_set_label:
             direct_other = float(out.get(f"lawyer_score_{open_set_label}_direct", 0.0))
             speech_like = float(out.get("lawyer_score_speech_like", 0.0))
@@ -485,10 +524,7 @@ def apply_lawyer_decisions(evidence_df: pd.DataFrame, config: dict[str, Any]) ->
             other_speech_threshold = float(open_rule.get("speech_threshold", 0.55))
             other_known_max_threshold = float(open_rule.get("known_max_threshold", 0.35))
 
-            open_set_condition = (
-                speech_like >= other_speech_threshold
-                and known_max <= other_known_max_threshold
-            )
+            open_set_condition = speech_like >= other_speech_threshold and known_max <= other_known_max_threshold
 
             open_positive = (
                 (
@@ -517,14 +553,9 @@ def apply_lawyer_decisions(evidence_df: pd.DataFrame, config: dict[str, Any]) ->
                 float(open_rule.get("uncertain_high", 0.60)),
             )
 
-            if (
-                out[f"lawyer_zone_{open_set_label}"] == "uncertain_zone"
-                and not is_known_non_target
-                and not open_set_condition
-            ):
+            if out[f"lawyer_zone_{open_set_label}"] == "uncertain_zone" and not is_known_non_target and not open_set_condition:
                 uncertain_reasons.append(f"{open_set_label}_uncertain")
 
-        # 4) Event/background/signal decisions.
         for label in labels:
             if label in target_labels:
                 continue
@@ -537,7 +568,6 @@ def apply_lawyer_decisions(evidence_df: pd.DataFrame, config: dict[str, Any]) ->
             out[label] = int(score >= threshold)
             out[f"parent_pred_{label}"] = int(out[label])
 
-            # Add uncertainty zones only for labels that explicitly define them.
             zone_rule = None
             if label in rules.get("transient_events", {}):
                 zone_rule = rules["transient_events"][label]
@@ -545,16 +575,11 @@ def apply_lawyer_decisions(evidence_df: pd.DataFrame, config: dict[str, Any]) ->
                 zone_rule = rules["signal_events"][label]
 
             if zone_rule is not None and "uncertain_low" in zone_rule and "uncertain_high" in zone_rule:
-                zone = score_to_zone(
-                    score,
-                    float(zone_rule["uncertain_low"]),
-                    float(zone_rule["uncertain_high"]),
-                )
+                zone = score_to_zone(score, float(zone_rule["uncertain_low"]), float(zone_rule["uncertain_high"]))
                 out[f"lawyer_zone_{label}"] = zone
                 if zone == "uncertain_zone":
                     uncertain_reasons.append(f"{label}_uncertain")
 
-        # 5) Final label text and routing.
         num_active = int(sum(int(out.get(label, 0)) for label in labels))
         target_count = int(sum(int(out.get(label, 0)) for label in target_labels))
         event_count = int(sum(int(out.get(label, 0)) for label in event_labels))
@@ -599,62 +624,30 @@ def apply_lawyer_decisions(evidence_df: pd.DataFrame, config: dict[str, Any]) ->
 
 def reorder_output_columns(df: pd.DataFrame, config: dict[str, Any]) -> pd.DataFrame:
     labels = config["labels"]
-    groups = config["label_groups"]
-
-    target_labels = groups.get("target_labels", [])
-    open_set_label = groups.get("open_set_label")
 
     front = [
-        "parent_clip_id",
-        "source_file",
-        "source_path",
-        "source_rel_path",
-        "source_class_dir",
-        "routing_mode",
-        "routing_decision",
-        "routing_reason",
-        "labels",
+        "parent_clip_id", "source_file", "source_path", "source_rel_path", "source_class_dir",
+        "routing_mode", "routing_decision", "routing_reason", "labels",
         *labels,
-        "manual_labels",
-        "review_status",
-        "notes",
-        "num_segments",
-        "num_active_labels",
-        "lawyer_best_target_label",
-        "lawyer_best_target_score",
-        "lawyer_second_target_score",
-        "lawyer_target_margin_after_refine",
-        "lawyer_is_known_non_target_source",
-        "lawyer_uncertain_reasons",
-        "lawyer_routing_reason_detail",
+        "manual_labels", "review_status", "notes", "num_segments", "num_active_labels",
+        "lawyer_best_target_label", "lawyer_best_target_score", "lawyer_second_target_score",
+        "lawyer_target_margin_after_refine", "lawyer_is_known_non_target_source",
+        "lawyer_uncertain_reasons", "lawyer_routing_reason_detail",
     ]
 
     score_cols = []
     for label in labels:
         score_cols.extend([
-            f"lawyer_score_{label}",
-            f"lawyer_score_{label}_direct",
-            f"lawyer_score_{label}_open_set",
-            f"lawyer_score_{label}_tata",
-            f"lawyer_score_{label}_acoustic",
-            f"lawyer_{label}_acoustic_reason",
-            f"lawyer_seg_max_{label}",
-            f"lawyer_seg_mean_{label}",
-            f"lawyer_seg_top2_{label}",
-            f"lawyer_zone_{label}",
-            f"parent_pred_{label}",
+            f"lawyer_score_{label}", f"lawyer_score_{label}_direct", f"lawyer_score_{label}_open_set",
+            f"lawyer_score_{label}_tata", f"lawyer_score_{label}_acoustic", f"lawyer_{label}_acoustic_reason",
+            f"lawyer_seg_max_{label}", f"lawyer_seg_mean_{label}", f"lawyer_seg_top2_{label}",
+            f"lawyer_zone_{label}", f"parent_pred_{label}",
         ])
 
-    extra_cols = [
-        "lawyer_score_speech_like",
-        "lawyer_target_max_score",
-        "lawyer_target_second_score",
-        "lawyer_target_margin",
-    ]
+    extra_cols = ["lawyer_score_speech_like", "lawyer_target_max_score", "lawyer_target_second_score", "lawyer_target_margin"]
 
     ordered = [c for c in front + score_cols + extra_cols if c in df.columns]
     rest = [c for c in df.columns if c not in ordered]
-
     return df[ordered + rest]
 
 
@@ -687,39 +680,22 @@ def write_summary_md(path: Path, summary: dict[str, Any]) -> None:
     for key, value in summary["routing_counts"].items():
         lines.append(f"| `{key}` | {value} |")
 
-    lines.extend([
-        "",
-        "### Label counts after LAWYER",
-        "",
-        "| Label | Positive parent clips |",
-        "|---|---:|",
-    ])
-
+    lines.extend(["", "### Label counts after LAWYER", "", "| Label | Positive parent clips |", "|---|---:|"])
     for label, count in summary["label_counts"].items():
         lines.append(f"| `{label}` | {count} |")
 
-    lines.extend([
-        "",
-        "### Focus label counts",
-        "",
-        "| Label | Positive parent clips |",
-        "|---|---:|",
-    ])
-
+    lines.extend(["", "### Focus label counts", "", "| Label | Positive parent clips |", "|---|---:|"])
     for label, count in summary["focus_label_counts"].items():
         lines.append(f"| `{label}` | {count} |")
 
-    lines.extend(["", "## Outputs", ""])
+    if "signal_label_counts" in summary:
+        lines.extend(["", "### Signal label details", "", "| Item | Count |", "|---|---:|"])
+        for key, value in summary["signal_label_counts"].items():
+            lines.append(f"| `{key}` | {value} |")
 
+    lines.extend(["", "## Outputs", ""])
     for key, value in summary["outputs"].items():
         lines.append(f"- `{key}`: `{value}`")
-
-    lines.extend([
-        "",
-        "## Paper interpretation",
-        "",
-        "This is the config-driven LAWYER implementation. Dataset-specific labels, label groups, thresholds, and known non-target source classes are stored in the external JSON config.",
-    ])
 
     path.write_text("\n".join(lines), encoding="utf-8")
 
@@ -737,7 +713,6 @@ def write_outputs(
     target_labels = config["label_groups"].get("target_labels", [])
 
     out_dir.mkdir(parents=True, exist_ok=True)
-
     df = reorder_output_columns(df, config)
 
     paths = {
@@ -761,37 +736,32 @@ def write_outputs(
 
     save_json(config, paths["config_snapshot"])
 
-    known_non_target_col = pd.to_numeric(
-        df.get("lawyer_is_known_non_target_source", 0),
-        errors="coerce",
-    ).fillna(0).astype(int)
+    known_non_target_col = pd.to_numeric(df.get("lawyer_is_known_non_target_source", 0), errors="coerce").fillna(0).astype(int)
 
     if target_labels:
         target_sum = df[target_labels].apply(pd.to_numeric, errors="coerce").fillna(0).astype(int).sum(axis=1)
     else:
         target_sum = pd.Series([0] * len(df), index=df.index)
 
+    signal_label_counts = {}
+    for label in config["rules"].get("signal_events", {}):
+        col_acoustic = f"lawyer_score_{label}_acoustic"
+        col_tata = f"lawyer_score_{label}_tata"
+        if col_acoustic in df.columns:
+            signal_label_counts[f"{label}_acoustic_positive"] = int((pd.to_numeric(df[col_acoustic], errors="coerce").fillna(0) >= 1.0).sum())
+        if col_tata in df.columns:
+            signal_label_counts[f"{label}_tata_positive_at_threshold"] = int((pd.to_numeric(df[col_tata], errors="coerce").fillna(0) >= get_configured_threshold(config, label)).sum())
+
     summary = {
         "generated_at": now_iso(),
         **summary_extra,
         "parent_rows": int(len(df)),
-        "routing_counts": {
-            str(k): int(v)
-            for k, v in df["routing_decision"].value_counts().to_dict().items()
-        },
-        "label_counts": {
-            label: int(pd.to_numeric(df[label], errors="coerce").fillna(0).astype(int).sum())
-            for label in labels
-        },
-        "focus_label_counts": {
-            label: int(pd.to_numeric(df[label], errors="coerce").fillna(0).astype(int).sum())
-            for label in focus_labels
-            if label in df.columns
-        },
+        "routing_counts": {str(k): int(v) for k, v in df["routing_decision"].value_counts().to_dict().items()},
+        "label_counts": {label: int(pd.to_numeric(df[label], errors="coerce").fillna(0).astype(int).sum()) for label in labels},
+        "focus_label_counts": {label: int(pd.to_numeric(df[label], errors="coerce").fillna(0).astype(int).sum()) for label in focus_labels if label in df.columns},
         "known_non_target_source_rows": int(known_non_target_col.sum()),
-        "known_non_target_rows_with_any_target_active": int(
-            ((known_non_target_col == 1) & (target_sum > 0)).sum()
-        ),
+        "known_non_target_rows_with_any_target_active": int(((known_non_target_col == 1) & (target_sum > 0)).sum()),
+        "signal_label_counts": signal_label_counts,
         "outputs": {key: str(value) for key, value in paths.items()},
     }
 
@@ -802,16 +772,12 @@ def write_outputs(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="LAWYER v0.8 config-driven label-aware weak-label refinement."
-    )
-
+    parser = argparse.ArgumentParser(description="LAWYER v0.8 config-driven label-aware weak-label refinement.")
     parser.add_argument("--config", required=True)
     parser.add_argument("--segment_predictions_csv", required=True)
     parser.add_argument("--parent_csv", default=None)
     parser.add_argument("--out_dir", required=True)
     parser.add_argument("--mode_name", default=None)
-
     args = parser.parse_args()
 
     config_path = Path(args.config)
@@ -821,12 +787,10 @@ def main() -> None:
 
     if not config_path.exists():
         raise FileNotFoundError(f"config not found: {config_path}")
-
     if not segment_predictions_csv.exists():
         raise FileNotFoundError(f"segment_predictions_csv not found: {segment_predictions_csv}")
 
     config = validate_config(load_json(config_path))
-
     mode_name = str(args.mode_name or config.get("mode_name", "lawyer_v08"))
     config["mode_name"] = mode_name
 
@@ -841,33 +805,22 @@ def main() -> None:
     print("-" * 90)
 
     seg_df = pd.read_csv(segment_predictions_csv, low_memory=False)
-
     evidence = aggregate_segment_evidence(seg_df, config)
     evidence = attach_parent_context(evidence, parent_csv)
     refined = apply_lawyer_decisions(evidence, config)
 
     summary_extra = {
         "method": "LAWYER: Label-Aware Weak-label Yield Estimation and Refinement",
-        "implementation": "config_driven",
+        "implementation": "config_driven_with_silence_signal",
         "config_path": str(config_path),
         "segment_predictions_csv": str(segment_predictions_csv),
         "parent_csv": str(parent_csv) if parent_csv else None,
         "out_dir": str(out_dir),
         "mode_name": mode_name,
         "segment_rows": int(len(seg_df)),
-        "important_rule": (
-            "Dataset-specific labels, label groups, source classes, thresholds, and uncertainty zones "
-            "come from the JSON config. The Python script contains only the generic LAWYER algorithm."
-        ),
     }
 
-    summary = write_outputs(
-        df=refined,
-        out_dir=out_dir,
-        mode_name=mode_name,
-        config=config,
-        summary_extra=summary_extra,
-    )
+    summary = write_outputs(df=refined, out_dir=out_dir, mode_name=mode_name, config=config, summary_extra=summary_extra)
 
     print("")
     print("LAWYER refinement complete")
@@ -883,6 +836,10 @@ def main() -> None:
     print("Known non-target check:")
     print(f"  known_non_target_source_rows = {summary['known_non_target_source_rows']}")
     print(f"  known_non_target_rows_with_any_target_active = {summary['known_non_target_rows_with_any_target_active']}")
+    if summary.get("signal_label_counts"):
+        print("")
+        print("Signal label details:")
+        print(pd.Series(summary["signal_label_counts"]).to_string())
     print("")
     print(f"Summary: {summary['outputs']['summary_md']}")
 

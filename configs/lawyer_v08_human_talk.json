@@ -83,10 +83,13 @@
         "threshold": 0.5,
         "uncertain_low": 0.35,
         "uncertain_high": 0.65,
-        "energy_col": null,
+        "combine": "max",
+        "binary_col": "silence_is_acoustic_silent",
+        "energy_col": "silence_rms_dbfs",
         "energy_threshold": -45.0,
-        "vad_col": null,
-        "vad_threshold": 0.15
+        "activity_col": "silence_speech_activity_ratio",
+        "activity_threshold": 0.15,
+        "acoustic_logic": "and"
       }
     },
     "known_non_target_override": {
