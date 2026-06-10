@@ -1,116 +1,142 @@
-# Multi-label Experiment Log — v0.8 Human-Corrected-Balanced
+---
 
-## Branch
+### 11. Global max aggregation diagnostic
+
+After the official parent-level mean corrected-holdout evaluation, global max aggregation was tested as a diagnostic.
+
+Command section:
 
 ```text
-agentic_data_preprocessing_v0.8
+13_eval_v08_global_max_parent_fixed
 ```
 
-## Chronological log
+Result:
 
-### 1. Problem identified
+| Aggregation | Macro-F1 | Micro-F1 | Samples-F1 | Exact Match | Hamming Loss | Avg Pred Labels |
+|---|---:|---:|---:|---:|---:|---:|
+| Parent mean | **0.7801** | **0.9332** | **0.9406** | **0.8397** | **0.0194** | 1.4302 |
+| Global max | 0.7251 | 0.8203 | 0.8423 | 0.5121 | 0.0630 | 2.0346 |
 
-Earlier v0.6 and v0.7 results showed strong target-speaker recognition, but non-target/background context labels required correction. The main risk was that known non-target source folders were being used as broad `other_speaker_present` examples while their `music_present`, `audience_reaction_present`, and `silence_present` context labels were incomplete.
-
-### 2. Strategy selected
-
-Instead of deleting audio or fully re-reviewing everything, v0.8 used a delta-only strategy:
+Decision:
 
 ```text
-v0.6 trusted base
-+ reviewed v0.8 LAWYER-new samples
-+ corrected non-target context labels
-+ corrected holdout context labels
-+ known non-target identity repair
-+ balanced background-heavy rows
+Do not use global max as the final aggregation strategy.
 ```
 
-### 3. Manual review queues
+Reason: global max over-predicts parent labels, increasing false positives and worsening Exact Match and Hamming Loss.
 
-| Queue                                     |   Rows |
-|:------------------------------------------|-------:|
-| 01_v06_trusted_base_index.csv             |   4465 |
-| 03_raw_nontarget_context_REVIEW.csv       |   1860 |
-| 04_holdout_nontarget_context_REVIEW.csv   |    426 |
-| 05_lawyer_delta_changed_labels_REVIEW.csv |   2471 |
-| 06_lawyer_new_samples_REVIEW.csv          |    291 |
-| 07_training_delta_master_REVIEW.csv       |   3334 |
+### 12. Weak-label improvement under max aggregation
 
-Completed manual review in this experiment:
+The global max diagnostic showed that the two weak transient labels improved:
+
+| Label | Parent mean F1 | Global max F1 |
+|---|---:|---:|
+| `audience_reaction_present` | 0.1250 | **0.4706** |
+| `silence_present` | 0.0000 | **0.1739** |
+
+Interpretation:
 
 ```text
-03_raw_nontarget_context_REVIEW.csv
-04_holdout_nontarget_context_REVIEW.csv
-06_lawyer_new_samples_REVIEW.csv
+The model has some segment-level evidence for weak transient labels,
+but parent-level mean aggregation dilutes that evidence.
 ```
 
-The large changed-label queue remains for future ablation.
+This motivated a label-aware parent aggregation rule.
 
-### 4. Corrected outputs
+### 13. Label-aware aggregation experiment
 
-| Output                                                |   Rows |
-|:------------------------------------------------------|-------:|
-| corrected raw hybrid needs-review                     |   3171 |
-| corrected holdout ground truth                        |    867 |
-| reviewed LAWYER-new samples                           |    291 |
-| hybrid accepted-with-warning plus reviewed LAWYER-new |   1216 |
-
-### 5. Manifest build and balance
-
-| Item                                       |   Count |
-|:-------------------------------------------|--------:|
-| final combined segment rows before balance |   36249 |
-| balanced segment rows                      |   29363 |
-| dropped background-heavy rows              |    6886 |
-| train rows after balance                   |   25519 |
-| validation rows after balance              |    1883 |
-| test rows after balance                    |    1961 |
-
-### 6. Training
+Command section:
 
 ```text
-Run: main_v08_human_corrected_balanced_3exit_20260610_084027
-Best epoch: 39
-Best validation final-exit Macro-F1: 0.8105
+15_compute_v08_label_aware_parent_aggregation
 ```
 
-|   exit |   macro_f1 |   micro_f1 |   samples_f1 |   exact_match |   hamming_loss |   avg_true_labels |   avg_pred_labels |
-|-------:|-----------:|-----------:|-------------:|--------------:|---------------:|------------------:|------------------:|
-|      1 |     0.2185 |     0.358  |       0.2833 |        0.1535 |         0.1293 |            1.4493 |            0.565  |
-|      2 |     0.6713 |     0.6837 |       0.6478 |        0.4472 |         0.0844 |            1.4493 |            1.2208 |
-|      3 |     0.8305 |     0.8283 |       0.8285 |        0.6206 |         0.0502 |            1.4493 |            1.4737 |
-
-### 7. Corrected holdout evaluation
-
-| model           | threshold_mode   | aggregation   |   exit |   macro_f1 |   micro_f1 |   samples_f1 |   exact_match |   hamming_loss |   jaccard_score |   avg_true_labels |   avg_pred_labels |
-|:----------------|:-----------------|:--------------|-------:|-----------:|-----------:|-------------:|--------------:|---------------:|----------------:|------------------:|------------------:|
-| v0.8-HCB 3-exit | fixed_0p5        | mean          |      1 |     0.113  |     0.3166 |       0.204  |        0.0288 |         0.1275 |          0.1596 |            1.4694 |            0.3956 |
-| v0.8-HCB 3-exit | fixed_0p5        | mean          |      2 |     0.6315 |     0.7739 |       0.7197 |        0.5467 |         0.0591 |          0.6752 |            1.4694 |            1.1419 |
-| v0.8-HCB 3-exit | fixed_0p5        | mean          |      3 |     0.7801 |     0.9332 |       0.9406 |        0.8397 |         0.0194 |          0.9174 |            1.4694 |            1.4302 |
-
-### 8. Fair v0.6 comparison
-
-| model           |   final_exit |   macro_f1 |   micro_f1 |   samples_f1 |   exact_match |   hamming_loss |   avg_true_labels |   avg_pred_labels |
-|:----------------|-------------:|-----------:|-----------:|-------------:|--------------:|---------------:|------------------:|------------------:|
-| v0.6 3-exit     |            3 |     0.7537 |     0.8865 |       0.8992 |        0.7497 |         0.0315 |            1.4694 |            1.3045 |
-| v0.6 5-exit     |            5 |     0.746  |     0.8771 |       0.8881 |        0.7232 |         0.0338 |            1.4694 |            1.2814 |
-| v0.8-HCB 3-exit |            3 |     0.7801 |     0.9332 |       0.9406 |        0.8397 |         0.0194 |            1.4694 |            1.4302 |
-
-### 9. Decision
-
-Official v0.8 result:
+Rule:
 
 ```text
-v0.8-human-corrected-balanced 3-exit
-parent-level mean aggregation
+mean aggregation for 8 stable labels:
+  Brene_Brown
+  Eckhart_Tolle
+  Eric_Thomas
+  Gary_Vee
+  Jay_Shetty
+  Nick_Vujicic
+  other_speaker_present
+  music_present
+
+max aggregation for 2 transient labels:
+  audience_reaction_present
+  silence_present
+```
+
+Result:
+
+| Strategy | Macro-F1 | Micro-F1 | Samples-F1 | Exact Match | Hamming Loss | Avg Pred Labels |
+|---|---:|---:|---:|---:|---:|---:|
+| Parent mean official | 0.7801 | **0.9332** | **0.9406** | **0.8397** | **0.0194** | 1.4302 |
+| Label-aware mean/max | **0.8320** | 0.9285 | 0.9375 | 0.8235 | 0.0211 | 1.4844 |
+
+Finding:
+
+```text
+Label-aware aggregation improved Macro-F1 from 0.7801 to 0.8320
+without retraining the model.
+```
+
+### 14. Updated final decision
+
+The final reporting strategy is:
+
+| Reporting role | Method | Reason |
+|---|---|---|
+| Main official overall result | Parent mean, fixed threshold 0.5, Exit 3 | Best Micro-F1, Samples-F1, Exact Match, and Hamming Loss. |
+| Research/ablation contribution | Label-aware mean/max, fixed threshold 0.5, Exit 3 | Best Macro-F1 and better handling of weak transient labels. |
+| Diagnostic only | Global max, fixed threshold 0.5, Exit 3 | Helps transient labels but damages overall multi-label prediction. |
+
+Official result remains:
+
+```text
+v0.8-HCB
+parent-level mean
 fixed threshold 0.5
 Exit 3
-Macro-F1=0.7801, Micro-F1=0.9332, Samples-F1=0.9406, Exact=0.8397, Hamming=0.0194
+Macro-F1=0.7801
+Micro-F1=0.9332
+Samples-F1=0.9406
+Exact=0.8397
+Hamming=0.0194
 ```
 
-### 10. Remaining limitations
+Additional label-aware research finding:
 
-- `audience_reaction_present` has low corrected-holdout recall under parent mean.
-- `silence_present` remains under-predicted on corrected holdout.
-- Validation-tuned thresholds do not transfer as well to corrected holdout as fixed 0.5.
-- A future event-aware pooling rule may be needed for bursty labels.
+```text
+v0.8-HCB
+label-aware parent aggregation
+mean for stable labels
+max for transient labels
+Exit 3
+Macro-F1=0.8320
+Micro-F1=0.9285
+Samples-F1=0.9375
+Exact=0.8235
+Hamming=0.0211
+```
+
+### 15. Updated limitation and future work
+
+The v0.8-HCB experiment shows that weak labels should not be treated only as a training-data problem. Parent-level aggregation also matters.
+
+Remaining limitations:
+
+- `audience_reaction_present` and `silence_present` remain difficult under parent mean.
+- Global max is too aggressive for stable labels.
+- Label-aware aggregation was post-hoc; future work should integrate this rule into a formal evaluation script or learn label-specific pooling automatically.
+- Future early-exit policy should consider label type: stable labels may exit based on accumulated mean confidence, while transient labels may require max/event-detection evidence.
+
+Updated future direction:
+
+```text
+Develop label-type-aware early-exit inference:
+  stable labels -> evidence accumulation / mean confidence
+  transient labels -> event-triggered max confidence
+```
