@@ -1,297 +1,35 @@
-# Appendix — agentic_data_preprocessing_v0.6
+# Appendix — v0.8 Human-Corrected-Balanced Methodology and Results
 
-This appendix contains reproducibility notes and commands for **`agentic_data_preprocessing_v0.6`**.
+## A. Research context
 
-```text
-Branch: agentic_data_preprocessing_v0.6
-Goal: TATA-assisted human-in-the-loop raw pseudo-manifest generation
-Recommended final model: main_v06_expanded_3exit, fixed threshold 0.5, parent-level mean aggregation
-```
+The ASHADIP/NeuroAccuExit audio pipeline studies early-exit multi-label classification for human-talk audio. The wider objective is to build a compact model that can classify speaker identity and background/context labels while enabling agentic preprocessing through a TinyAudioTriageAgent (TATA).
 
-## A1. Branch setup
+## B. Version history
 
-```powershell
-git fetch origin
-git switch agentic_data_preprocessing_v0.6
-git pull origin agentic_data_preprocessing_v0.6
-```
+| Version | Main idea | Key finding |
+|---|---|---|
+| v0.6 | Broad TATA-assisted pseudo-manifest + human correction | Strong first broad result, but old holdout labels were incomplete for non-target context. |
+| v0.7 | Filter out five known non-target source folders | Target-speaker setting became cleaner, but event/background weaknesses remained. |
+| v0.8 | Human-corrected-balanced delta repair | Best corrected-holdout result and fair improvement over v0.6. |
 
-If creating from a previous branch:
+## C. Label schema
 
-```powershell
-git switch -c agentic_data_preprocessing_v0.6
-git push -u origin agentic_data_preprocessing_v0.6
-```
+| label                     |
+|:--------------------------|
+| Brene_Brown               |
+| Eckhart_Tolle             |
+| Eric_Thomas               |
+| Gary_Vee                  |
+| Jay_Shetty                |
+| Nick_Vujicic              |
+| other_speaker_present     |
+| music_present             |
+| audience_reaction_present |
+| silence_present           |
 
-## A2. v0.6 labels
+## D. Non-target identity rule
 
-```text
-Brene_Brown
-Eckhart_Tolle
-Eric_Thomas
-Gary_Vee
-Jay_Shetty
-Nick_Vujicic
-other_speaker_present
-music_present
-audience_reaction_present
-silence_present
-```
-
-## A3. Raw dataset split
-
-```powershell
-python scripts\split_tata_raw_dataset.py `
-  --raw_root human_talk_dataset `
-  --out_root human_talk_workspace	ata_v0.6_raw_pipeline `
-  --holdout_frac 0.15 `
-  --seed 42
-```
-
-Outputs:
-
-```text
-human_talk_workspace/tata_v0.6_raw_pipeline/metadata/raw_pseudo_pool_parent_manifest.csv
-human_talk_workspace/tata_v0.6_raw_pipeline/metadata/raw_final_holdout_MANUAL_LABEL_TEMPLATE.csv
-```
-
-## A4. Build raw pseudo-pool segments
-
-```powershell
-$RawRoot = "human_talk_workspace	ata_v0.6_raw_pipeline"
-$RawPseudoSegmentCache = "$RawRoot
-aw_pseudo_pool_segment_cache"
-
-python scriptsuild_tata_raw_pseudo_segments.py `
-  --raw_parent_manifest "$RawRoot\metadata
-aw_pseudo_pool_parent_manifest.csv" `
-  --out_dir "$RawPseudoSegmentCache" `
-  --sample_rate 16000 `
-  --segment_sec 1.0 `
-  --hop_sec 1.0 `
-  --include_tail
-```
-
-## A5. Extract raw pseudo-pool features
-
-```powershell
-$RawPseudoFeatureCache = "$RawRoot
-aw_pseudo_pool_feature_cache"
-
-python scripts\extract_multilabel_features.py `
-  --manifest "$RawPseudoSegmentCache\metadata
-aw_pseudo_pool_segment_manifest.csv" `
-  --labels_json "$RawPseudoSegmentCache\metadata	ata_v06_labels.json" `
-  --out_cache "$RawPseudoFeatureCache" `
-  --sample_rate 16000 `
-  --clip_sec 1.0 `
-  --n_mels 64 `
-  --n_fft 1024 `
-  --win_ms 25 `
-  --hop_ms 10 `
-  --cmvn
-```
-
-## A6. Run TATA raw inference and routing
-
-```powershell
-$TataRunDir = "human_talk_workspace	ata_v0.6_scratch
-uns	ata_v06_3exit_coarse_audience_scratch_retry_20260531_211047"
-$RawRoutingOut = "$RawRoot
-aw_tata_pseudo_routing"
-
-python scripts\predict_tata_raw_pseudo_routing.py `
-  --run_dir "$TataRunDir" `
-  --features_manifest "$RawPseudoFeatureCache\metadata\multilabel_features_manifest.csv" `
-  --features_root "$RawPseudoFeatureCacheeatures" `
-  --out_dir "$RawRoutingOut" `
-  --device cpu `
-  --batch_size 128
-```
-
-Hybrid routing output used for final expansion:
-
-```text
-human_talk_workspace/tata_v0.6_raw_pipeline/raw_tata_pseudo_routing/hybrid/hybrid_accepted.csv
-human_talk_workspace/tata_v0.6_raw_pipeline/raw_tata_pseudo_routing/hybrid/hybrid_accepted_with_warning.csv
-human_talk_workspace/tata_v0.6_raw_pipeline/raw_tata_pseudo_routing/hybrid/hybrid_needs_review.csv
-```
-
-## A7. Manual correction
-
-The raw `needs_review` file was manually corrected and saved as:
-
-```text
-human_talk_workspace/tata_v0.6_raw_pipeline/manual_review_queue/02_raw_hybrid_needs_review_MANUAL_CORRECTION_FINAL_refreshed.csv
-```
-
-The final holdout ground truth was manually labelled and saved as:
-
-```text
-human_talk_workspace/tata_v0.6_raw_pipeline/manual_review_queue/01_raw_final_holdout_GROUND_TRUTH_FINAL_refreshed.csv
-```
-
-## A8. Build final expanded training manifest
-
-```powershell
-$ScratchRoot = "human_talk_workspace	ata_v0.6_scratch"
-$RawRoot = "human_talk_workspace	ata_v0.6_raw_pipeline"
-
-python scriptsuild_tata_v06_final_expanded_training_manifest.py `
-  --seed_feature_manifest "$ScratchRooteature_cache\metadata\multilabel_features_manifest.csv" `
-  --seed_features_root "$ScratchRooteature_cacheeatures" `
-  --raw_feature_manifest "$RawRoot
-aw_pseudo_pool_feature_cache\metadata\multilabel_features_manifest.csv" `
-  --raw_features_root "$RawRoot
-aw_pseudo_pool_feature_cacheeatures" `
-  --hybrid_accepted_csv "$RawRoot
-aw_tata_pseudo_routing\hybrid\hybrid_accepted.csv" `
-  --hybrid_warning_csv "$RawRoot
-aw_tata_pseudo_routing\hybrid\hybrid_accepted_with_warning.csv" `
-  --corrected_needs_review_csv "$RawRoot\manual_review_queue_raw_hybrid_needs_review_MANUAL_CORRECTION_FINAL_refreshed.csv" `
-  --labels_json "$ScratchRoot\metadata	ata_v06_labels.json" `
-  --out_root "$RawRootinal_expanded_training_dataset"
-```
-
-## A9. Train main 3-exit model
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts
-un_tata_weakclip_experiment.ps1 `
-  -Manifest "$RawRootinal_expanded_training_dataset\metadata\multilabel_features_manifest.csv" `
-  -FeaturesRoot "." `
-  -LabelsJson "$RawRootinal_expanded_training_dataset\metadata	ata_v06_labels.json" `
-  -WorkspaceRoot "$RawRoot\main_models" `
-  -RunsRoot "$RawRoot\main_models
-uns" `
-  -PackagesRoot "$RawRoot\main_models\packages" `
-  -LogsRoot "$RawRoot\main_models\logs" `
-  -Variant "main_v06_expanded_3exit" `
-  -TapBlocks "1,3" `
-  -Epochs 40 `
-  -BatchSize 64 `
-  -LogEvery 25 `
-  -LR 0.001 `
-  -Threshold 0.5 `
-  -Device cpu
-```
-
-## A10. Train main 5-exit model
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts
-un_tata_weakclip_experiment.ps1 `
-  -Manifest "$RawRootinal_expanded_training_dataset\metadata\multilabel_features_manifest.csv" `
-  -FeaturesRoot "." `
-  -LabelsJson "$RawRootinal_expanded_training_dataset\metadata	ata_v06_labels.json" `
-  -WorkspaceRoot "$RawRoot\main_models" `
-  -RunsRoot "$RawRoot\main_models
-uns" `
-  -PackagesRoot "$RawRoot\main_models\packages" `
-  -LogsRoot "$RawRoot\main_models\logs" `
-  -Variant "main_v06_expanded_5exit" `
-  -TapBlocks "1,2,3,4" `
-  -Epochs 40 `
-  -BatchSize 64 `
-  -LogEvery 25 `
-  -LR 0.001 `
-  -Threshold 0.5 `
-  -Device cpu
-```
-
-## A11. Threshold tuning and dynamic policy
-
-```powershell
-python scripts	une_multilabel_thresholds.py `
-  --run_dir "$RunDir" `
-  --device cpu
-
-python scripts\multilabel_greedy_policy.py `
-  --run_dir "$RunDir" `
-  --threshold_mode tuned_per_exit `
-  --device cpu
-```
-
-## A12. Build final holdout segments and features
-
-```powershell
-$HoldoutCsv = "$RawRoot\manual_review_queue_raw_final_holdout_GROUND_TRUTH_FINAL_refreshed.csv"
-$HoldoutSegmentCache = "$RawRootinal_holdout_segment_cache"
-$HoldoutFeatureCache = "$RawRootinal_holdout_feature_cache"
-
-python scriptsuild_tata_holdout_segments.py `
-  --holdout_csv "$HoldoutCsv" `
-  --out_dir "$HoldoutSegmentCache" `
-  --sample_rate 16000 `
-  --segment_sec 1.0 `
-  --hop_sec 1.0 `
-  --include_tail
-
-python scripts\extract_multilabel_features.py `
-  --manifest "$HoldoutSegmentCache\metadatainal_holdout_segment_manifest.csv" `
-  --labels_json "$HoldoutSegmentCache\metadata	ata_v06_labels.json" `
-  --out_cache "$HoldoutFeatureCache" `
-  --sample_rate 16000 `
-  --clip_sec 1.0 `
-  --n_mels 64 `
-  --n_fft 1024 `
-  --win_ms 25 `
-  --hop_ms 10 `
-  --cmvn
-```
-
-## A13. Segment-level final holdout evaluation
-
-```powershell
-$Run3 = "human_talk_workspace	ata_v0.6_raw_pipeline\main_models
-uns\main_v06_expanded_3exit_20260603_194435"
-$HoldoutEvalRoot = "$RawRootinal_holdout_evaluation"
-
-python scripts\evaluate_tata_final_holdout.py `
-  --run_dir "$Run3" `
-  --holdout_manifest "$HoldoutFeatureCache\metadata\multilabel_features_manifest.csv" `
-  --features_root "$HoldoutFeatureCacheeatures" `
-  --out_dir "$HoldoutEvalRoot\main_v06_expanded_3exit" `
-  --threshold_mode fixed_0p5 `
-  --device cpu `
-  --batch_size 128
-```
-
-## A14. Parent-level final holdout evaluation
-
-```powershell
-python scripts\evaluate_tata_final_holdout_parent_level.py `
-  --run_dir "$Run3" `
-  --holdout_manifest "$HoldoutFeatureCache\metadata\multilabel_features_manifest.csv" `
-  --features_root "$HoldoutFeatureCacheeatures" `
-  --out_dir "$HoldoutEvalRoot\main_v06_expanded_3exit_parent_level" `
-  --threshold_mode fixed_0p5 `
-  --aggregation mean `
-  --device cpu `
-  --batch_size 128
-```
-
-## A15. Final result summary
-
-| setting          |   macro_f1 |   micro_f1 | samples_f1   |   exact_match |   hamming_loss | avg_pred_labels   |   compute_saved |
-|:-----------------|-----------:|-----------:|:-------------|--------------:|---------------:|:------------------|----------------:|
-| 3-exit fixed 0.5 |     0.7598 |     0.8976 | 0.9048       |        0.8155 |         0.0271 | 1.3045            |             0   |
-| 3-exit tuned     |     0.7615 |     0.8937 | 0.9115       |        0.7785 |         0.0292 | 1.4014            |             0   |
-| 5-exit tuned     |     0.77   |     0.8866 | 0.9032       |        0.7439 |         0.0311 | 1.4025            |             0   |
-| 5-exit dynamic   |     0.7186 |     0.8283 |              |        0.6332 |         0.0498 |                   |            28.6 |
-
-Recommended final configuration:
-
-```text
-3-exit fixed threshold 0.5 + parent-level mean aggregation
-```
-
-
-## Appendix: v0.7 filtered ablation methodology
-
-### Purpose
-
-v0.7 tests whether removing five non-target source-speaker folders improves a target-speaker-focused multi-label model. The filtered source classes are:
+Known non-target source folders:
 
 ```text
 Les_Brown
@@ -301,26 +39,119 @@ Rabin_Sharma
 Simon_Sinek
 ```
 
-Rows from these folders are filtered from the raw pseudo/corrected manifests and the final raw holdout CSV. The original v0.6 audio and manifests are preserved for reproducibility.
-
-### Filter operation
-
-For a row \(r\), define an exclusion set \(S\) containing the five source classes above. A row is removed if any source identifier contains an excluded class:
-
-\[
-	ext{remove}(r) = 1 \quad 	ext{if} \quad \exists s \in S: s \in \{	ext{source\_class\_dir}, 	ext{source\_file}, 	ext{source\_path}, 	ext{source\_rel\_path}, 	ext{parent\_clip\_id}\}.
-\]
-
-This creates a filtered target-focused training and evaluation setup while keeping the same 10-label output schema.
-
-### v0.7 result interpretation
-
-The target-speaker labels become very strong after filtering, but weaker labels remain unresolved:
+Rule:
 
 ```text
-other_speaker_present
-audience_reaction_present
-silence_present
+all target speaker labels = 0
+other_speaker_present = 1
+music_present/audience_reaction_present/silence_present = manually reviewed context labels
 ```
 
-This shows that source filtering helps speaker clarity but does not replace targeted weak-label curation. In v0.8, these labels should be addressed with targeted data balancing, clearer annotation rules, and label-specific threshold/policy analysis.
+## E. LAWYER v0.8 role
+
+LAWYER is used as a label-specific weak-label refinement stage. It is not treated as ground truth. For v0.8-HCB, only reviewed LAWYER-new samples were added. The changed-label queue was preserved as a future ablation rather than blindly accepted.
+
+## F. Training manifest
+
+| item                                        |   count |
+|:--------------------------------------------|--------:|
+| seed_segment_rows                           |   12469 |
+| raw_expanded_segment_rows                   |   23780 |
+| final_combined_segment_rows                 |   36249 |
+| raw_parent_labels_used                      |    4756 |
+| zero_active_corrected_needs_review_excluded |       0 |
+| missing_parent_segment_groups               |       0 |
+
+Training groups:
+
+| group                             |   count_before_balance |   count_after_balance |
+|:----------------------------------|-----------------------:|----------------------:|
+| raw_hybrid_needs_review_corrected |                  15855 |                 10132 |
+| seed_reviewed                     |                  12469 |                 12469 |
+| raw_hybrid_accepted_with_warning  |                   6080 |                  4941 |
+| raw_hybrid_accepted               |                   1845 |                  1821 |
+
+## G. Balancing
+
+| label                     |   before_balance |   after_balance |
+|:--------------------------|-----------------:|----------------:|
+| Brene_Brown               |             2885 |            2885 |
+| Eckhart_Tolle             |             3145 |            3145 |
+| Eric_Thomas               |             2850 |            2850 |
+| Gary_Vee                  |             3135 |            3135 |
+| Jay_Shetty                |             4225 |            4225 |
+| Nick_Vujicic              |             2425 |            2425 |
+| other_speaker_present     |            15916 |            9030 |
+| music_present             |            13045 |           11393 |
+| audience_reaction_present |             5124 |            5124 |
+| silence_present           |             1724 |            1724 |
+
+![Balancing plot](figures/v08_label_counts_before_after_balance.png)
+
+## H. Training settings
+
+| Setting                  | Value                                   |
+|:-------------------------|:----------------------------------------|
+| run                      | main_v08_human_corrected_balanced_3exit |
+| tap_blocks               | 1,3                                     |
+| number of exits          | 3                                       |
+| epochs                   | 40                                      |
+| batch size               | 64                                      |
+| learning rate            | 0.001                                   |
+| loss weights             | [0.3, 0.3, 1.0]                         |
+| fixed threshold          | 0.5                                     |
+| device                   | cpu                                     |
+| positive class weighting | False                                   |
+
+## I. Internal test by exit
+
+|   exit |   macro_f1 |   micro_f1 |   samples_f1 |   exact_match |   hamming_loss |   avg_true_labels |   avg_pred_labels |
+|-------:|-----------:|-----------:|-------------:|--------------:|---------------:|------------------:|------------------:|
+|      1 |     0.2185 |     0.358  |       0.2833 |        0.1535 |         0.1293 |            1.4493 |            0.565  |
+|      2 |     0.6713 |     0.6837 |       0.6478 |        0.4472 |         0.0844 |            1.4493 |            1.2208 |
+|      3 |     0.8305 |     0.8283 |       0.8285 |        0.6206 |         0.0502 |            1.4493 |            1.4737 |
+
+## J. Corrected holdout by exit
+
+| model           | threshold_mode   | aggregation   |   exit |   macro_f1 |   micro_f1 |   samples_f1 |   exact_match |   hamming_loss |   jaccard_score |   avg_true_labels |   avg_pred_labels |
+|:----------------|:-----------------|:--------------|-------:|-----------:|-----------:|-------------:|--------------:|---------------:|----------------:|------------------:|------------------:|
+| v0.8-HCB 3-exit | fixed_0p5        | mean          |      1 |     0.113  |     0.3166 |       0.204  |        0.0288 |         0.1275 |          0.1596 |            1.4694 |            0.3956 |
+| v0.8-HCB 3-exit | fixed_0p5        | mean          |      2 |     0.6315 |     0.7739 |       0.7197 |        0.5467 |         0.0591 |          0.6752 |            1.4694 |            1.1419 |
+| v0.8-HCB 3-exit | fixed_0p5        | mean          |      3 |     0.7801 |     0.9332 |       0.9406 |        0.8397 |         0.0194 |          0.9174 |            1.4694 |            1.4302 |
+
+## K. Per-label corrected holdout behaviour
+
+| label                     |   precision |   recall |     f1 |   support |   predicted_positive |
+|:--------------------------|------------:|---------:|-------:|----------:|---------------------:|
+| Brene_Brown               |      1      |   0.9315 | 0.9645 |        73 |                   68 |
+| Eckhart_Tolle             |      1      |   0.9643 | 0.9818 |        84 |                   81 |
+| Eric_Thomas               |      0.9028 |   0.9559 | 0.9286 |        68 |                   72 |
+| Gary_Vee                  |      1      |   0.9559 | 0.9774 |        68 |                   65 |
+| Jay_Shetty                |      0.9278 |   1      | 0.9626 |        90 |                   97 |
+| Nick_Vujicic              |      1      |   0.9592 | 0.9792 |        49 |                   47 |
+| other_speaker_present     |      0.9156 |   0.9435 | 0.9293 |       460 |                  474 |
+| music_present             |      0.964  |   0.9413 | 0.9525 |       341 |                  333 |
+| audience_reaction_present |      0.6667 |   0.069  | 0.125  |        29 |                    3 |
+| silence_present           |      0      |   0      | 0      |        12 |                    0 |
+
+## L. Fair comparison
+
+| model           |   final_exit |   macro_f1 |   micro_f1 |   samples_f1 |   exact_match |   hamming_loss |   avg_true_labels |   avg_pred_labels |
+|:----------------|-------------:|-----------:|-----------:|-------------:|--------------:|---------------:|------------------:|------------------:|
+| v0.6 3-exit     |            3 |     0.7537 |     0.8865 |       0.8992 |        0.7497 |         0.0315 |            1.4694 |            1.3045 |
+| v0.6 5-exit     |            5 |     0.746  |     0.8771 |       0.8881 |        0.7232 |         0.0338 |            1.4694 |            1.2814 |
+| v0.8-HCB 3-exit |            3 |     0.7801 |     0.9332 |       0.9406 |        0.8397 |         0.0194 |            1.4694 |            1.4302 |
+
+## M. Thesis-ready conclusion
+
+On the corrected parent-level holdout set containing 867 parent clips and 4,335 one-second segments, the v0.8-human-corrected-balanced 3-exit model achieved the strongest final-exit performance under mean probability aggregation and a fixed 0.5 threshold. Compared with the previous v0.6 3-exit model re-evaluated on the same corrected holdout, it improved Macro-F1 from 0.7537 to 0.7801, Micro-F1 from 0.8865 to 0.9332, Samples-F1 from 0.8992 to 0.9406, and Exact Match from 0.7497 to 0.8397, while reducing Hamming Loss from 0.0315 to 0.0194. The model also predicted a more realistic number of labels per clip, increasing average predicted labels from 1.3045 to 1.4302 against a corrected ground-truth average of 1.4694.
+
+## N. Recommended thesis figure set
+
+| Figure | File | Purpose |
+|---|---|---|
+| Training validation curve | `docs/figures/v08_training_validation_curve.png` | Shows learning progression and late best epoch. |
+| Label balance plot | `docs/figures/v08_label_counts_before_after_balance.png` | Shows reduction of `other_speaker_present` dominance. |
+| Corrected holdout comparison | `docs/figures/v08_vs_v06_corrected_holdout_bar.png` | Shows v0.8 improvement over v0.6. |
+| Hamming loss comparison | `docs/figures/v08_vs_v06_hamming_loss_bar.png` | Shows reduced label error rate. |
+| Per-label F1 | `docs/figures/v08_corrected_holdout_per_label_f1_bar.png` | Shows strong labels and remaining rare-event weaknesses. |
