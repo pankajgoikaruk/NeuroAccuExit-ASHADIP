@@ -178,9 +178,9 @@ Fixed 0.5 is the final recommended setting. Threshold tuning improved internal v
 
 ## Figures
 
-- ![Training validation curve](docs/figures/v08_training_validation_curve.png)
-- ![v0.8 vs v0.6 corrected holdout bar](docs/figures/v08_vs_v06_corrected_holdout_bar.png)
-- ![Per-label corrected holdout F1](docs/figures/v08_corrected_holdout_per_label_f1_bar.png)
+- ![Training validation curve](docs/figures/human_talk/agentic_data_preprocessing_v0.8/v08_training_validation_curve.png)
+- ![v0.8 vs v0.6 corrected holdout bar](docs/figures/human_talk/agentic_data_preprocessing_v0.8/v08_vs_v06_corrected_holdout_bar.png)
+- ![Per-label corrected holdout F1](docs/figures/human_talk/agentic_data_preprocessing_v0.8/v08_corrected_holdout_per_label_f1_bar.png)
 
 ## Documentation map
 
