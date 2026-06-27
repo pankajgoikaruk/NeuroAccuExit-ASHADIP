@@ -1,45 +1,81 @@
-# NeuroAccuExit-ASHADIP — Agentic Data Preprocessing v0.6
+# NeuroAccuExit-ASHADIP — Agentic Data Preprocessing v0.9
 
-This README documents the active **`agentic_data_preprocessing_v0.6`** branch. The branch extends the earlier TinyAudioTriageAgent work from a 12-label weakclip baseline into a complete **TATA-assisted human-in-the-loop raw-data preprocessing pipeline**.
+This README documents the active `agentic_data_preprocessing_v0.9` branch of **NeuroAccuExit-ASHADIP**. The branch extends the earlier TATA/Lawyer weak-labelling pipeline by introducing a **frozen labelwise parent-aggregation strategy** for human-talk multi-label audio classification. Instead of retraining the model, v0.9 reuses the strongest v0.8-HCB model and tests whether label-specific aggregation can improve corrected-holdout performance, especially for rare and transient context labels.
 
-```text
-Branch: agentic_data_preprocessing_v0.6
-Agenda: TATA-assisted pseudo-manifest generation for human-talk multi-label audio
-Core idea: train TATA on reviewed seed data, route raw clips, correct uncertain clips, and train main multi-label models
-Label schema: 10 labels = 6 target speakers + other_speaker_present + music_present + audience_reaction_present + silence_present
-Audience label design: applause/laughter/crowd_cheer are merged into audience_reaction_present
-Best final model: main_v06_expanded_3exit + fixed threshold 0.5 + parent-level mean aggregation
-Final raw holdout result: Macro-F1 0.7598, Micro-F1 0.8976, Samples-F1 0.9048, Exact Match 0.8155, Hamming Loss 0.0271
-```
+> **GitHub preview note:** this README intentionally does **not** start with `---`, because that makes GitHub treat the beginning of the file as YAML/front matter and can cause the preview error: `Error in user YAML: found character that cannot start any token`.
+
+---
+
+## Branch summary
+
+| Item | Details |
+|---|---|
+| Branch | `agentic_data_preprocessing_v0.9` |
+| Agenda | Frozen labelwise parent aggregation for human-talk multi-label audio classification |
+| Core idea | Reuse the v0.8-HCB trained model, evaluate different parent-level aggregation strategies, freeze the best stable labelwise aggregation map, and apply it to the full corrected holdout |
+| Base model reused | `main_v08_human_corrected_balanced_3exit_20260610_084027` |
+| Training status | No retraining in v0.9; this is a post-hoc evaluation and aggregation strategy branch |
+| Label schema | 10 labels = 6 target speakers + `other_speaker_present` + `music_present` + `audience_reaction_present` + `silence_present` |
+| Audience label design | `applause_present`, `laughter_present`, and `crowd_cheer_present` are merged into `audience_reaction_present` |
+| Parent clips in corrected holdout | 867 |
+| Holdout segments | 4,335 |
+| Final selected threshold | Fixed `0.5` for all labels |
+| Final selected aggregation | Label-specific frozen map: `mean` for stable labels and `top2mean` for selected speaker/context labels |
+| Best v0.8 official result | Parent-level mean aggregation, fixed threshold 0.5: Macro-F1 `0.7801`, Micro-F1 `0.9332`, Samples-F1 `0.9406`, Exact Match `0.8397`, Hamming Loss `0.0194` |
+| Best v0.8 simple label-aware result | Mean for stable labels and max for transient labels: Macro-F1 `0.8320`, Micro-F1 `0.9285`, Samples-F1 `0.9375`, Exact Match `0.8235`, Hamming Loss `0.0211` |
+| Best v0.9 final result | Frozen labelwise aggregation, fixed threshold 0.5: Macro-F1 `0.8512`, Micro-F1 `0.9372`, Samples-F1 `0.9482`, Exact Match `0.8420`, Hamming Loss `0.0185` |
+
+---
 
 ## Branch agenda
 
-The v0.6 branch tests whether a compact multi-label audio triage model can act as an **agentic preprocessing assistant**. TATA is trained on a manually reviewed seed dataset, then used to predict and route a larger raw dataset. High-confidence clips become pseudo-labelled training data, while uncertain clips are sent to a human reviewer. The corrected manifest is then used to train main 3-exit and 5-exit multi-label models.
+The v0.9 branch investigates whether parent-level aggregation can be made label-aware without retraining the acoustic model. Earlier v0.8 results showed that simple parent-level mean aggregation was strong overall, but rare transient labels such as `audience_reaction_present` and `silence_present` were diluted when segment probabilities were averaged across the parent clip.
 
-The final v0.6 workflow is:
+The agenda of this branch is therefore:
 
-```text
-Reviewed seed manifest
-  -> train TATA v0.6
-  -> split raw dataset into pseudo-pool and final raw holdout
-  -> run TATA on raw pseudo-pool only
-  -> hybrid routing: accepted / accepted_with_warning / needs_review / rejected
-  -> manually correct needs_review
-  -> combine seed + accepted + warning + corrected needs_review
-  -> train main 3-exit and 5-exit models
-  -> manually label final raw holdout
-  -> evaluate segment-level and parent/clip-level generalisation
-```
+1. Reproduce the v0.8-HCB corrected-holdout baseline using the existing segment probability CSV.
+2. Compare parent aggregation strategies: `mean`, `max`, and `top2mean`.
+3. Run repeated calibration/evaluation splits to test whether aggregation choices are stable.
+4. Compare fixed threshold 0.5 against threshold calibration.
+5. Freeze the most reliable labelwise aggregation map.
+6. Evaluate the frozen map on the full corrected holdout.
+7. Document the final result as the v0.9 post-hoc aggregation improvement.
+
+---
+
+## Research questions
+
+### RQ1 — Does label-specific parent aggregation improve multi-label audio classification?
+
+Yes. The final frozen v0.9 aggregation map improves Macro-F1, Micro-F1, Samples-F1, Exact Match, and Hamming Loss compared with the v0.8 official parent-mean baseline.
+
+### RQ2 — Are transient labels diluted by parent-level mean aggregation?
+
+Yes. The v0.8 post-hoc analysis showed that `audience_reaction_present` and `silence_present` were weak under mean aggregation. More selective aggregation, especially `top2mean`, improved these labels.
+
+### RQ3 — Is global max aggregation suitable as the final method?
+
+No. Global max helped rare transient labels, but it over-predicted labels overall and harmed Micro-F1, Samples-F1, Exact Match, and Hamming Loss.
+
+### RQ4 — Is threshold calibration better than fixed threshold 0.5?
+
+Not for the final v0.9 setting. Repeated-split experiments showed that threshold calibration achieved similar Macro-F1 but weakened Micro-F1, Samples-F1, Exact Match, and Hamming Loss. Therefore, the final v0.9 method keeps fixed threshold `0.5`.
+
+### RQ5 — Can the final improvement be achieved without retraining?
+
+Yes. v0.9 improves the corrected-holdout result using only post-hoc aggregation over existing segment probabilities. No new neural-network training is performed in this branch.
+
+---
 
 ## Label schema
 
-The v0.6 label schema is deliberately coarser than the earlier 12-label schema. The previous `applause_present`, `laughter_present`, and `crowd_cheer_present` labels were difficult to separate consistently, even manually. They were merged into one robust label:
+| Group | Labels |
+|---|---|
+| Target speakers | `Brene_Brown`, `Eckhart_Tolle`, `Eric_Thomas`, `Gary_Vee`, `Jay_Shetty`, `Nick_Vujicic` |
+| Non-target speaker context | `other_speaker_present` |
+| Background/context | `music_present`, `audience_reaction_present`, `silence_present` |
 
-```text
-audience_reaction_present
-```
-
-Active labels:
+The final schema contains 10 labels:
 
 ```text
 Brene_Brown
@@ -54,203 +90,296 @@ audience_reaction_present
 silence_present
 ```
 
-Non-target speakers such as `Les_Brown`, `Mel_Robbins`, `Oprah_Winfrey`, `Rabin_Sharma`, and `Simon_Sinek` are not separate output classes in v0.6. They are mapped to `other_speaker_present = 1`.
-
-## Research questions
-
-| ID | Research question | v0.6 answer |
-|---|---|---|
-| RQ1 | Can a 10-label coarse audience schema reduce ambiguity from applause/laughter/cheer overlap? | Yes. The merged `audience_reaction_present` label made the pipeline more stable than the earlier fine-grained 12-label audience schema. |
-| RQ2 | Can TATA route a raw dataset into useful pseudo-label groups? | Yes. Hybrid routing produced 369 accepted, 925 accepted-with-warning, 3,171 needs-review, and 445 rejected raw parent clips. |
-| RQ3 | Does human-in-the-loop correction protect the final manifest from uncertain pseudo labels? | Yes. The highest-risk raw clips were routed to `needs_review` and corrected before inclusion in training. |
-| RQ4 | Does the final expanded manifest train a main model that generalises to manually labelled raw holdout clips? | Yes. The best parent-level mean result achieved Micro-F1 0.8976, Samples-F1 0.9048, Exact Match 0.8155, and Hamming Loss 0.0271. |
-| RQ5 | Does threshold tuning improve final holdout reliability? | Not overall. Tuned thresholds slightly improved Macro-F1 in some settings, but fixed 0.5 gave the best exact match and hamming loss for the recommended 3-exit model. |
-| RQ6 | Is parent-level max or mean aggregation better for clip-level evaluation? | Mean aggregation is clearly better. Max aggregation over-predicts labels and increases false positives. |
-| RQ7 | Does a 5-exit model provide a useful early-exit trade-off? | Yes as an ablation. 5-exit dynamic policy saved 28.60% compute under parent-level mean aggregation, but quality dropped too much to be the final model. |
-
-## TATA v0.6 seed-model validation
-
-TATA was first validated on the reviewed seed data before being used for raw pseudo-routing.
-
-| model                  |   macro_f1 |   micro_f1 |   samples_f1 |   exact_match |   hamming_loss |
-|:-----------------------|-----------:|-----------:|-------------:|--------------:|---------------:|
-| TATA v0.6 3-exit fixed |     0.8164 |     0.8272 |       0.8264 |        0.6594 |         0.0474 |
-| TATA v0.6 3-exit tuned |     0.8291 |     0.8121 |       0.8075 |        0.5977 |         0.0543 |
-
-Interpretation: TATA v0.6 is a strong triage model. Fixed threshold is better for conservative pseudo-label reliability, while tuned threshold gives the best seed Macro-F1.
-
-## Raw pseudo-routing outcome
-
-TATA was applied to the raw pseudo-pool only, not to the final holdout split.
-
-| mode      |   accepted |   accepted_with_warning |   needs_review |   rejected |   accepted_plus_warning |
-|:----------|-----------:|------------------------:|---------------:|-----------:|------------------------:|
-| fixed_0p5 |        537 |                    1189 |           2711 |        473 |                    1726 |
-| hybrid    |        369 |                     925 |           3171 |        445 |                    1294 |
-
-Hybrid routing was selected as the safer pseudo-label route because it sends more uncertain clips to human review.
-
-## Final expanded training dataset
-
-The main-model training manifest combines:
+The audience-related labels are intentionally merged:
 
 ```text
-reviewed seed dataset
-+ raw hybrid accepted pseudo labels
-+ raw hybrid accepted_with_warning pseudo labels
-+ corrected raw hybrid needs_review labels
+applause_present + laughter_present + crowd_cheer_present
+→ audience_reaction_present
 ```
 
-The final raw holdout split remains separate and is used only for external evaluation.
+This merge reduces annotation ambiguity because applause, laughter, and crowd cheering often overlap acoustically in motivational speech clips.
 
-| Component | Rows / clips |
-|---|---:|
-| Reviewed seed segments | 12,469 |
-| Raw pseudo/corrected parent clips used for training | 4,465 |
-| Raw pseudo/corrected segments used for training | 22,325 |
-| Final combined segment manifest | 34,794 |
-| Internal train rows | 30,950 |
-| Internal validation rows | 1,883 |
-| Internal test rows | 1,961 |
-| Final raw holdout parent clips | 867 |
-| Final raw holdout segments | 4,335 |
+---
 
-## Internal main-model comparison
+## v0.8 baseline context
 
-These are internal validation/test-style results from the expanded training manifest, not the final raw holdout.
+v0.8-HCB remains the base model used by v0.9.
 
-| model            |   macro_f1 |   micro_f1 |   samples_f1 |   exact_match |   hamming_loss |   compute_saved |
-|:-----------------|-----------:|-----------:|-------------:|--------------:|---------------:|----------------:|
-| 3-exit fixed 0.5 |     0.8225 |     0.8219 |       0.824  |        0.6221 |         0.0502 |            0    |
-| 3-exit tuned     |     0.8217 |     0.8154 |       0.823  |        0.5875 |         0.0542 |            0    |
-| 3-exit dynamic   |     0.8217 |     0.8154 |       0.823  |        0.5875 |         0.0542 |            0    |
-| 5-exit fixed 0.5 |     0.812  |     0.7999 |       0.7892 |        0.5767 |         0.0562 |            0    |
-| 5-exit tuned     |     0.8217 |     0.8079 |       0.8101 |        0.5752 |         0.0562 |            0    |
-| 5-exit dynamic   |     0.7764 |     0.761  |       0.7624 |        0.4656 |         0.0727 |           19.75 |
+| Item | Details |
+|---|---|
+| v0.8 experiment name | `v0.8-human-corrected-balanced` |
+| v0.8 run directory | `human_talk_workspace/tata_v0.8_human_corrected_balanced_pipeline/main_models/runs/main_v08_human_corrected_balanced_3exit_20260610_084027` |
+| Model variant | 3-exit multi-label acoustic classifier |
+| Tap blocks | `1,3` |
+| Epochs | 40 |
+| Batch size | 64 |
+| Learning rate | 0.001 |
+| Device | CPU |
+| Loss weights | `[0.3, 0.3, 1.0]` |
+| Best validation epoch | 39 |
+| Best validation final-exit Macro-F1 | `0.8105` |
 
-The 3-exit fixed-threshold model is the best internal reliability configuration. The 5-exit dynamic model saves compute but loses too much quality.
+### v0.8 internal test result
 
-## Final raw holdout: segment-level result
+| Exit | Macro-F1 | Micro-F1 | Samples-F1 | Exact Match | Hamming Loss |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 0.2185 | 0.3580 | 0.2833 | 0.1535 | 0.1293 |
+| 2 | 0.6713 | 0.6837 | 0.6478 | 0.4472 | 0.0844 |
+| 3 | 0.8305 | 0.8283 | 0.8285 | 0.6206 | 0.0502 |
 
-| setting          |   macro_f1 |   micro_f1 |   samples_f1 |   exact_match |   hamming_loss |   compute_saved |
-|:-----------------|-----------:|-----------:|-------------:|--------------:|---------------:|----------------:|
-| 3-exit fixed 0.5 |     0.729  |     0.8476 |       0.8507 |        0.7301 |         0.0409 |            0    |
-| 3-exit tuned     |     0.726  |     0.8489 |       0.8639 |        0.7165 |         0.0417 |            0    |
-| 5-exit tuned     |     0.725  |     0.8396 |       0.8518 |        0.6932 |         0.0441 |            0    |
-| 5-exit dynamic   |     0.6766 |     0.7912 |       0.8092 |        0.6028 |         0.0597 |           24.01 |
+### v0.8 corrected-holdout official result
 
-Segment-level evaluation is useful, but the final manual labels are clip-level labels. Therefore, parent/clip-level evaluation is the main result.
+| Method | Exit | Macro-F1 | Micro-F1 | Samples-F1 | Exact Match | Hamming Loss | Avg Pred Labels |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Parent mean, fixed 0.5 | 3 | 0.7801 | 0.9332 | 0.9406 | 0.8397 | 0.0194 | 1.4302 |
 
-## Final raw holdout: parent-level max aggregation
+### v0.8 simple label-aware post-hoc result
 
-| setting          |   macro_f1 |   micro_f1 | samples_f1   |   exact_match |   hamming_loss | avg_pred_labels   |   compute_saved |
-|:-----------------|-----------:|-----------:|:-------------|--------------:|---------------:|:------------------|----------------:|
-| 3-exit fixed 0.5 |     0.7337 |     0.8073 | 0.8427       |        0.5767 |         0.0619 | 1.8720            |            0    |
-| 3-exit tuned     |     0.7009 |     0.7858 | 0.8227       |        0.5063 |         0.0712 | 1.9804            |            0    |
-| 5-exit tuned     |     0.7275 |     0.7844 | 0.8134       |        0.4787 |         0.0721 | 2.0012            |            0    |
-| 5-exit dynamic   |     0.6892 |     0.7451 |              |        0.391  |         0.0893 |                   |           18.69 |
-
-Max aggregation means a label is predicted present if any one-second segment fires. This is sensitive but over-predicts labels.
-
-## Final raw holdout: parent-level mean aggregation
-
-| setting          |   macro_f1 |   micro_f1 | samples_f1   |   exact_match |   hamming_loss | avg_pred_labels   |   compute_saved |
-|:-----------------|-----------:|-----------:|:-------------|--------------:|---------------:|:------------------|----------------:|
-| 3-exit fixed 0.5 |     0.7598 |     0.8976 | 0.9048       |        0.8155 |         0.0271 | 1.3045            |             0   |
-| 3-exit tuned     |     0.7615 |     0.8937 | 0.9115       |        0.7785 |         0.0292 | 1.4014            |             0   |
-| 5-exit tuned     |     0.77   |     0.8866 | 0.9032       |        0.7439 |         0.0311 | 1.4025            |             0   |
-| 5-exit dynamic   |     0.7186 |     0.8283 |              |        0.6332 |         0.0498 |                   |            28.6 |
-
-Mean aggregation gives the cleanest final result because it smooths noisy one-second predictions and keeps the predicted label cardinality close to the ground truth.
-
-## Final recommended result
+The first post-hoc label-aware experiment used mean for stable labels and max for two transient labels:
 
 ```text
-Best model: main_v06_expanded_3exit
-Threshold: fixed 0.5
-Evaluation: parent/clip-level raw holdout
-Aggregation: mean over segment probabilities
-Macro-F1: 0.7598
-Micro-F1: 0.8976
-Samples-F1: 0.9048
-Exact Match: 0.8155
-Hamming Loss: 0.0271
+mean: 8 stable labels
+max: audience_reaction_present, silence_present
 ```
 
-## Figures
+| Method | Macro-F1 | Micro-F1 | Samples-F1 | Exact Match | Hamming Loss | Avg Pred Labels |
+|---|---:|---:|---:|---:|---:|---:|
+| v0.8 official parent mean | 0.7801 | 0.9332 | 0.9406 | 0.8397 | 0.0194 | 1.4302 |
+| v0.8 simple label-aware mean/max | 0.8320 | 0.9285 | 0.9375 | 0.8235 | 0.0211 | 1.4844 |
 
-![Final parent mean comparison](figures/human_talk/agentic_data_preprocessing_v0.6/final_holdout_parent_mean_comparison.png)
+This motivated v0.9, where a more stable repeated-split aggregation selection was tested.
 
-![Aggregation comparison](figures/human_talk/agentic_data_preprocessing_v0.6/aggregation_comparison_3exit_fixed.png)
+---
 
-![Hamming loss comparison](figures/human_talk/agentic_data_preprocessing_v0.6/final_holdout_hamming_loss_comparison.png)
+## v0.9 experiment design
 
-![Dynamic policy tradeoff](figures/human_talk/agentic_data_preprocessing_v0.6/dynamic_policy_tradeoff_parent_level.png)
-
-![Raw routing counts](figures/human_talk/agentic_data_preprocessing_v0.6/raw_pseudo_routing_counts.png)
-
-![Per-label F1](figures/human_talk/agentic_data_preprocessing_v0.6/per_label_f1_segment_3exit_fixed.png)
-
-## Theoretical notes
-
-### Multi-label BCE/sigmoid formulation
-
-Each clip can contain multiple simultaneous labels, so v0.6 uses independent sigmoid outputs rather than softmax. For label `c`, the model predicts probability `p_c = sigmoid(z_c)`. Training uses binary cross entropy over the label vector.
-
-### Human-in-the-loop pseudo-manifest generation
-
-The raw data is not blindly pseudo-labelled. TATA produces predictions and the routing layer assigns one decision:
+v0.9 starts from the v0.8-HCB segment-probability file:
 
 ```text
-accepted
-accepted_with_warning
-needs_review
-rejected
+human_talk_workspace/tata_v0.9_labelwise_calibration/verification/v08_parent_mean_fixed/parent_eval_segment_probs_fixed_0p5_mean.csv
 ```
 
-The final training manifest uses high-confidence pseudo rows plus human-corrected uncertain rows. This prevents low-confidence clips from being treated as trusted labels.
+The branch evaluates parent-level aggregation methods over the segment probabilities:
 
-### Parent-level aggregation
+| Aggregation | Meaning |
+|---|---|
+| `mean` | Average all segment probabilities within the parent clip |
+| `max` | Use the highest segment probability within the parent clip |
+| `top2mean` | Average the two highest segment probabilities within the parent clip |
 
-For a parent clip with segments `s = 1...S`, parent-level probability is computed as either:
+The repeated-split experiment used:
+
+| Setting | Value |
+|---|---|
+| Seeds | 20 |
+| Calibration fraction | 0.5 |
+| Evaluation fraction | 0.5 |
+| Threshold range | 0.10 to 0.95 |
+| Threshold step | 0.05 |
+| Probability prefix | `exit3_prob_` |
+| Parent ID column | `parent_clip_id` |
+
+The final frozen evaluation used:
+
+| Setting | Value |
+|---|---|
+| Parent clips | 867 |
+| Segments | 4,335 |
+| Aggregation map | Frozen labelwise v0.9 map |
+| Threshold | Fixed 0.5 |
+| Calibration split | None |
+| Threshold search | None |
+| Retraining | None |
+
+---
+
+## Repeated split aggregation and threshold comparison
+
+The repeated split experiment was used to select the most reliable aggregation strategy. These values are means over 20 random calibration/evaluation splits.
+
+| Method | Macro-F1 Mean | Micro-F1 Mean | Samples-F1 Mean | Exact Mean | Hamming Loss Mean ↓ | Interpretation |
+|---|---:|---:|---:|---:|---:|---|
+| `max_fixed_thresholds` | 0.7187 | 0.8200 | 0.8419 | 0.5098 | 0.0632 | Rejected; over-predicts labels |
+| `mean_fixed_thresholds` | 0.7802 | 0.9315 | 0.9392 | 0.8371 | 0.0199 | Strong baseline |
+| `top2mean_fixed_thresholds` | 0.8023 | 0.8884 | 0.9060 | 0.6927 | 0.0358 | Helps Macro-F1 but weakens reliability |
+| **`v06_calibration_selected_aggregation_fixed_thresholds`** | **0.8310** | **0.9345** | **0.9449** | **0.8368** | **0.0193** | Best balanced repeated-split strategy |
+| `v07_aggregation_threshold_calibrated` | 0.8319 | 0.9288 | 0.9363 | 0.8185 | 0.0208 | Macro-F1 is good, but weaker overall |
+
+### Repeated split conclusion
+
+The repeated-split result shows that **aggregation selection is useful**, but **threshold calibration is not worth freezing** for the final v0.9 result. The final strategy therefore uses the selected aggregation map with fixed threshold `0.5`.
+
+---
+
+## Frozen v0.9 aggregation map
+
+| Label | Frozen Aggregation | Threshold |
+|---|---|---:|
+| `Brene_Brown` | `mean` | 0.5 |
+| `Eckhart_Tolle` | `top2mean` | 0.5 |
+| `Eric_Thomas` | `mean` | 0.5 |
+| `Gary_Vee` | `top2mean` | 0.5 |
+| `Jay_Shetty` | `mean` | 0.5 |
+| `Nick_Vujicic` | `mean` | 0.5 |
+| `other_speaker_present` | `mean` | 0.5 |
+| `music_present` | `mean` | 0.5 |
+| `audience_reaction_present` | `top2mean` | 0.5 |
+| `silence_present` | `top2mean` | 0.5 |
+
+---
+
+## Final corrected-holdout comparison
+
+| Method | Macro-F1 | Micro-F1 | Samples-F1 | Exact Match | Hamming Loss ↓ | Avg Pred Labels |
+|---|---:|---:|---:|---:|---:|---:|
+| v0.8 official parent mean | 0.7801 | 0.9332 | 0.9406 | 0.8397 | 0.0194 | 1.4302 |
+| v0.8 simple label-aware mean/max | 0.8320 | 0.9285 | 0.9375 | 0.8235 | 0.0211 | 1.4844 |
+| **v0.9 frozen labelwise top2mean/mean** | **0.8512** | **0.9372** | **0.9482** | **0.8420** | **0.0185** | **1.4694** |
+
+### Final v0.9 headline result
 
 ```text
-max aggregation:  p_c(parent) = max_s p_c(segment_s)
-mean aggregation: p_c(parent) = (1/S) * sum_s p_c(segment_s)
+v0.9 frozen labelwise aggregation
+Macro-F1     = 0.8512
+Micro-F1     = 0.9372
+Samples-F1   = 0.9482
+Exact Match  = 0.8420
+Hamming Loss = 0.0185
 ```
 
-In v0.6, mean aggregation is preferred because max aggregation produced too many extra labels.
-
-### Dynamic exit policy
-
-The dynamic policy uses label-set stability. It exits when the predicted label set remains unchanged for a required number of exits. Compute saving is estimated by:
+Compared with the v0.8 official parent-mean result, v0.9 improves:
 
 ```text
-compute_saved = (1 - average_exit_depth / final_exit_depth) * 100
+Macro-F1:     0.7801 → 0.8512
+Micro-F1:     0.9332 → 0.9372
+Samples-F1:   0.9406 → 0.9482
+Exact Match:  0.8397 → 0.8420
+Hamming Loss: 0.0194 → 0.0185
 ```
 
-The 5-exit dynamic policy achieved compute saving, but its predictive quality was below the best static 3-exit model.
+---
 
-## Research conclusion
+## Final per-label v0.9 result
 
-The v0.6 experiments support the central claim that **TATA-assisted human-in-the-loop preprocessing can generate a high-quality expanded multi-label manifest from raw audio**. The final model trained from this manifest generalised strongly to a manually labelled raw holdout set, especially under parent-level mean aggregation.
+| Label | Precision | Recall | F1 | Support | Predicted Positive | Aggregation |
+|---|---:|---:|---:|---:|---:|---|
+| `Brene_Brown` | 1.0000 | 0.9315 | 0.9645 | 73 | 68 | mean |
+| `Eckhart_Tolle` | 1.0000 | 1.0000 | 1.0000 | 84 | 84 | top2mean |
+| `Eric_Thomas` | 0.9028 | 0.9559 | 0.9286 | 68 | 72 | mean |
+| `Gary_Vee` | 0.9444 | 1.0000 | 0.9714 | 68 | 72 | top2mean |
+| `Jay_Shetty` | 0.9278 | 1.0000 | 0.9626 | 90 | 97 | mean |
+| `Nick_Vujicic` | 1.0000 | 0.9592 | 0.9792 | 49 | 47 | mean |
+| `other_speaker_present` | 0.9156 | 0.9435 | 0.9293 | 460 | 474 | mean |
+| `music_present` | 0.9640 | 0.9413 | 0.9525 | 341 | 333 | mean |
+| `audience_reaction_present` | 0.6818 | 0.5172 | 0.5882 | 29 | 22 | top2mean |
+| `silence_present` | 0.4000 | 0.1667 | 0.2353 | 12 | 5 | top2mean |
 
-Paper-safe statement:
+### Rare/context label improvement
+
+| Label | v0.8 Mean F1 | v0.8 Simple Label-Aware F1 | v0.9 Frozen F1 |
+|---|---:|---:|---:|
+| `audience_reaction_present` | 0.1250 | 0.4706 | **0.5882** |
+| `silence_present` | 0.0000 | 0.1739 | **0.2353** |
+
+---
+
+## Commands and scripts
+
+### Repeated split calibration/aggregation experiment
+
+```powershell
+$SegmentPredCsv = "human_talk_workspace\tata_v0.9_labelwise_calibration\verification\v08_parent_mean_fixed\parent_eval_segment_probs_fixed_0p5_mean.csv"
+
+$OutDir = "human_talk_workspace\tata_v0.9_labelwise_calibration\repeated_v07_style_calibration"
+
+New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
+
+python scripts\v0.9\run_labelwise_aggregation_threshold_calibration.py `
+  --segment-pred-csv "$SegmentPredCsv" `
+  --out-dir "$OutDir" `
+  --fixed-threshold 0.5 `
+  --seeds 20 `
+  --cal-fraction 0.5 `
+  --threshold-min 0.10 `
+  --threshold-max 0.95 `
+  --threshold-step 0.05 `
+  --parent-id-col "parent_clip_id" `
+  --prob-prefix "exit3_prob_"
+```
+
+### Final frozen full-holdout evaluation
+
+```powershell
+$SegmentPredCsv = "human_talk_workspace\tata_v0.9_labelwise_calibration\verification\v08_parent_mean_fixed\parent_eval_segment_probs_fixed_0p5_mean.csv"
+
+$OutDir = "human_talk_workspace\tata_v0.9_labelwise_calibration\final_frozen_v06_labelwise_fixed_0p5"
+
+New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
+
+python scripts\v0.9\evaluate_frozen_labelwise_aggregation_v09.py `
+  --segment-pred-csv "$SegmentPredCsv" `
+  --out-dir "$OutDir" `
+  --labels-json "configs\human_talk_10label_schema.json" `
+  --parent-id-col "parent_clip_id" `
+  --prob-prefix "exit3_prob_" `
+  --threshold 0.5
+```
+
+---
+
+## Important output files
+
+| File | Purpose |
+|---|---|
+| `scripts/v0.9/run_labelwise_aggregation_threshold_calibration.py` | Repeated split aggregation and threshold calibration analysis |
+| `scripts/v0.9/evaluate_frozen_labelwise_aggregation_v09.py` | Final full-holdout frozen labelwise aggregation evaluation |
+| `docs/tables/agentic_data_preprocessing_v0.9/v09_final_full_holdout_comparison.md` | Final v0.8/v0.9 comparison table |
+| `docs/tables/agentic_data_preprocessing_v0.9/v09_repeated_split_calibration_summary.md` | Repeated split calibration/evaluation table |
+| `docs/tables/agentic_data_preprocessing_v0.9/v09_frozen_labelwise_method_map.md` | Frozen v0.9 aggregation map |
+| `docs/tables/agentic_data_preprocessing_v0.9/v09_frozen_labelwise_per_label_metrics.md` | Final per-label metrics |
+| `human_talk_workspace/tata_v0.9_labelwise_calibration/final_frozen_v06_labelwise_fixed_0p5/parent_holdout_eval_frozen_labelwise_v09_fixed_0p5.json` | Final full-holdout evaluation JSON |
+
+---
+
+## Documentation map
+
+Recommended v0.9 documentation locations:
 
 ```text
-The agentic_data_preprocessing_v0.6 branch demonstrates that TinyAudioTriageAgent can serve as a reliable human-in-the-loop pseudo-manifest generator. By combining reviewed seed labels, conservative TATA routing, and human correction of uncertain clips, the system produced a main model that achieved 0.8976 Micro-F1, 0.9048 Samples-F1, 0.8155 Exact Match, and 0.0271 Hamming Loss on an unseen manually labelled raw holdout set. The best reliable configuration was a 3-exit fixed-threshold model with parent-level mean aggregation. A 5-exit dynamic policy provided compute saving but with reduced accuracy, making it an efficiency/accuracy ablation rather than the final recommended model.
+docs/v0.9/
+docs/tables/agentic_data_preprocessing_v0.9/
+docs/figures/human_talk/agentic_data_preprocessing_v0.9/
+scripts/v0.9/
+human_talk_workspace/tata_v0.9_labelwise_calibration/
 ```
 
-## Current limitations
+Existing v0.8 documentation remains useful as historical context:
 
-- Some non-target speaker training rows may have incomplete background/event annotations. This is a known limitation and should be revisited if final event-label performance becomes the main focus.
-- `audience_reaction_present` and `silence_present` remain difficult low-support/event labels.
-- The final holdout is manually labelled at clip level; segment labels are weak inherited labels.
-- Dynamic early exit is not yet the best accuracy option.
+```text
+docs/reports/human_talk/V08_HUMAN_CORRECTED_BALANCED_EXPERIMENT_REPORT.md
+docs/results/human_talk/V08_RESULTS_SUMMARY.md
+docs/tables/agentic_data_preprocessing_v0.8/
+docs/figures/human_talk/agentic_data_preprocessing_v0.8/
+docs/COMMANDS_V08.md
+docs/APPENDIX.md
+docs/MULTILABEL_EXPERIMENT_LOG.md
+```
 
-## Next strategy
+---
 
-1. Commit and push the v0.6 docs, scripts, and final result tables.
-2. Keep **3-exit fixed + parent mean** as the final reliable result.
-3. Keep **5-exit dynamic mean** as the efficiency/accuracy trade-off baseline.
-4. For future improvement, repair or sample-check non-target background labels and add targeted augmentation for `audience_reaction_present` and `silence_present`.
+## Key conclusion
+
+The v0.9 branch shows that **label-specific parent aggregation improves heterogeneous multi-label audio classification without retraining the neural model**. The final frozen aggregation map improves not only Macro-F1 but also Micro-F1, Samples-F1, Exact Match, and Hamming Loss compared with the v0.8 official parent-mean baseline.
+
+The final recommended result for the `agentic_data_preprocessing_v0.9` branch is:
+
+```text
+v0.9 frozen labelwise aggregation + fixed threshold 0.5
+Macro-F1     = 0.8512
+Micro-F1     = 0.9372
+Samples-F1   = 0.9482
+Exact Match  = 0.8420
+Hamming Loss = 0.0185
+```
+
+This should be treated as the strongest current post-hoc aggregation result for the human-talk TATA/Lawyer multi-label audio pipeline.

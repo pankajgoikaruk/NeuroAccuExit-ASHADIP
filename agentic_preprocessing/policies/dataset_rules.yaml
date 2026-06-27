@@ -1,0 +1,136 @@
+# agentic_preprocessing\policies\dataset_rules.yaml
+
+# Dataset-specific rules for human-talk agentic preprocessing
+# Project stage: raw5 + clean5 + TinyAudioTriageAgent seed dataset
+
+dataset:
+  name: human_talk_dataset
+  workspace_root: human_talk_workspace
+
+dataset_profile:
+  name: human_talk_raw5_agentic
+  raw_root: human_talk_dataset
+  expected_sample_rate: 16000
+  expected_channels: 1
+  expected_duration_sec: 5.0
+
+trusted_clean_classes:
+  - Les_Brown
+  - Mel_Robbins
+  - Oprah_Winfrey
+  - Rabin_Sharma
+  - Rabin_Sharma
+  - Simon_Sinek
+
+raw_agentic_target_classes:
+  - Brene_Brown
+  - Eckhart_Tolle
+  - Eric_Thomas
+  - Gary_Vee
+  - Jay_Shetty
+
+raw_speaker_classes:
+  - Brene_Brown
+  - Eckhart_Tolle
+  - Eric_Thomas
+  - Gary_Vee
+  - Jay_Shetty
+
+triage_seed_dataset:
+  root: human_talk_triage_seed_dataset
+
+  target_speaker_classes:
+    - Brene_Brown
+    - Eckhart_Tolle
+    - Eric_Thomas
+    - Gary_Vee
+    - Jay_Shetty
+
+  other_speaker_groups:
+    - Brene_Brown_interviewer
+    - Eckhart_Tolle_interviewer
+    - Jay_Shetty_interviewer
+
+  event_classes:
+    - silence
+    - music
+    - applause
+    - laughter
+
+triage_labels:
+  speaker_labels:
+    - target_speaker
+    - other_speaker
+
+  event_labels:
+    - silence
+    - music
+    - applause
+    - laughter
+
+agent_names:
+  dataset_auditor: DatasetAuditorAgent
+  manifest_builder: ManifestBuilderAgent
+  metadata_validator: MetadataValidatorAgent
+  leakage_guard: LeakageGuardAgent
+  triage_detector: TinyAudioTriageAgent
+  triage_model: TinyAudioTriageNet-3Exit
+  result_diagnosis: ResultDiagnosisAgent
+
+planned_stages:
+  clean5_balanced:
+    description: Trusted clean five-speaker baseline from previous branch.
+    agentic_preprocessing: false
+    classes:
+      - Les_Brown
+      - Mel_Robbins
+      - Oprah_Winfrey
+      - Rabin_Sharma
+      - Simon_Sinek
+
+  raw5_uncleaned:
+    description: Raw five-speaker baseline before agentic preprocessing.
+    agentic_preprocessing: false
+    classes:
+      - Brene_Brown
+      - Eckhart_Tolle
+      - Eric_Thomas
+      - Gary_Vee
+      - Jay_Shetty
+
+  raw5_agentic_cleaned:
+    description: Raw five-speaker stage after accepted/manually-approved agentic filtering.
+    agentic_preprocessing: true
+    classes:
+      - Brene_Brown
+      - Eckhart_Tolle
+      - Eric_Thomas
+      - Gary_Vee
+      - Jay_Shetty
+
+  agentic10_balanced:
+    description: Clean5 plus agent-cleaned Raw5 scalability stage.
+    agentic_preprocessing: true
+    classes:
+      - Les_Brown
+      - Mel_Robbins
+      - Oprah_Winfrey
+      - Rabin_Sharma
+      - Simon_Sinek
+      - Brene_Brown
+      - Eckhart_Tolle
+      - Eric_Thomas
+      - Gary_Vee
+      - Jay_Shetty
+
+rules:
+  - Never balance before train/val/test parent-level split.
+  - Always preserve source_file traceability.
+  - Do not delete or overwrite raw files.
+  - accepted samples may be used for the first cleaned-stage experiment.
+  - needs_review samples require manual approval before training.
+  - rejected and blocked samples must remain traceable.
+  - TinyAudioTriageAgent seed data must remain separate from the main human_talk_dataset.
+  - Event classes such as silence, music, applause, and laughter must not be treated as speaker classes.
+  - Interviewer samples should be grouped under other_speaker, not trained as separate final speaker classes.
+  - Raw5 and Clean5 together form the planned Agentic10 evaluation stage.

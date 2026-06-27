@@ -1,120 +1,160 @@
-# Documentation Structure — agentic_data_preprocessing_v0.6
+---
 
-This document defines the active documentation structure for **`agentic_data_preprocessing_v0.6`**.
+## v0.8 human-talk documentation layout update
+
+The v0.8 documentation artifacts are organised under human-talk and version-specific folders so that v0.7 and v0.8 results do not overwrite each other.
+
+### Reports
 
 ```text
-Branch: agentic_data_preprocessing_v0.6
-Documentation focus: TATA-assisted human-in-the-loop raw-data preprocessing
-Final recommended model: 3-exit fixed threshold 0.5 with parent-level mean aggregation
-Final raw holdout result: Macro-F1 0.7598, Micro-F1 0.8976, Samples-F1 0.9048, Exact Match 0.8155, Hamming Loss 0.0271
+docs/reports/human_talk/V08_HUMAN_CORRECTED_BALANCED_EXPERIMENT_REPORT.md
 ```
 
-## Current documentation scope
+Purpose: thesis-ready narrative report for the v0.8-human-corrected-balanced experiment, including methodology, training configuration, corrected-holdout results, fair v0.6 comparison, and label-aware aggregation analysis.
 
-1. v0.6 motivation: move from TATA seed validation to full raw-data pseudo-manifest generation.
-2. Label schema: 10 labels with merged `audience_reaction_present`.
-3. TATA seed training and validation.
-4. Raw dataset split into pseudo-pool and final holdout.
-5. TATA hybrid routing on the pseudo-pool.
-6. Human correction of `needs_review` rows.
-7. Final expanded training manifest construction.
-8. Main 3-exit and 5-exit model training.
-9. Threshold tuning and dynamic policy comparison.
-10. Final raw holdout evaluation at segment level and parent/clip level.
-11. Aggregation comparison: segment-level vs parent max vs parent mean.
-12. Research conclusions, limitations, and future work.
+### Results summaries
 
-## Canonical paths
+```text
+docs/results/human_talk/V08_RESULTS_SUMMARY.md
+```
 
-| Artifact | Path |
+Purpose: compact results summary for GitHub readers, including headline metrics, corrected-holdout comparison, and final reporting decision.
+
+### Tables
+
+```text
+docs/tables/agentic_data_preprocessing_v0.8/
+```
+
+Recommended v0.8 table files:
+
+```text
+v08_fair_comparison_corrected_holdout_parent_mean_fixed.csv
+v08_corrected_holdout_parent_mean_fixed_by_exit.csv
+v08_corrected_holdout_parent_mean_tuned_by_exit.csv
+v08_corrected_holdout_parent_mean_fixed_per_label_exit3.csv
+v08_internal_test_by_exit.csv
+v08_internal_test_per_label_exit3.csv
+v08_label_counts_before_after_balance.csv
+v08_threshold_tuning_internal_val_test.csv
+v08_final_exit_tuned_thresholds.csv
+v08_experiment_commands_index.csv
+v08_hcb_parent_aggregation_strategy_comparison.csv
+v08_hcb_label_aware_fair_comparison_corrected_holdout.csv
+v08_hcb_weak_label_f1_by_aggregation.csv
+v08_hcb_per_label_mean_max_labelaware_exit3.csv
+v08_hcb_label_aware_commands.csv
+```
+
+v0.7-related tables should stay separate:
+
+```text
+docs/tables/agentic_data_preprocessing_v0.7/
+```
+
+### Figures
+
+All v0.8 human-talk figures should be under:
+
+```text
+docs/figures/human_talk/agentic_data_preprocessing_v0.8/
+```
+
+Recommended v0.8 figure files:
+
+```text
+v08_training_validation_curve.png
+v08_training_loss_hamming_curve.png
+v08_label_counts_before_after_balance.png
+v08_internal_test_by_exit_lineplot.png
+v08_corrected_holdout_fixed_by_exit_lineplot.png
+v08_vs_v06_corrected_holdout_bar.png
+v08_vs_v06_hamming_loss_bar.png
+v08_corrected_holdout_per_label_f1_bar.png
+v08_avg_true_vs_pred_labels_bar.png
+v08_hcb_aggregation_strategy_lineplot.png
+v08_hcb_aggregation_hamming_loss_lineplot.png
+v08_hcb_weak_label_f1_lineplot.png
+v08_hcb_vs_v06_label_aware_lineplot.png
+v08_hcb_macro_hamming_tradeoff_bar.png
+v08_hcb_per_label_mean_vs_labelaware_bar.png
+```
+
+### Command and methodology docs
+
+```text
+docs/COMMANDS_V08.md
+docs/APPENDIX.md
+docs/MULTILABEL_EXPERIMENT_LOG.md
+```
+
+Purpose:
+
+| File | Purpose |
 |---|---|
-| Raw pipeline root | `human_talk_workspace/tata_v0.6_raw_pipeline/` |
-| Final expanded training manifest | `human_talk_workspace/tata_v0.6_raw_pipeline/final_expanded_training_dataset/metadata/multilabel_features_manifest.csv` |
-| Final holdout ground truth | `human_talk_workspace/tata_v0.6_raw_pipeline/manual_review_queue/01_raw_final_holdout_GROUND_TRUTH_FINAL_refreshed.csv` |
-| Main 3-exit run | `human_talk_workspace/tata_v0.6_raw_pipeline/main_models/runs/main_v06_expanded_3exit_20260603_194435` |
-| Main 5-exit run | `human_talk_workspace/tata_v0.6_raw_pipeline/main_models/runs/main_v06_expanded_5exit_20260603_210324` |
-| Final holdout evaluation root | `human_talk_workspace/tata_v0.6_raw_pipeline/final_holdout_evaluation/` |
+| `docs/COMMANDS_V08.md` | Full reproducible PowerShell command history, including delta review, manifest build, training, corrected holdout evaluation, v0.6 re-evaluation, global max diagnostic, and label-aware aggregation. |
+| `docs/APPENDIX.md` | Thesis-style methodology appendix. |
+| `docs/MULTILABEL_EXPERIMENT_LOG.md` | Chronological experiment log and decisions. |
 
-## Canonical result tables
+### Final reporting policy
 
-### TATA seed validation
-
-| model                  |   macro_f1 |   micro_f1 |   samples_f1 |   exact_match |   hamming_loss |
-|:-----------------------|-----------:|-----------:|-------------:|--------------:|---------------:|
-| TATA v0.6 3-exit fixed |     0.8164 |     0.8272 |       0.8264 |        0.6594 |         0.0474 |
-| TATA v0.6 3-exit tuned |     0.8291 |     0.8121 |       0.8075 |        0.5977 |         0.0543 |
-
-### Raw routing counts
-
-| mode      |   accepted |   accepted_with_warning |   needs_review |   rejected |   accepted_plus_warning |
-|:----------|-----------:|------------------------:|---------------:|-----------:|------------------------:|
-| fixed_0p5 |        537 |                    1189 |           2711 |        473 |                    1726 |
-| hybrid    |        369 |                     925 |           3171 |        445 |                    1294 |
-
-### Internal main-model comparison
-
-| model            |   macro_f1 |   micro_f1 |   samples_f1 |   exact_match |   hamming_loss |   compute_saved |
-|:-----------------|-----------:|-----------:|-------------:|--------------:|---------------:|----------------:|
-| 3-exit fixed 0.5 |     0.8225 |     0.8219 |       0.824  |        0.6221 |         0.0502 |            0    |
-| 3-exit tuned     |     0.8217 |     0.8154 |       0.823  |        0.5875 |         0.0542 |            0    |
-| 3-exit dynamic   |     0.8217 |     0.8154 |       0.823  |        0.5875 |         0.0542 |            0    |
-| 5-exit fixed 0.5 |     0.812  |     0.7999 |       0.7892 |        0.5767 |         0.0562 |            0    |
-| 5-exit tuned     |     0.8217 |     0.8079 |       0.8101 |        0.5752 |         0.0562 |            0    |
-| 5-exit dynamic   |     0.7764 |     0.761  |       0.7624 |        0.4656 |         0.0727 |           19.75 |
-
-### Final raw holdout: segment-level
-
-| setting          |   macro_f1 |   micro_f1 |   samples_f1 |   exact_match |   hamming_loss |   compute_saved |
-|:-----------------|-----------:|-----------:|-------------:|--------------:|---------------:|----------------:|
-| 3-exit fixed 0.5 |     0.729  |     0.8476 |       0.8507 |        0.7301 |         0.0409 |            0    |
-| 3-exit tuned     |     0.726  |     0.8489 |       0.8639 |        0.7165 |         0.0417 |            0    |
-| 5-exit tuned     |     0.725  |     0.8396 |       0.8518 |        0.6932 |         0.0441 |            0    |
-| 5-exit dynamic   |     0.6766 |     0.7912 |       0.8092 |        0.6028 |         0.0597 |           24.01 |
-
-### Final raw holdout: parent-level max
-
-| setting          |   macro_f1 |   micro_f1 | samples_f1   |   exact_match |   hamming_loss | avg_pred_labels   |   compute_saved |
-|:-----------------|-----------:|-----------:|:-------------|--------------:|---------------:|:------------------|----------------:|
-| 3-exit fixed 0.5 |     0.7337 |     0.8073 | 0.8427       |        0.5767 |         0.0619 | 1.8720            |            0    |
-| 3-exit tuned     |     0.7009 |     0.7858 | 0.8227       |        0.5063 |         0.0712 | 1.9804            |            0    |
-| 5-exit tuned     |     0.7275 |     0.7844 | 0.8134       |        0.4787 |         0.0721 | 2.0012            |            0    |
-| 5-exit dynamic   |     0.6892 |     0.7451 |              |        0.391  |         0.0893 |                   |           18.69 |
-
-### Final raw holdout: parent-level mean
-
-| setting          |   macro_f1 |   micro_f1 | samples_f1   |   exact_match |   hamming_loss | avg_pred_labels   |   compute_saved |
-|:-----------------|-----------:|-----------:|:-------------|--------------:|---------------:|:------------------|----------------:|
-| 3-exit fixed 0.5 |     0.7598 |     0.8976 | 0.9048       |        0.8155 |         0.0271 | 1.3045            |             0   |
-| 3-exit tuned     |     0.7615 |     0.8937 | 0.9115       |        0.7785 |         0.0292 | 1.4014            |             0   |
-| 5-exit tuned     |     0.77   |     0.8866 | 0.9032       |        0.7439 |         0.0311 | 1.4025            |             0   |
-| 5-exit dynamic   |     0.7186 |     0.8283 |              |        0.6332 |         0.0498 |                   |            28.6 |
-
-### Aggregation comparison for final recommended model
-
-| evaluation    |   macro_f1 |   micro_f1 |   samples_f1 |   exact_match |   hamming_loss |   avg_pred_labels |
-|:--------------|-----------:|-----------:|-------------:|--------------:|---------------:|------------------:|
-| Segment-level |     0.729  |     0.8476 |       0.8507 |        0.7301 |         0.0409 |            1.3409 |
-| Parent max    |     0.7337 |     0.8073 |       0.8427 |        0.5767 |         0.0619 |            1.872  |
-| Parent mean   |     0.7598 |     0.8976 |       0.9048 |        0.8155 |         0.0271 |            1.3045 |
-
-## Figure assets
-
-| Figure | Path | Purpose |
+| Result type | Method | Use |
 |---|---|---|
-| Final parent mean comparison | `figures/human_talk/agentic_data_preprocessing_v0.6/final_holdout_parent_mean_comparison.png` | Compare best final parent-level mean settings. |
-| Aggregation comparison | `figures/human_talk/agentic_data_preprocessing_v0.6/aggregation_comparison_3exit_fixed.png` | Show segment vs parent max vs parent mean for 3-exit fixed. |
-| Hamming loss comparison | `figures/human_talk/agentic_data_preprocessing_v0.6/final_holdout_hamming_loss_comparison.png` | Show reliability differences by evaluation setting. |
-| Dynamic policy tradeoff | `figures/human_talk/agentic_data_preprocessing_v0.6/dynamic_policy_tradeoff_parent_level.png` | Compare accuracy vs compute saving. |
-| Raw routing counts | `figures/human_talk/agentic_data_preprocessing_v0.6/raw_pseudo_routing_counts.png` | Show fixed vs hybrid routing volume. |
-| Per-label F1 | `figures/human_talk/agentic_data_preprocessing_v0.6/per_label_f1_segment_3exit_fixed.png` | Show label-level strengths and weaknesses. |
+| Main official v0.8-HCB result | Parent mean aggregation, fixed threshold 0.5, Exit 3 | Overall corrected-holdout headline result. |
+| Label-aware research finding | Mean for 8 stable labels, max for `audience_reaction_present` and `silence_present` | Macro-F1 and transient-label analysis. |
+| Global max diagnostic | Max for all labels | Diagnostic only; not final because it over-predicts labels. |
 
-## Documentation rules
+---
 
-- Use **parent-level mean aggregation** as the main final raw holdout result.
-- Use **3-exit fixed threshold 0.5** as the best reliable final model.
-- Do not claim that 5-exit is the best accuracy model. It is not.
-- Describe 5-exit dynamic as an efficiency/accuracy trade-off ablation.
-- Do not claim that TATA labels are perfect; describe them as useful pseudo labels protected by conservative routing and human correction.
-- State clearly that final holdout labels are manually reviewed clip-level ground truth.
-- State clearly that segment labels are weak inherited labels.
-- Mention the known limitation: non-target speaker rows may require future background/event re-checking.
+## v0.9 documentation layout
+
+The v0.9 experiment should be stored separately from v0.8 so the two result sets remain traceable.
+
+### Branch
+
+```text
+agentic_data_preprocessing_v0.9
+```
+
+### Scripts
+
+```text
+scripts/v0.9/run_labelwise_aggregation_threshold_calibration.py
+scripts/v0.9/evaluate_frozen_labelwise_aggregation_v09.py
+```
+
+### Workspace outputs
+
+```text
+human_talk_workspace/tata_v0.9_labelwise_calibration/verification/v08_parent_mean_fixed/
+human_talk_workspace/tata_v0.9_labelwise_calibration/verification/v08_label_aware_fixed/
+human_talk_workspace/tata_v0.9_labelwise_calibration/repeated_v07_style_calibration/
+human_talk_workspace/tata_v0.9_labelwise_calibration/final_frozen_v06_labelwise_fixed_0p5/
+```
+
+### Recommended tables
+
+```text
+docs/tables/agentic_data_preprocessing_v0.9/v09_final_full_holdout_comparison.csv
+docs/tables/agentic_data_preprocessing_v0.9/v09_repeated_split_calibration_summary.csv
+docs/tables/agentic_data_preprocessing_v0.9/v09_frozen_labelwise_method_map.csv
+docs/tables/agentic_data_preprocessing_v0.9/v09_frozen_labelwise_per_label_metrics.csv
+```
+
+### Recommended figures
+
+```text
+docs/figures/human_talk/agentic_data_preprocessing_v0.9/v09_final_comparison_bar.png
+docs/figures/human_talk/agentic_data_preprocessing_v0.9/v09_repeated_split_strategy_comparison.png
+docs/figures/human_talk/agentic_data_preprocessing_v0.9/v09_per_label_f1_frozen_labelwise.png
+```
+
+### v0.9 reporting policy
+
+| Result type | Method | Use |
+|---|---|---|
+| v0.8 official baseline | Parent mean, fixed 0.5 | Baseline reference. |
+| v0.8 simple label-aware | Mean for stable labels, max for audience/silence | Earlier post-hoc improvement. |
+| v0.9 repeated split | 20 seeds, 50/50 calibration/evaluation | Stability test for strategy selection. |
+| v0.9 final frozen result | Frozen labelwise map, fixed 0.5, full corrected holdout | New final best result. |
+

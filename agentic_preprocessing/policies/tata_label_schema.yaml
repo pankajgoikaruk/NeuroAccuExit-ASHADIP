@@ -1,0 +1,91 @@
+﻿# agentic_preprocessing/policies/tata_label_schema.yaml
+
+branch:
+  name: agentic_data_preprocessing_v0.5_tata_2
+  agenda: TinyAudioTriageAgent clip-level multi-label preprocessing
+
+task:
+  name: tiny_audio_triage
+  type: multi_label_audio_content_detection
+  model_name: TinyAudioTriageAgent
+  recommended_model: TinyAudioTriageNet-3Exit
+  loss: BCEWithLogitsLoss
+  activation: sigmoid
+  thresholding: per_label_thresholds
+
+description: >
+  TATA predicts speaker identity and event/background labels from 5-second
+  human-talk audio clips. This stage uses clip-level multi-label annotation.
+  Timing annotation is not required.
+
+target_speaker_labels:
+  - Brene_Brown
+  - Eckhart_Tolle
+  - Eric_Thomas
+  - Gary_Vee
+  - Jay_Shetty
+  - Nick_Vujicic
+
+non_target_speech_labels:
+  - other_speaker_present
+
+event_background_labels:
+  - music_present
+  - applause_present
+  - laughter_present
+  - crowd_cheer_present
+  - silence_present
+
+all_labels:
+  - Brene_Brown
+  - Eckhart_Tolle
+  - Eric_Thomas
+  - Gary_Vee
+  - Jay_Shetty
+  - Nick_Vujicic
+  - other_speaker_present
+  - music_present
+  - applause_present
+  - laughter_present
+  - crowd_cheer_present
+  - silence_present
+
+folder_to_label_map:
+  target_speaker:
+    Brene_Brown: Brene_Brown
+    Eckhart_Tolle: Eckhart_Tolle
+    Eric_Thomas: Eric_Thomas
+    Gary_Vee: Gary_Vee
+    Jay_Shetty: Jay_Shetty
+    Nick_Vujicic: Nick_Vujicic
+
+  other_speaker:
+    "*": other_speaker_present
+
+  events:
+    music: music_present
+    applause: applause_present
+    laughter: laughter_present
+    crowd_cheer: crowd_cheer_present
+    silence: silence_present
+
+decision_policy:
+  accepted:
+    description: Target speaker is clearly present without serious contamination.
+
+  accepted_with_warning:
+    description: Target speaker is present with music, applause, laughter, or crowd cheer.
+
+  needs_review:
+    description: Target speaker is present with other speaker overlap or uncertain confidence.
+
+  rejected:
+    description: Target speaker is absent or clip is pure event/silence/other-speaker audio.
+
+important_rules:
+  - Do not manually annotate event timing.
+  - Use 5-second clip-level labels first.
+  - Folder name provides the primary/default label.
+  - Manual review only corrects extra labels that also exist in the clip.
+  - TATA outputs later become pseudo-labels and routing decisions, not automatic ground truth.
+  - Do not reject target-speaker clips only because background events are present.

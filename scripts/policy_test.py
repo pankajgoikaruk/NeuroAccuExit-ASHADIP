@@ -1,184 +1,270 @@
 # scripts/policy_test.py
 
-import os
-import json
+from __future__ import annotations
+
 import argparse
-import torch
+import json
+import os
 from statistics import mean
+from typing import Optional
+
+import torch
+from torch.nn.functional import softmax
 
 from data.datasets import make_loaders
-from adapters.audio_adapter import TinyAudioCNN
-from models.exit_net import ExitNet
-
-# EA policy function (make sure file is: policies/depth_ea.py)
-from policies.depth_ea import depth_ea_decide
+from utils.config import load_config
+from utils.model_factory import build_audio_exit_net, load_run_model_cfg
 
 
-def _load_json(path: str):
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+def _parse_tap_blocks(value) -> Optional[tuple]:
+    """
+    Accept:
+      - None
+      - "1,2,3,4"
+      - [1,2,3,4]
+      - (1,2,3,4)
+    """
+    if value is None:
+        return None
+
+    if isinstance(value, (list, tuple)):
+        return tuple(int(v) for v in value)
+
+    value = str(value).strip()
+    if value == "":
+        return None
+
+    return tuple(int(v.strip()) for v in value.split(",") if v.strip())
 
 
-def main(run_dir: str, segments_csv: str, features_root: str, policy: str, num_workers: int):
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+def _pad_or_trim(seq, target_len, pad_value=None):
+    vals = [float(x) for x in seq]
+    if len(vals) >= target_len:
+        return vals[:target_len]
 
-    # ---- Load temps (required for both policies; fall back to 1.0s if missing) ----
-    tpath = os.path.join(run_dir, "temperature.json")
-    if os.path.exists(tpath):
-        temps = _load_json(tpath).get("temperatures", [1.0, 1.0, 1.0])
-    else:
-        temps = [1.0, 1.0, 1.0]
-    temps = [max(float(t), 0.5) for t in temps]  # stability clamp
+    if pad_value is None:
+        pad_value = vals[-1] if len(vals) > 0 else 1.0
 
-    # ---- Load policy-specific thresholds ----
-    tau = None
-    ea_cfg = None
+    vals = vals + [float(pad_value)] * (target_len - len(vals))
+    return vals
 
-    if policy == "greedy":
-        th_path = os.path.join(run_dir, "thresholds.json")
-        if not os.path.exists(th_path):
-            raise FileNotFoundError(f"thresholds.json not found in run_dir: {th_path}")
-        tau = float(_load_json(th_path)["tau"])
 
-    elif policy == "ea":
-        ea_path = os.path.join(run_dir, "ea_thresholds.json")
-        if not os.path.exists(ea_path):
-            raise FileNotFoundError(f"ea_thresholds.json not found in run_dir: {ea_path}")
-        ea_file = _load_json(ea_path)
+def _load_run_cfg(run_dir: str):
+    cfg_path = os.path.join(run_dir, "config_used.yaml")
+    if not os.path.exists(cfg_path):
+        return {}
+    try:
+        return load_config(cfg_path) or {}
+    except Exception:
+        return {}
 
-        ea_threshold = float(ea_file["ea_threshold"])
-        ea_mode = ea_file.get("ea_mode", "logprob")
-        ea_min_exit = int(ea_file.get("ea_min_exit", 0))
-        ea_stable_k = int(ea_file.get("ea_stable_k", 1))
-        ea_flip_penalty = float(ea_file.get("ea_flip_penalty", 0.0))
 
-        ea_cfg = {
-            "ea_threshold": ea_threshold,
-            "ea_mode": ea_mode,
-            "ea_min_exit": ea_min_exit,
-            "ea_stable_k": ea_stable_k,
-            "ea_flip_penalty": ea_flip_penalty,
-        }
-    else:
-        raise ValueError(f"Unknown policy: {policy}")
+def main(
+    run_dir,
+    segments_csv,
+    features_root,
+    policy="greedy",
+    num_workers=2,
+    n_mels=None,
+    tap_blocks=None,
+    num_classes=None,
+    batch_size=64,
+    device=None,
+):
+    if policy != "greedy":
+        raise ValueError(
+            f"Current scripts.policy_test.py supports only greedy policy, got: {policy}"
+        )
 
-    # ---- Data ----
-    # (we read label2id to avoid hardcoding num_classes)
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    # Load greedy threshold
+    thresholds_path = os.path.join(run_dir, "thresholds.json")
+    with open(thresholds_path, "r", encoding="utf-8") as f:
+        tau_obj = json.load(f)
+    tau = float(tau_obj["tau"])
+
+    # Load temperatures
+    temperature_path = os.path.join(run_dir, "temperature.json")
+    with open(temperature_path, "r", encoding="utf-8") as f:
+        temp_obj = json.load(f)
+
+    temps_raw = temp_obj.get("temperatures", [])
+    temps_raw = [max(float(t), 1e-3) for t in temps_raw]
+
+    # Load test set
     _, _, dl_te, label2id = make_loaders(
-        segments_csv, features_root, batch_size=64, num_workers=num_workers
+        segments_csv,
+        features_root,
+        batch_size=batch_size,
+        num_workers=num_workers,
     )
-    num_classes = len(label2id)
 
-    # ---- Build model ----
-    model = ExitNet(TinyAudioCNN(), (16, 32), 64, num_classes).to(device)
-    ckpt = os.path.join(run_dir, "ckpt", "best.pt")
-    if not os.path.exists(ckpt):
-        raise FileNotFoundError(f"Model checkpoint not found: {ckpt}")
-    model.load_state_dict(torch.load(ckpt, map_location=device))
+    # Load run config
+    run_cfg = _load_run_cfg(run_dir)
+    run_model_cfg = load_run_model_cfg(run_dir)
+    run_features_cfg = run_cfg.get("features") or {}
+
+    # Prefer CLI, else saved run config, else defaults
+    tap_blocks = (
+        _parse_tap_blocks(tap_blocks)
+        or _parse_tap_blocks((run_model_cfg or {}).get("tap_blocks"))
+        or (1, 3)
+    )
+
+    if n_mels is None:
+        n_mels = int(run_features_cfg.get("n_mels", 64))
+    else:
+        n_mels = int(n_mels)
+
+    # Keep C-class generic
+    num_classes_data = len(label2id)
+    if num_classes is not None and int(num_classes) != num_classes_data:
+        print(
+            f"[WARN] policy_test num_classes={int(num_classes)} but dataset has "
+            f"{num_classes_data}. Using dataset value."
+        )
+    num_classes = num_classes_data
+
+    model = build_audio_exit_net(
+        num_classes=num_classes,
+        n_mels=n_mels,
+        tap_blocks=tap_blocks,
+        model_cfg=run_model_cfg,
+    ).to(device)
+
+    ckpt_path = os.path.join(run_dir, "ckpt", "best.pt")
+    model.load_state_dict(torch.load(ckpt_path, map_location=device))
     model.eval()
 
-    # ---- Evaluate ----
+    def scale(logits, t):
+        return logits / max(float(t), 1e-3)
+
     n = 0
     correct = 0
-    exits_taken = []
+    exits = []
 
-    # EA-only diagnostics
-    flip_count_total = 0
-    exit_consistent_total = 0
+    flip_any_count = 0
+    flip_count_sum = 0
+    consistency_count = 0
+
+    exit_counts = None
+    temps = None
+    num_exits = None
 
     with torch.no_grad():
         for x, y in dl_te:
-            x = x.to(device)
-            y = y.to(device)
-            logits_list = model(x)  # list of 3 tensors (B,C)
+            x, y = x.to(device), y.to(device)
 
-            if policy == "greedy":
-                # scale logits per exit
-                scaled = [lg / max(float(temps[i]), 1e-3) for i, lg in enumerate(logits_list)]
-                probs = [torch.softmax(lg, dim=1) for lg in scaled]
+            logits = model(x)
 
-                B = x.size(0)
-                for i in range(B):
-                    taken = 2
-                    for k in (0, 1, 2):
-                        if float(probs[k][i].max()) >= tau:
-                            taken = k
-                            break
-                    pred = int(torch.argmax(probs[taken][i]))
-                    correct += int(pred == int(y[i]))
-                    exits_taken.append(taken + 1)  # store 1/2/3
-                    n += 1
+            if num_exits is None:
+                num_exits = len(logits)
+                temps = _pad_or_trim(temps_raw, num_exits)
+                exit_counts = {f"e{k+1}": 0 for k in range(num_exits)}
 
-            else:
-                # Depth-EA decision (batch-wise)
-                out = depth_ea_decide(
-                    logits_list=logits_list,
-                    temps=temps,
-                    ea_mode=ea_cfg["ea_mode"],
-                    ea_threshold=ea_cfg["ea_threshold"],
-                    ea_min_exit=ea_cfg["ea_min_exit"],
-                    ea_stable_k=ea_cfg["ea_stable_k"],
-                    ea_flip_penalty=ea_cfg["ea_flip_penalty"],
+            scaled_logits = [scale(lg, temps[i]) for i, lg in enumerate(logits)]
+            probs = [softmax(lg, dim=1) for lg in scaled_logits]
+
+            for i in range(x.size(0)):
+                preds_all = [int(torch.argmax(p[i]).item()) for p in probs]
+
+                # Greedy decision
+                taken = len(probs) - 1
+                for k in range(len(probs)):
+                    if float(probs[k][i].max()) >= tau:
+                        taken = k
+                        break
+
+                pred_taken = preds_all[taken]
+                pred_final = preds_all[-1]
+
+                correct += int(pred_taken == int(y[i].item()))
+                exits.append(taken + 1)
+                exit_counts[f"e{taken + 1}"] += 1
+
+                # Flip metrics
+                flip_any_count += int(len(set(preds_all)) > 1)
+                flip_count_sum += sum(
+                    1 for a, b in zip(preds_all[:-1], preds_all[1:]) if a != b
                 )
-                taken = out["taken"]            # (B,) values 0/1/2
-                pred_taken = out["pred_taken"]  # (B,)
-                pred_final = out["pred_final"]  # (B,)
+                consistency_count += int(pred_taken == pred_final)
 
-                correct += int((pred_taken == y).sum().item())
-                exits_taken.extend((taken + 1).detach().cpu().tolist())  # store 1/2/3
-                n += x.size(0)
+                n += 1
 
-                flip_count_total += int((out["flip_count"] > 0).sum().item())
-                exit_consistent_total += int((pred_taken == pred_final).sum().item())
+    if n == 0:
+        raise RuntimeError("Test loader is empty. No policy results were generated.")
 
-    acc = correct / max(n, 1)
-    avg_exit = mean(exits_taken) if exits_taken else 0.0
+    acc = correct / n
+    avg_exit_depth = mean(exits)
+    exit_mix = {k: v / n for k, v in exit_counts.items()}
+    flip_any_rate = flip_any_count / n
+    avg_flip_count = flip_count_sum / n
+    exit_consistency = consistency_count / n
 
-    # ---- Exit mix (needed for correct compute saving in summarize_run) ----
-    e1 = exits_taken.count(1) / max(n, 1)
-    e2 = exits_taken.count(2) / max(n, 1)
-    e3 = exits_taken.count(3) / max(n, 1)
-    exit_mix = {"e1": float(e1), "e2": float(e2), "e3": float(e3)}
-
-    print(f"Policy: {policy}")
-    print(f"Policy test accuracy: {acc:.4f}")
-    print(f"Avg exit depth: {avg_exit:.3f}")
-    print(f"Exit mix: e1={exit_mix['e1']:.3f}, e2={exit_mix['e2']:.3f}, e3={exit_mix['e3']:.3f}")
-
-    results = {
-        "policy": policy,
-        "accuracy": float(acc),
-        "avg_exit_depth": float(avg_exit),
-        "n_samples": int(n),
+    result = {
+        "policy": "greedy",
+        "accuracy": acc,
+        "avg_exit_depth": avg_exit_depth,
+        "n_samples": n,
+        "n_segments": n,
+        "num_exits": num_exits,
+        "num_classes": int(num_classes),
+        "tap_blocks": list(tap_blocks) if tap_blocks is not None else None,
+        "n_mels": int(n_mels),
         "exit_mix": exit_mix,
+        "tau": float(tau),
+        "temperatures_used": temps,
+        "flip_any_rate": flip_any_rate,
+        "avg_flip_count": avg_flip_count,
+        "exit_consistency": exit_consistency,
+        "exit_hint": (run_model_cfg or {}).get("exit_hint", {}),
     }
 
-    if policy == "ea":
-        flip_rate = flip_count_total / max(n, 1)
-        exit_consistency = exit_consistent_total / max(n, 1)
-        print(f"Flip-rate: {flip_rate:.4f}")
-        print(f"Exit-consistency (taken==final): {exit_consistency:.4f}")
-
-        results.update({
-            "flip_rate": float(flip_rate),
-            "exit_consistency": float(exit_consistency),
-            "ea": ea_cfg,
-        })
-
-    # write policy_results.json for summarize_run
     out_path = os.path.join(run_dir, "policy_results.json")
     with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(results, f, indent=2)
-    print(f"Wrote: {out_path}")
+        json.dump(result, f, indent=2)
+
+    exit_mix_str = ", ".join(f"{k}={v:.4f}" for k, v in exit_mix.items())
+
+    print(f"Policy test accuracy: {acc:.4f} (n_segments={n})")
+    print(f"Avg exit depth: {avg_exit_depth:.3f}")
+    print(f"Exit mix: {exit_mix_str}")
+    print(f"Flip-any rate: {flip_any_rate:.4f}")
+    print(f"Avg flip count: {avg_flip_count:.4f}")
+    print(f"Exit consistency: {exit_consistency:.4f}")
+    print(f"Saved: {out_path}")
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--run_dir", required=True)
-    ap.add_argument("--segments_csv", default="data_cache/segments.csv")
-    ap.add_argument("--features_root", default="data_cache/features")
-    ap.add_argument("--policy", default="greedy", choices=["greedy", "ea"])
-    ap.add_argument("--num_workers", type=int, default=0)
+    ap.add_argument("--segments_csv", default="data_caches/segments.csv")
+    ap.add_argument("--features_root", default="data_caches/features")
+    ap.add_argument("--policy", default="greedy")
+    ap.add_argument("--num_workers", type=int, default=2)
+    ap.add_argument("--batch_size", type=int, default=64)
+    ap.add_argument("--n_mels", type=int, default=None)
+    ap.add_argument(
+        "--tap_blocks",
+        type=str,
+        default=None,
+        help='Example: "1,3" for 3 exits or "1,2,3,4" for 5 exits.',
+    )
+    ap.add_argument("--num_classes", type=int, default=None)
+    ap.add_argument("--device", type=str, default=None)
     args = ap.parse_args()
 
-    main(args.run_dir, args.segments_csv, args.features_root, args.policy, args.num_workers)
+    main(
+        run_dir=args.run_dir,
+        segments_csv=args.segments_csv,
+        features_root=args.features_root,
+        policy=args.policy,
+        num_workers=args.num_workers,
+        n_mels=args.n_mels,
+        tap_blocks=args.tap_blocks,
+        num_classes=args.num_classes,
+        batch_size=args.batch_size,
+        device=args.device,
+    )

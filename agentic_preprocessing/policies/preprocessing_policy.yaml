@@ -1,0 +1,71 @@
+# agentic_preprocessing\policies\preprocessing_policy.yaml
+
+# Agentic preprocessing policy
+# Version 0.3: non-destructive dataset audit with split reason codes and manifests
+
+agent:
+  name: DatasetAuditorAgent
+  version: v0.3_non_destructive_dataset_auditor
+  mode: audit_only
+
+safety:
+  delete_raw_files: false
+  move_raw_files: false
+  overwrite_raw_files: false
+  copy_flagged_files: false
+  write_routed_views: false
+
+targets:
+  raw_root: human_talk_dataset
+  output_dir: human_talk_workspace/agent_reports
+  raw4_classes:
+    - Brene_Brown
+    - Eckhart_Tolle
+    - Eric_Thomas
+    - Gary_Vee
+
+audio:
+  audio_extensions:
+    - .wav
+  expected_sample_rate: 16000
+  expected_channels: 1
+  expected_duration_sec: 5.0
+  duration_tolerance_sec: 1.0
+  min_duration_sec: 1.0
+
+quality_thresholds:
+  high_silence_ratio: 0.70
+  very_low_rms_db: -45.0
+  clipping_ratio_threshold: 0.01
+  min_speech_activity_ratio: 0.25
+
+borderline_thresholds:
+  borderline_silence_ratio: 0.60
+  borderline_low_rms_db: -35.0
+  borderline_clipping_ratio: 0.005
+  borderline_speech_activity_ratio: 0.35
+
+decisions:
+  accepted: safe after standard preprocessing
+  needs_review: suspicious and requires human review
+  rejected: clearly unsuitable but preserved
+  blocked: unreadable, corrupted, missing, or unsupported
+
+outputs:
+  reports_dir: human_talk_workspace/agent_reports
+  main_csv: dataset_audit_agent_report.csv
+  main_json: dataset_audit_agent_report.json
+  main_markdown: dataset_audit_agent_report.md
+  accepted_manifest: accepted_manifest.csv
+  needs_review_manifest: needs_review_manifest.csv
+  rejected_manifest: rejected_manifest.csv
+  blocked_manifest: blocked_manifest.csv
+  recommended_actions: recommended_next_actions.json
+
+research_notes:
+  - Raw files must remain unchanged.
+  - V0.3 is manifest-first; routed folders are intentionally disabled.
+  - accepted means safe_after_preprocessing, not raw-training-ready.
+  - sample_rate_mismatch and channel_mismatch are preprocessing reasons, not quality failures.
+  - high_silence_ratio, low_speech_activity, very_low_signal, clipping, and duplicate candidates are quality concerns.
+  - Human review remains part of the preprocessing loop.
