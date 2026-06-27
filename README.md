@@ -83,7 +83,6 @@ Recommended v0.8 figure references:
 
 The v0.8 human-talk documentation should use these locations:
 
-<<<<<<< HEAD
 ```text
 docs/reports/human_talk/V08_HUMAN_CORRECTED_BALANCED_EXPERIMENT_REPORT.md
 docs/results/human_talk/V08_RESULTS_SUMMARY.md
@@ -93,7 +92,6 @@ docs/COMMANDS_V08.md
 docs/APPENDIX.md
 docs/MULTILABEL_EXPERIMENT_LOG.md
 ```
-=======
 Only the reviewed safe subsets were included in this v0.8-HCB experiment. The large 2,471-row changed-label queue remains a future ablation queue and was not blindly trusted.
 
 ### Manifest and balance summary
@@ -215,4 +213,94 @@ Fixed 0.5 is the final recommended setting. Threshold tuning improved internal v
 ## Key conclusion
 
 v0.8-HCB is the current strongest model and should replace the old v0.6 headline as the main ASHADIP/TATA-assisted preprocessing result. The fair corrected-holdout comparison shows that v0.8-HCB improves global reliability and produces a more realistic number of predicted labels per clip. Remaining work should focus on rare event labels, especially `audience_reaction_present` and `silence_present` on corrected holdout.
->>>>>>> 95dd741cfaaf9a26e581cf7c7b8b89789694ae3e
+
+---
+
+## v0.9 update — frozen labelwise aggregation
+
+A new branch was created for the next experiment:
+
+```text
+agentic_data_preprocessing_v0.9
+```
+
+The purpose of v0.9 is not to retrain the model. Instead, it reuses the strong v0.8-HCB model and tests whether a more stable label-specific parent aggregation rule improves corrected-holdout performance.
+
+### v0.9 experiment question
+
+```text
+Can repeated labelwise aggregation stability testing identify a fixed aggregation map that improves Macro-F1 and rare/context labels without hurting Micro-F1, Samples-F1, Exact Match, or Hamming Loss?
+```
+
+### v0.9 result summary
+
+#### Full corrected-holdout final results
+
+| Method | Macro-F1 | Micro-F1 | Samples-F1 | Exact Match | Hamming Loss ↓ | Avg Pred Labels |
+|---|---:|---:|---:|---:|---:|---:|
+| v0.8 official parent mean | 0.7801 | 0.9332 | 0.9406 | 0.8397 | 0.0194 | 1.4302 |
+| v0.8 simple label-aware mean/max | 0.8320 | 0.9285 | 0.9375 | 0.8235 | 0.0211 | 1.4844 |
+| **v0.9 frozen labelwise top2mean/mean** | **0.8512** | **0.9372** | **0.9482** | **0.8420** | **0.0185** | **1.4694** |
+
+#### Repeated calibration/evaluation split results
+
+| Method | Macro-F1 mean | Micro-F1 mean | Samples-F1 mean | Exact mean | Hamming Loss ↓ mean | Role |
+|---|---:|---:|---:|---:|---:|---|
+| max fixed thresholds | 0.7187 | 0.8200 | 0.8419 | 0.5098 | 0.0632 | Rejected: over-predicts labels. |
+| mean fixed thresholds | 0.7802 | 0.9315 | 0.9392 | 0.8371 | 0.0199 | Strong baseline. |
+| top2mean fixed thresholds | 0.8023 | 0.8884 | 0.9060 | 0.6927 | 0.0358 | Helps Macro-F1 but hurts reliability. |
+| **v06 selected aggregation fixed thresholds** | **0.8310** | **0.9345** | **0.9449** | **0.8368** | **0.0193** | Best balanced repeated-split strategy. |
+| v07 aggregation + threshold calibrated | 0.8319 | 0.9288 | 0.9363 | 0.8185 | 0.0208 | Macro good, but weaker overall. |
+
+### Frozen v0.9 aggregation map
+
+| Label | Frozen v0.9 aggregation | Threshold |
+|---|---|---:|
+| `Brene_Brown` | mean | 0.5 |
+| `Eckhart_Tolle` | top2mean | 0.5 |
+| `Eric_Thomas` | mean | 0.5 |
+| `Gary_Vee` | top2mean | 0.5 |
+| `Jay_Shetty` | mean | 0.5 |
+| `Nick_Vujicic` | mean | 0.5 |
+| `other_speaker_present` | mean | 0.5 |
+| `music_present` | mean | 0.5 |
+| `audience_reaction_present` | top2mean | 0.5 |
+| `silence_present` | top2mean | 0.5 |
+
+### Final v0.9 interpretation
+
+The v0.9 strategy worked. The best final method is **frozen labelwise aggregation with fixed threshold 0.5**, not global max and not threshold calibration.
+
+```text
+Best final result:
+v0.9 frozen labelwise aggregation
+Macro-F1=0.8512
+Micro-F1=0.9372
+Samples-F1=0.9482
+Exact Match=0.8420
+Hamming Loss=0.0185
+```
+
+Compared with v0.8 official parent mean, the v0.9 frozen strategy improves Macro-F1 from `0.7801` to `0.8512`, while also improving Micro-F1, Samples-F1, Exact Match, and Hamming Loss.
+
+### Key research finding
+
+The main v0.9 finding is:
+
+```text
+Label-specific parent aggregation can improve heterogeneous multi-label audio classification without retraining the model.
+```
+
+The repeated split experiment showed that aggregation selection is helpful and stable, while threshold calibration was not worth freezing because it had weaker Micro-F1, Samples-F1, Exact Match, and Hamming Loss.
+
+### Updated documentation paths
+
+Recommended v0.9 locations:
+
+```text
+scripts/v0.9/
+docs/tables/agentic_data_preprocessing_v0.9/
+docs/figures/human_talk/agentic_data_preprocessing_v0.9/
+human_talk_workspace/tata_v0.9_labelwise_calibration/
+```
+

@@ -103,3 +103,58 @@ Purpose:
 | Main official v0.8-HCB result | Parent mean aggregation, fixed threshold 0.5, Exit 3 | Overall corrected-holdout headline result. |
 | Label-aware research finding | Mean for 8 stable labels, max for `audience_reaction_present` and `silence_present` | Macro-F1 and transient-label analysis. |
 | Global max diagnostic | Max for all labels | Diagnostic only; not final because it over-predicts labels. |
+
+---
+
+## v0.9 documentation layout
+
+The v0.9 experiment should be stored separately from v0.8 so the two result sets remain traceable.
+
+### Branch
+
+```text
+agentic_data_preprocessing_v0.9
+```
+
+### Scripts
+
+```text
+scripts/v0.9/run_labelwise_aggregation_threshold_calibration.py
+scripts/v0.9/evaluate_frozen_labelwise_aggregation_v09.py
+```
+
+### Workspace outputs
+
+```text
+human_talk_workspace/tata_v0.9_labelwise_calibration/verification/v08_parent_mean_fixed/
+human_talk_workspace/tata_v0.9_labelwise_calibration/verification/v08_label_aware_fixed/
+human_talk_workspace/tata_v0.9_labelwise_calibration/repeated_v07_style_calibration/
+human_talk_workspace/tata_v0.9_labelwise_calibration/final_frozen_v06_labelwise_fixed_0p5/
+```
+
+### Recommended tables
+
+```text
+docs/tables/agentic_data_preprocessing_v0.9/v09_final_full_holdout_comparison.csv
+docs/tables/agentic_data_preprocessing_v0.9/v09_repeated_split_calibration_summary.csv
+docs/tables/agentic_data_preprocessing_v0.9/v09_frozen_labelwise_method_map.csv
+docs/tables/agentic_data_preprocessing_v0.9/v09_frozen_labelwise_per_label_metrics.csv
+```
+
+### Recommended figures
+
+```text
+docs/figures/human_talk/agentic_data_preprocessing_v0.9/v09_final_comparison_bar.png
+docs/figures/human_talk/agentic_data_preprocessing_v0.9/v09_repeated_split_strategy_comparison.png
+docs/figures/human_talk/agentic_data_preprocessing_v0.9/v09_per_label_f1_frozen_labelwise.png
+```
+
+### v0.9 reporting policy
+
+| Result type | Method | Use |
+|---|---|---|
+| v0.8 official baseline | Parent mean, fixed 0.5 | Baseline reference. |
+| v0.8 simple label-aware | Mean for stable labels, max for audience/silence | Earlier post-hoc improvement. |
+| v0.9 repeated split | 20 seeds, 50/50 calibration/evaluation | Stability test for strategy selection. |
+| v0.9 final frozen result | Frozen labelwise map, fixed 0.5, full corrected holdout | New final best result. |
+
