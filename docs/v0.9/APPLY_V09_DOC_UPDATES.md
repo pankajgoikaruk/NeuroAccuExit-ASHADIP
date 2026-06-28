@@ -1,27 +1,46 @@
-# How to apply these v0.9 documentation updates
+# How to apply the v0.9 documentation update
 
-This package contains updated copies of the uploaded documentation files. They preserve the existing content and append v0.9 sections.
+This package contains edited v0.9 documentation files plus copied evidence tables, config, and scripts.
 
-Copy them into your repository root:
+Copy the package contents into your repository root:
 
 ```powershell
-Copy-Item -Force README.md "C:\Users\wwwsa\PycharmProjects\NeuroAccuExit-ASHADIP\README.md"
-Copy-Item -Force DOC_STRUCTURE.md "C:\Users\wwwsa\PycharmProjects\NeuroAccuExit-ASHADIP\DOC_STRUCTURE.md"
-Copy-Item -Force APPENDIX.md "C:\Users\wwwsa\PycharmProjects\NeuroAccuExit-ASHADIP\docs\APPENDIX.md"
-Copy-Item -Force COMMANDS_V08.md "C:\Users\wwwsa\PycharmProjects\NeuroAccuExit-ASHADIP\docs\COMMANDS_V08.md"
-Copy-Item -Force MULTILABEL_EXPERIMENT_LOG.md "C:\Users\wwwsa\PycharmProjects\NeuroAccuExit-ASHADIP\docs\MULTILABEL_EXPERIMENT_LOG.md"
+$Repo = "C:\Users\wwwsa\PycharmProjects\NeuroAccuExit-ASHADIP"
+$Pkg = "PATH_TO_EXTRACTED\LABLEX_v0.9_documentation_update"
+
+Copy-Item -Recurse -Force "$Pkg\*" $Repo
 ```
 
-Then check:
+Then inspect the changes:
 
 ```powershell
-git diff -- README.md DOC_STRUCTURE.md docs\APPENDIX.md docs\COMMANDS_V08.md docs\MULTILABEL_EXPERIMENT_LOG.md
+git diff -- README.md DOC_STRUCTURE.md docs\v0.9 docs\reports\v0.9 docs\results\v0.9 docs\tables\agentic_data_preprocessing_v0.9 configs\v0.9 scripts\v0.9
 ```
 
-Commit on branch `agentic_data_preprocessing_v0.9`:
+Recommended commit:
 
 ```powershell
-git add README.md DOC_STRUCTURE.md docs\APPENDIX.md docs\COMMANDS_V08.md docs\MULTILABEL_EXPERIMENT_LOG.md
-git commit -m "docs: add v0.9 frozen labelwise aggregation results"
+git add README.md DOC_STRUCTURE.md docs\v0.9 docs\reports\v0.9 docs\results\v0.9 docs\tables\agentic_data_preprocessing_v0.9 configs\v0.9 scripts\v0.9
+git commit -m "docs: document v0.9 labelwise aggregation results"
 git push origin agentic_data_preprocessing_v0.9
 ```
+
+## Final reported method
+
+```text
+v09_frozen_frequency_plus_gary_mean
+```
+
+## Final result
+
+```text
+Macro-F1   = 0.8518
+Micro-F1   = 0.9374
+Samples-F1 = 0.9464
+Exact      = 0.8431
+Hamming    = 0.0183
+```
+
+## Important decision
+
+Do not report old TATA-LAWYER thresholds as final for v0.9. They were tested and rejected for this model.
