@@ -1,0 +1,141 @@
+{
+  "experiment": "v0.9_labelwise_mapping_bank_fixed_threshold",
+  "description": "Candidate parent-level aggregation maps for agentic_data_preprocessing_v0.9. All maps are intended to be evaluated on the same corrected-holdout segment-probability CSV using fixed threshold 0.5 unless a map-specific threshold is provided.",
+  "labels": [
+    "Brene_Brown",
+    "Eckhart_Tolle",
+    "Eric_Thomas",
+    "Gary_Vee",
+    "Jay_Shetty",
+    "Nick_Vujicic",
+    "other_speaker_present",
+    "music_present",
+    "audience_reaction_present",
+    "silence_present"
+  ],
+  "default_threshold": 0.5,
+  "allowed_aggregation_methods": [
+    "mean",
+    "max",
+    "top2mean"
+  ],
+  "maps": {
+    "mean_all_baseline": {
+      "description": "Official v0.8-style parent aggregation baseline: mean aggregation for all labels.",
+      "aggregation": {
+        "Brene_Brown": "mean",
+        "Eckhart_Tolle": "mean",
+        "Eric_Thomas": "mean",
+        "Gary_Vee": "mean",
+        "Jay_Shetty": "mean",
+        "Nick_Vujicic": "mean",
+        "other_speaker_present": "mean",
+        "music_present": "mean",
+        "audience_reaction_present": "mean",
+        "silence_present": "mean"
+      }
+    },
+    "simple_event_max_v08": {
+      "description": "Simple v0.8 label-aware map: mean for stable labels, max for audience_reaction_present and silence_present.",
+      "aggregation": {
+        "Brene_Brown": "mean",
+        "Eckhart_Tolle": "mean",
+        "Eric_Thomas": "mean",
+        "Gary_Vee": "mean",
+        "Jay_Shetty": "mean",
+        "Nick_Vujicic": "mean",
+        "other_speaker_present": "mean",
+        "music_present": "mean",
+        "audience_reaction_present": "max",
+        "silence_present": "max"
+      }
+    },
+    "v09_frozen_frequency_map": {
+      "description": "Current v0.9 frozen map selected from repeated v06-style aggregation selection frequency, fixed threshold 0.5.",
+      "aggregation": {
+        "Brene_Brown": "mean",
+        "Eckhart_Tolle": "top2mean",
+        "Eric_Thomas": "mean",
+        "Gary_Vee": "top2mean",
+        "Jay_Shetty": "mean",
+        "Nick_Vujicic": "mean",
+        "other_speaker_present": "mean",
+        "music_present": "mean",
+        "audience_reaction_present": "top2mean",
+        "silence_present": "top2mean"
+      }
+    },
+    "tata_lawyer_original_diagnostic_map": {
+      "description": "Earlier TATA-LAWYER diagnostic map before replacing some max choices with top2mean.",
+      "aggregation": {
+        "Brene_Brown": "mean",
+        "Eckhart_Tolle": "mean",
+        "Eric_Thomas": "max",
+        "Gary_Vee": "mean",
+        "Jay_Shetty": "max",
+        "Nick_Vujicic": "max",
+        "other_speaker_present": "max",
+        "music_present": "mean",
+        "audience_reaction_present": "top2mean",
+        "silence_present": "max"
+      }
+    },
+    "tata_lawyer_improved_diagnostic_map": {
+      "description": "Improved TATA-LAWYER diagnostic map: mean for several stable speakers, top2mean for selected speakers/music/audience, max for other_speaker and silence.",
+      "aggregation": {
+        "Brene_Brown": "mean",
+        "Eckhart_Tolle": "mean",
+        "Eric_Thomas": "top2mean",
+        "Gary_Vee": "mean",
+        "Jay_Shetty": "top2mean",
+        "Nick_Vujicic": "top2mean",
+        "other_speaker_present": "max",
+        "music_present": "top2mean",
+        "audience_reaction_present": "top2mean",
+        "silence_present": "max"
+      }
+    },
+    "v09_frozen_frequency_plus_gary_mean": {
+      "description": "v0.9 frozen frequency map with Gary_Vee changed from top2mean to mean.",
+      "aggregation": {
+        "Brene_Brown": "mean",
+        "Eckhart_Tolle": "top2mean",
+        "Eric_Thomas": "mean",
+        "Gary_Vee": "mean",
+        "Jay_Shetty": "mean",
+        "Nick_Vujicic": "mean",
+        "other_speaker_present": "mean",
+        "music_present": "mean",
+        "audience_reaction_present": "top2mean",
+        "silence_present": "top2mean"
+      }
+    },
+    "tata_lawyer_optimal_map_fixed_thresholds": {
+      "description": "TATA-LAWYER optimal setting: fallback aggregation map with fixed per-label thresholds.",
+      "aggregation": {
+        "Brene_Brown": "mean",
+        "Eckhart_Tolle": "mean",
+        "Eric_Thomas": "top2mean",
+        "Gary_Vee": "mean",
+        "Jay_Shetty": "top2mean",
+        "Nick_Vujicic": "top2mean",
+        "other_speaker_present": "max",
+        "music_present": "top2mean",
+        "audience_reaction_present": "top2mean",
+        "silence_present": "max"
+      },
+      "thresholds": {
+        "Brene_Brown": 0.6,
+        "Eckhart_Tolle": 0.46,
+        "Eric_Thomas": 0.68,
+        "Gary_Vee": 0.95,
+        "Jay_Shetty": 0.95,
+        "Nick_Vujicic": 0.5,
+        "other_speaker_present": 0.38,
+        "music_present": 0.74,
+        "audience_reaction_present": 0.69,
+        "silence_present": 0.88
+      }
+    }
+  }
+}

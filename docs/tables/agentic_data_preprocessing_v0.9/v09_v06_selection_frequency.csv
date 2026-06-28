@@ -1,0 +1,16 @@
+﻿label,selected_aggregation,count
+Brene_Brown,mean,10
+Brene_Brown,top2mean,10
+Eckhart_Tolle,top2mean,11
+Eckhart_Tolle,max,8
+Eckhart_Tolle,mean,1
+Eric_Thomas,mean,20
+Gary_Vee,top2mean,11
+Gary_Vee,mean,9
+Jay_Shetty,mean,20
+Nick_Vujicic,mean,20
+audience_reaction_present,top2mean,20
+music_present,mean,20
+other_speaker_present,mean,20
+silence_present,top2mean,16
+silence_present,mean,4

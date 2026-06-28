@@ -1,160 +1,126 @@
+# Documentation structure — Agentic Data Preprocessing v0.9
+
+This file records the recommended documentation layout for `agentic_data_preprocessing_v0.9`. v0.9 is a post-hoc labelwise aggregation branch built on top of the v0.8-HCB model.
+
 ---
 
-## v0.8 human-talk documentation layout update
-
-The v0.8 documentation artifacts are organised under human-talk and version-specific folders so that v0.7 and v0.8 results do not overwrite each other.
-
-### Reports
-
-```text
-docs/reports/human_talk/V08_HUMAN_CORRECTED_BALANCED_EXPERIMENT_REPORT.md
-```
-
-Purpose: thesis-ready narrative report for the v0.8-human-corrected-balanced experiment, including methodology, training configuration, corrected-holdout results, fair v0.6 comparison, and label-aware aggregation analysis.
-
-### Results summaries
-
-```text
-docs/results/human_talk/V08_RESULTS_SUMMARY.md
-```
-
-Purpose: compact results summary for GitHub readers, including headline metrics, corrected-holdout comparison, and final reporting decision.
-
-### Tables
-
-```text
-docs/tables/agentic_data_preprocessing_v0.8/
-```
-
-Recommended v0.8 table files:
-
-```text
-v08_fair_comparison_corrected_holdout_parent_mean_fixed.csv
-v08_corrected_holdout_parent_mean_fixed_by_exit.csv
-v08_corrected_holdout_parent_mean_tuned_by_exit.csv
-v08_corrected_holdout_parent_mean_fixed_per_label_exit3.csv
-v08_internal_test_by_exit.csv
-v08_internal_test_per_label_exit3.csv
-v08_label_counts_before_after_balance.csv
-v08_threshold_tuning_internal_val_test.csv
-v08_final_exit_tuned_thresholds.csv
-v08_experiment_commands_index.csv
-v08_hcb_parent_aggregation_strategy_comparison.csv
-v08_hcb_label_aware_fair_comparison_corrected_holdout.csv
-v08_hcb_weak_label_f1_by_aggregation.csv
-v08_hcb_per_label_mean_max_labelaware_exit3.csv
-v08_hcb_label_aware_commands.csv
-```
-
-v0.7-related tables should stay separate:
-
-```text
-docs/tables/agentic_data_preprocessing_v0.7/
-```
-
-### Figures
-
-All v0.8 human-talk figures should be under:
-
-```text
-docs/figures/human_talk/agentic_data_preprocessing_v0.8/
-```
-
-Recommended v0.8 figure files:
-
-```text
-v08_training_validation_curve.png
-v08_training_loss_hamming_curve.png
-v08_label_counts_before_after_balance.png
-v08_internal_test_by_exit_lineplot.png
-v08_corrected_holdout_fixed_by_exit_lineplot.png
-v08_vs_v06_corrected_holdout_bar.png
-v08_vs_v06_hamming_loss_bar.png
-v08_corrected_holdout_per_label_f1_bar.png
-v08_avg_true_vs_pred_labels_bar.png
-v08_hcb_aggregation_strategy_lineplot.png
-v08_hcb_aggregation_hamming_loss_lineplot.png
-v08_hcb_weak_label_f1_lineplot.png
-v08_hcb_vs_v06_label_aware_lineplot.png
-v08_hcb_macro_hamming_tradeoff_bar.png
-v08_hcb_per_label_mean_vs_labelaware_bar.png
-```
-
-### Command and methodology docs
-
-```text
-docs/COMMANDS_V08.md
-docs/APPENDIX.md
-docs/MULTILABEL_EXPERIMENT_LOG.md
-```
-
-Purpose:
+## Top-level files
 
 | File | Purpose |
 |---|---|
-| `docs/COMMANDS_V08.md` | Full reproducible PowerShell command history, including delta review, manifest build, training, corrected holdout evaluation, v0.6 re-evaluation, global max diagnostic, and label-aware aggregation. |
-| `docs/APPENDIX.md` | Thesis-style methodology appendix. |
-| `docs/MULTILABEL_EXPERIMENT_LOG.md` | Chronological experiment log and decisions. |
-
-### Final reporting policy
-
-| Result type | Method | Use |
-|---|---|---|
-| Main official v0.8-HCB result | Parent mean aggregation, fixed threshold 0.5, Exit 3 | Overall corrected-holdout headline result. |
-| Label-aware research finding | Mean for 8 stable labels, max for `audience_reaction_present` and `silence_present` | Macro-F1 and transient-label analysis. |
-| Global max diagnostic | Max for all labels | Diagnostic only; not final because it over-predicts labels. |
+| `README.md` | Main branch summary and final v0.9 result |
+| `DOC_STRUCTURE.md` | Version-specific documentation layout |
+| `configs/v0.9/labelwise_aggregation_maps.json` | Candidate aggregation maps and optional thresholds |
+| `scripts/v0.9/run_labelwise_aggregation_threshold_calibration.py` | Repeated split aggregation/threshold calibration |
+| `scripts/v0.9/evaluate_frozen_labelwise_aggregation_v09.py` | Single frozen-map evaluator |
+| `scripts/v0.9/evaluate_labelwise_mapping_bank_v09.py` | Mapping-bank evaluator |
 
 ---
 
-## v0.9 documentation layout
+## v0.9 documentation files
 
-The v0.9 experiment should be stored separately from v0.8 so the two result sets remain traceable.
+| Path | Purpose |
+|---|---|
+| `docs/v0.9/COMMANDS_V09.md` | Reproducible PowerShell commands |
+| `docs/v0.9/AGENTIC_V09_AGGREGATION_CALIBRATION_GUIDE.md` | Method guide for aggregation and threshold calibration |
+| `docs/v0.9/APPENDIX.md` | Appendix-ready technical details |
+| `docs/v0.9/MULTILABEL_EXPERIMENT_LOG.md` | Chronological experiment log |
+| `docs/v0.9/APPLY_V09_DOC_UPDATES.md` | Copy/apply instructions for this documentation package |
 
-### Branch
+---
 
-```text
-agentic_data_preprocessing_v0.9
-```
+## Reports and result summaries
 
-### Scripts
+| Path | Purpose |
+|---|---|
+| `docs/reports/v0.9/V09_LABELWISE_AGGREGATION_CALIBRATION_REPORT.md` | Preferred full narrative report for the v0.9 aggregation branch |
+| `docs/reports/v0.9/V09_HUMAN_CORRECTED_BALANCED_EXPERIMENT_REPORT.md` | Backward-compatible renamed report path, same content |
+| `docs/results/v0.9/V09_RESULTS_SUMMARY.md` | Compact results summary for quick reference |
 
-```text
-scripts/v0.9/run_labelwise_aggregation_threshold_calibration.py
-scripts/v0.9/evaluate_frozen_labelwise_aggregation_v09.py
-```
+Although the report filename contains `HUMAN_CORRECTED_BALANCED`, the v0.9 experiment itself is not a new training run. It reuses the v0.8-HCB model and evaluates labelwise parent aggregation on the corrected holdout.
 
-### Workspace outputs
+---
 
-```text
-human_talk_workspace/tata_v0.9_labelwise_calibration/verification/v08_parent_mean_fixed/
-human_talk_workspace/tata_v0.9_labelwise_calibration/verification/v08_label_aware_fixed/
-human_talk_workspace/tata_v0.9_labelwise_calibration/repeated_v07_style_calibration/
-human_talk_workspace/tata_v0.9_labelwise_calibration/final_frozen_v06_labelwise_fixed_0p5/
-```
+## Evidence tables
 
-### Recommended tables
-
-```text
-docs/tables/agentic_data_preprocessing_v0.9/v09_final_full_holdout_comparison.csv
-docs/tables/agentic_data_preprocessing_v0.9/v09_repeated_split_calibration_summary.csv
-docs/tables/agentic_data_preprocessing_v0.9/v09_frozen_labelwise_method_map.csv
-docs/tables/agentic_data_preprocessing_v0.9/v09_frozen_labelwise_per_label_metrics.csv
-```
-
-### Recommended figures
+All v0.9 table evidence should be kept under:
 
 ```text
-docs/figures/human_talk/agentic_data_preprocessing_v0.9/v09_final_comparison_bar.png
-docs/figures/human_talk/agentic_data_preprocessing_v0.9/v09_repeated_split_strategy_comparison.png
-docs/figures/human_talk/agentic_data_preprocessing_v0.9/v09_per_label_f1_frozen_labelwise.png
+docs/tables/agentic_data_preprocessing_v0.9/
 ```
 
-### v0.9 reporting policy
+Recommended files:
 
-| Result type | Method | Use |
-|---|---|---|
-| v0.8 official baseline | Parent mean, fixed 0.5 | Baseline reference. |
-| v0.8 simple label-aware | Mean for stable labels, max for audience/silence | Earlier post-hoc improvement. |
-| v0.9 repeated split | 20 seeds, 50/50 calibration/evaluation | Stability test for strategy selection. |
-| v0.9 final frozen result | Frozen labelwise map, fixed 0.5, full corrected holdout | New final best result. |
+```text
+v09_repeated_eval_summary.csv
+v09_v06_selection_frequency.csv
+v09_v07_selection_frequency.csv
+v09_v07_threshold_summary.csv
+v09_mapping_bank_summary_fixed_0p5_plus_gary_mean.csv
+v09_mapping_bank_per_label_fixed_0p5_plus_gary_mean.csv
+v09_mapping_bank_summary_with_tata_lawyer_thresholds.csv
+parent_holdout_eval_frozen_labelwise_v09_fixed_0p5.json
+parent_holdout_per_label_frozen_labelwise_v09_fixed_0p5.csv
+```
 
+---
+
+## Figures
+
+Use this folder for any future v0.9 plots:
+
+```text
+docs/figures/human_talk/agentic_data_preprocessing_v0.9/
+```
+
+Recommended future figures:
+
+```text
+v09_mapping_bank_macro_f1_barplot.png
+v09_mapping_bank_hamming_loss_barplot.png
+v09_per_label_f1_final_map.png
+v09_repeated_split_macro_f1_summary.png
+```
+
+No figure is required to reproduce the current result; all final metrics are available in CSV/JSON evidence files.
+
+---
+
+## Workspace evidence folders
+
+The raw experiment outputs are expected under:
+
+```text
+human_talk_workspace/tata_v0.9_labelwise_calibration/
+```
+
+Important subfolders:
+
+| Folder | Purpose |
+|---|---|
+| `verification/v08_parent_mean_fixed/` | Segment-probability source from the v0.8-HCB model |
+| `verification/v08_label_aware_fixed/` | Simple mean/max diagnostic |
+| `repeated_v07_style_calibration/` | Repeated split aggregation and threshold calibration |
+| `final_frozen_v06_labelwise_fixed_0p5/` | Original frozen frequency-map full holdout |
+| `mapping_bank_fixed_0p5_plus_gary_mean/` | Final selected mapping-bank result |
+| `mapping_bank_with_tata_lawyer_thresholds/` | Diagnostic showing old threshold values do not transfer |
+
+---
+
+## Final reporting decision
+
+Report the final method as:
+
+```text
+v09_frozen_frequency_plus_gary_mean
+```
+
+with:
+
+```text
+Macro-F1   = 0.8518
+Micro-F1   = 0.9374
+Samples-F1 = 0.9464
+Exact      = 0.8431
+Hamming    = 0.0183
+```

@@ -1,0 +1,148 @@
+{
+  "input": {
+    "segment_pred_csv": "human_talk_workspace\\tata_v0.9_labelwise_calibration\\verification\\v08_parent_mean_fixed\\parent_eval_segment_probs_fixed_0p5_mean.csv",
+    "parent_id_col": "parent_clip_id",
+    "prob_prefix": "exit3_prob_",
+    "labels_json": "configs\\human_talk_10label_schema.json",
+    "method_map_json": null
+  },
+  "labels": [
+    "Brene_Brown",
+    "Eckhart_Tolle",
+    "Eric_Thomas",
+    "Gary_Vee",
+    "Jay_Shetty",
+    "Nick_Vujicic",
+    "other_speaker_present",
+    "music_present",
+    "audience_reaction_present",
+    "silence_present"
+  ],
+  "frozen_method_map": {
+    "Brene_Brown": "mean",
+    "Eckhart_Tolle": "top2mean",
+    "Eric_Thomas": "mean",
+    "Gary_Vee": "top2mean",
+    "Jay_Shetty": "mean",
+    "Nick_Vujicic": "mean",
+    "other_speaker_present": "mean",
+    "music_present": "mean",
+    "audience_reaction_present": "top2mean",
+    "silence_present": "top2mean"
+  },
+  "threshold": 0.5,
+  "summary": {
+    "model": "main_v08_human_corrected_balanced_3exit_20260610_084027",
+    "threshold_mode": "fixed_0p5",
+    "aggregation": "frozen_labelwise_v09_fixed_0p5",
+    "split": "final_raw_holdout_parent_level",
+    "parent_clips": 867,
+    "segments": 4335,
+    "macro_f1": 0.8511660374073065,
+    "micro_f1": 0.9372056514913658,
+    "samples_f1": 0.9481627945295765,
+    "exact_match": 0.8419838523644751,
+    "hamming_loss": 0.01845444059976932,
+    "jaccard_score": 0.9240676662821992,
+    "avg_true_labels": 1.469434832756632,
+    "avg_pred_labels": 1.469434832756632
+  },
+  "per_label": {
+    "Brene_Brown": {
+      "precision": 1.0,
+      "recall": 0.9315068493150684,
+      "f1": 0.9645390070921985,
+      "support": 73,
+      "predicted_positive": 68,
+      "aggregation": "mean",
+      "threshold": 0.5
+    },
+    "Eckhart_Tolle": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 84,
+      "predicted_positive": 84,
+      "aggregation": "top2mean",
+      "threshold": 0.5
+    },
+    "Eric_Thomas": {
+      "precision": 0.9027777777777778,
+      "recall": 0.9558823529411765,
+      "f1": 0.9285714285714286,
+      "support": 68,
+      "predicted_positive": 72,
+      "aggregation": "mean",
+      "threshold": 0.5
+    },
+    "Gary_Vee": {
+      "precision": 0.9444444444444444,
+      "recall": 1.0,
+      "f1": 0.9714285714285714,
+      "support": 68,
+      "predicted_positive": 72,
+      "aggregation": "top2mean",
+      "threshold": 0.5
+    },
+    "Jay_Shetty": {
+      "precision": 0.9278350515463918,
+      "recall": 1.0,
+      "f1": 0.9625668449197861,
+      "support": 90,
+      "predicted_positive": 97,
+      "aggregation": "mean",
+      "threshold": 0.5
+    },
+    "Nick_Vujicic": {
+      "precision": 1.0,
+      "recall": 0.9591836734693877,
+      "f1": 0.9791666666666666,
+      "support": 49,
+      "predicted_positive": 47,
+      "aggregation": "mean",
+      "threshold": 0.5
+    },
+    "other_speaker_present": {
+      "precision": 0.9156118143459916,
+      "recall": 0.9434782608695652,
+      "f1": 0.9293361884368309,
+      "support": 460,
+      "predicted_positive": 474,
+      "aggregation": "mean",
+      "threshold": 0.5
+    },
+    "music_present": {
+      "precision": 0.963963963963964,
+      "recall": 0.9413489736070382,
+      "f1": 0.9525222551928784,
+      "support": 341,
+      "predicted_positive": 333,
+      "aggregation": "mean",
+      "threshold": 0.5
+    },
+    "audience_reaction_present": {
+      "precision": 0.6818181818181818,
+      "recall": 0.5172413793103449,
+      "f1": 0.5882352941176471,
+      "support": 29,
+      "predicted_positive": 22,
+      "aggregation": "top2mean",
+      "threshold": 0.5
+    },
+    "silence_present": {
+      "precision": 0.4,
+      "recall": 0.16666666666666666,
+      "f1": 0.23529411764705882,
+      "support": 12,
+      "predicted_positive": 5,
+      "aggregation": "top2mean",
+      "threshold": 0.5
+    }
+  },
+  "outputs": {
+    "parent_probabilities_csv": "human_talk_workspace\\tata_v0.9_labelwise_calibration\\final_frozen_v06_labelwise_fixed_0p5\\parent_frozen_labelwise_v09_probabilities.csv",
+    "summary_csv": "human_talk_workspace\\tata_v0.9_labelwise_calibration\\final_frozen_v06_labelwise_fixed_0p5\\parent_holdout_static_frozen_labelwise_v09_fixed_0p5.csv",
+    "per_label_csv": "human_talk_workspace\\tata_v0.9_labelwise_calibration\\final_frozen_v06_labelwise_fixed_0p5\\parent_holdout_per_label_frozen_labelwise_v09_fixed_0p5.csv",
+    "method_map_csv": "human_talk_workspace\\tata_v0.9_labelwise_calibration\\final_frozen_v06_labelwise_fixed_0p5\\frozen_labelwise_v09_method_map.csv"
+  }
+}
