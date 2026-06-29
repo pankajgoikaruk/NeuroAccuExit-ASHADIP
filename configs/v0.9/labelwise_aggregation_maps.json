@@ -136,6 +136,21 @@
         "audience_reaction_present": 0.69,
         "silence_present": 0.88
       }
+    },
+    "v09_frozen_plus_gary_mean_silence_max": {
+      "description": "Final v0.9 map with Gary_Vee mean and silence_present changed from top2mean to max.",
+      "aggregation": {
+        "Brene_Brown": "mean",
+        "Eckhart_Tolle": "top2mean",
+        "Eric_Thomas": "mean",
+        "Gary_Vee": "mean",
+        "Jay_Shetty": "mean",
+        "Nick_Vujicic": "mean",
+        "other_speaker_present": "mean",
+        "music_present": "mean",
+        "audience_reaction_present": "top2mean",
+        "silence_present": "max"
+      }
     }
   }
 }
