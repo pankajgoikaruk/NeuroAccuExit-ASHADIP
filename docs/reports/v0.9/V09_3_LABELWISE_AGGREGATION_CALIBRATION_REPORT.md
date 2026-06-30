@@ -1,37 +1,28 @@
-# NeuroAccuExit-ASHADIP — Agentic Data Preprocessing v0.9_3
+# v0.9_3 LATS Label-wise Aggregation and Threshold Search Report
 
-This README documents the frozen novelty sub-branch `agentic_data_preprocessing_v0.9_3` under the active `agentic_data_preprocessing_v0.9` line of work.
+## 1. Experiment identity
 
-The key result is that **LATS-v0.9** improves parent-level human-talk multi-label classification without retraining the base audio model. LATS searches the best aggregation method and threshold for each label using frozen segment-level probabilities from the v0.8-HCB model.
+```text
+Branch: agentic_data_preprocessing_v0.9
+Subbranch: agentic_data_preprocessing_v0.9_3
+Experiment name: LATS-v0.9 final frozen config
+Internal config name: lats_final_frozen_config_v09
+Base model: main_v08_human_corrected_balanced_3exit_20260610_084027
+Training status: no retraining in v0.9_3
+Evaluation split: corrected holdout, parent/clip-level
+Parent clips: 867
+Segments: 4,335
+Final method: LATS-v0.9
+Search methods: mean, max, top2mean, top3mean
+Threshold range: 0.10 to 0.95, step 0.01
+Repeated splits: 20
+```
 
-> The underlying neural model remains `main_v08_human_corrected_balanced_3exit_20260610_084027`. The novelty in this sub-branch is the post-hoc inference layer: **Label-wise Aggregation and Threshold Search**.
-
----
-
-## Branch summary
-
-| Item | Details |
-|---|---|
-| Branch | `agentic_data_preprocessing_v0.9` |
-| Subbranch | `agentic_data_preprocessing_v0.9_3` |
-| Main purpose | Freeze LATS-v0.9 as a label-wise aggregation and threshold-search novelty layer |
-| Training status | No retraining in v0.9_3 |
-| Base model reused | `main_v08_human_corrected_balanced_3exit_20260610_084027` |
-| Evaluation level | Parent/clip level from segment-level probabilities |
-| Holdout set | Corrected human-talk holdout |
-| Parent clips | 867 |
-| Segments | 4,335 |
-| Labels | 10 labels: 6 target speakers + `other_speaker_present`, `music_present`, `audience_reaction_present`, `silence_present` |
-| Previous best v0.9 method | `v09_frozen_frequency_plus_gary_mean` |
-| Final frozen method | `lats_final_frozen_config_v09` |
-| Final method name | LATS-v0.9: Label-wise Aggregation and Threshold Search |
-| Final threshold policy | Label-specific thresholds selected from repeated calibration splits |
-| Final aggregation methods | Label-specific `mean`, `max`, `top2mean`, and `top3mean` |
-
+v0.9_3 freezes the novelty work as a post-hoc inference optimisation layer over frozen segment-level probabilities. The base neural audio model is unchanged.
 
 ---
 
-## Research questions
+## 2. Research questions
 
 This v0.9_3 sub-branch freezes the novelty work around the following research questions:
 
@@ -46,7 +37,52 @@ This v0.9_3 sub-branch freezes the novelty work around the following research qu
 
 ---
 
-## Final frozen result
+## 3. Motivation
+
+The v0.8-HCB model produced strong corrected-holdout performance using parent-level mean aggregation. However, different labels have different temporal behaviours. A target speaker may be stable across a clip, while an audience reaction or silence event may occur only briefly. Therefore, one global aggregation rule and one global threshold can be suboptimal.
+
+The LATS idea is:
+
+```text
+For each label:
+    search aggregation method
+    search threshold
+    select the best calibration rule
+freeze stable rules from repeated splits
+apply the frozen configuration to the parent-level holdout
+```
+
+This creates an inference-time decision layer without retraining the underlying model.
+
+---
+
+## 4. Method: LATS-v0.9
+
+For each label, LATS searches:
+
+```text
+aggregation method ∈ {mean, max, top2mean, top3mean}
+threshold ∈ {0.10, 0.11, ..., 0.95}
+```
+
+For each repeated seed:
+
+1. Split parent clips into calibration and evaluation subsets.
+2. For each label, search all aggregation-threshold combinations on calibration parents.
+3. Select the best combination using label-level F1 with conservative tie-breaking.
+4. Evaluate the selected label-wise configuration on held-out evaluation parents.
+5. Save the selected rule, threshold, and evaluation metrics.
+
+After 20 seeds, the final frozen configuration is selected by:
+
+```text
+aggregation = most frequently selected method for that label
+threshold   = median threshold for the selected method
+```
+
+---
+
+## 5. Final full-holdout result
 
 | Method                        |   Macro-F1 |   Micro-F1 |   Samples-F1 |   Exact Match |   Hamming Loss ↓ |   Avg pred labels |
 |:------------------------------|-----------:|-----------:|-------------:|--------------:|-----------------:|------------------:|
@@ -56,7 +92,7 @@ This v0.9_3 sub-branch freezes the novelty work around the following research qu
 | v0.9 frozen + Gary mean       |     0.8518 |     0.9374 |       0.9464 |        0.8431 |           0.0183 |            1.4614 |
 | LATS-v0.9 final frozen config |     0.8667 |     0.9436 |       0.9495 |        0.8524 |           0.0165 |            1.4544 |
 
-The final LATS-v0.9 configuration improves over the previous v0.9 best and the original mean-all baseline:
+The final LATS configuration improves over both the original mean-all baseline and the previous v0.9 best:
 
 | Metric         |   vs mean-all baseline |   vs previous v0.9 best |
 |:---------------|-----------------------:|------------------------:|
@@ -66,7 +102,7 @@ The final LATS-v0.9 configuration improves over the previous v0.9 best and the o
 | Exact Match    |                 0.0127 |                  0.0092 |
 | Hamming Loss ↓ |                -0.0029 |                 -0.0018 |
 
-Final result to report:
+Final result:
 
 ```text
 Method     = lats_final_frozen_config_v09
@@ -79,7 +115,7 @@ Hamming    = 0.0165
 
 ---
 
-## Final frozen LATS-v0.9 label rules
+## 6. Final frozen LATS configuration
 
 | Label                     | Aggregation   |   Threshold |   Selected count |   Selection fraction |
 |:--------------------------|:--------------|------------:|-----------------:|---------------------:|
@@ -94,18 +130,13 @@ Hamming    = 0.0165
 | audience_reaction_present | max           |        0.68 |               11 |                 0.55 |
 | silence_present           | top2mean      |        0.38 |               15 |                 0.75 |
 
-Interpretation:
-
-- `mean` remains useful for stable labels such as `Eric_Thomas`, `Jay_Shetty`, `Nick_Vujicic`, and `music_present`.
-- `top2mean`/`top3mean` captures labels where strong evidence appears in only a subset of segments.
-- `max` is selected only for `audience_reaction_present`, where short bursty evidence is expected.
-- Thresholds are label-specific, so the method is no longer limited to a fixed global `0.5`.
+This final map is no longer a fixed-threshold map. It contains both label-specific aggregation methods and label-specific thresholds.
 
 ---
 
-## Repeated-split stability and standard deviation
+## 7. Repeated split standard deviation table
 
-LATS was selected using 20 repeated calibration/evaluation splits. The table below reports the evaluation distribution across those splits:
+The following table reports the evaluation distribution over the 20 repeated calibration/evaluation splits:
 
 | Metric               |   Mean |    Std |    Min |    Max |
 |:---------------------|-------:|-------:|-------:|-------:|
@@ -116,15 +147,15 @@ LATS was selected using 20 repeated calibration/evaluation splits. The table bel
 | Hamming Loss ↓       | 0.0207 | 0.0021 | 0.0166 | 0.024  |
 | Avg predicted labels | 1.4606 | 0.032  | 1.3972 | 1.5381 |
 
-Important interpretation:
+Interpretation:
 
-- The repeated-split mean is a conservative stability estimate.
-- The final full-holdout result applies the frozen median/mode LATS configuration to the complete corrected holdout.
-- This is strong evidence for the inference-time optimisation layer, but it should still be described as a corrected-holdout result rather than an external unseen test result.
+- The repeated split table is the stability evidence.
+- The final full-holdout table is the frozen-configuration result.
+- The result should be described as a corrected-holdout result, not an external unseen-test result.
 
 ---
 
-## Final per-label performance
+## 8. Final per-label performance
 
 | Label                     | Aggregation   |   Threshold |   Precision |   Recall |     F1 |   Support |   Pred + |   Errors |
 |:--------------------------|:--------------|------------:|------------:|---------:|-------:|----------:|---------:|---------:|
@@ -139,9 +170,14 @@ Important interpretation:
 | audience_reaction_present | max           |        0.68 |      0.8235 |   0.4828 | 0.6087 |        29 |       17 |       18 |
 | silence_present           | top2mean      |        0.38 |      0.2381 |   0.4167 | 0.303  |        12 |       21 |       23 |
 
+The rare labels remain the most difficult, but LATS improves their handling through label-specific choices:
+
+- `audience_reaction_present`: selected `max` with threshold `0.68`.
+- `silence_present`: selected `top2mean` with threshold `0.38`.
+
 ---
 
-## Repeated-seed label-wise stability
+## 9. Repeated-seed label-wise stability
 
 To avoid relying on a single calibration split, LATS-v0.9 was repeated across **20 random calibration/evaluation splits**. For each label, the aggregation method and threshold were selected on the calibration parents. The table below reports how stable the final selected rule was across seeds.
 
@@ -167,43 +203,48 @@ Interpretation:
 
 ---
 
-## Novelty claim
+## 10. Comparison with previous v0.9 methods
 
-The frozen v0.9_3 contribution can be stated as:
+The previous best was:
 
 ```text
-LATS-v0.9 introduces a label-wise inference-time decision layer over frozen segment-level probabilities. 
-For each label, it jointly selects a parent aggregation rule and decision threshold from repeated calibration splits, then freezes the stable configuration for parent-level prediction. 
-This improves corrected-holdout Macro-F1 from 0.7801 to 0.8667 without retraining the base audio model.
+v09_frozen_frequency_plus_gary_mean
+Macro-F1   = 0.8518
+Micro-F1   = 0.9374
+Samples-F1 = 0.9464
+Exact      = 0.8431
+Hamming    = 0.0183
+```
+
+LATS improves all major metrics:
+
+| Metric         |   vs mean-all baseline |   vs previous v0.9 best |
+|:---------------|-----------------------:|------------------------:|
+| Macro-F1       |                 0.0866 |                  0.0149 |
+| Micro-F1       |                 0.0104 |                  0.0062 |
+| Samples-F1     |                 0.0089 |                  0.0031 |
+| Exact Match    |                 0.0127 |                  0.0092 |
+| Hamming Loss ↓ |                -0.0029 |                 -0.0018 |
+
+---
+
+## 11. Novelty statement
+
+```text
+LATS-v0.9 introduces a label-wise inference-time search layer for parent-level multi-label audio classification. 
+Instead of retraining the model, it searches the parent aggregation rule and threshold for each label over frozen segment probabilities. 
+The final configuration is selected from repeated calibration splits and improves corrected-holdout Macro-F1 from 0.7801 to 0.8667.
 ```
 
 ---
 
-## Main artifacts
+## 12. Final conclusion
 
-| Type | Path |
-|---|---|
-| LATS script | `scripts/v0.9/run_lats_labelwise_aggregation_threshold_search_v09.py` |
-| Final LATS config | `human_talk_workspace/tata_v0.9_labelwise_calibration/lats_v09_search/lats_final_frozen_config.json` |
-| Final full-holdout metrics | `human_talk_workspace/tata_v0.9_labelwise_calibration/lats_v09_search/lats_final_full_holdout_eval.csv` |
-| Final per-label metrics | `human_talk_workspace/tata_v0.9_labelwise_calibration/lats_v09_search/lats_final_full_holdout_per_label.csv` |
-| Repeated split metrics | `human_talk_workspace/tata_v0.9_labelwise_calibration/lats_v09_search/lats_repeated_eval_summary.csv` |
-| Threshold summary | `human_talk_workspace/tata_v0.9_labelwise_calibration/lats_v09_search/lats_threshold_summary.csv` |
-| Mapping config | `configs/v0.9/labelwise_aggregation_maps.json` |
-| Report | `docs/reports/v0.9/V09_LABELWISE_AGGREGATION_CALIBRATION_REPORT.md` |
-| Results summary | `docs/results/v0.9/V09_RESULTS_SUMMARY.md` |
-| Evidence tables | `docs/tables/agentic_data_preprocessing_v0.9/` |
-
----
-
-## Final status
-
-Freeze this sub-branch as:
+Freeze `agentic_data_preprocessing_v0.9_3` with:
 
 ```text
-Subbranch: agentic_data_preprocessing_v0.9_3
 Final method: LATS-v0.9 final frozen config
-Status: Frozen novelty result
+Internal config: lats_final_frozen_config_v09
 ```
 
 ```text
