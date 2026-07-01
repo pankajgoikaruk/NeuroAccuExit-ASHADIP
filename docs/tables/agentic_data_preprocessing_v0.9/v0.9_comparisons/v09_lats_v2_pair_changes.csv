@@ -1,0 +1,11 @@
+Label,LATS-v1 aggregation,LATS-v1 threshold,LATS-v2 aggregation,LATS-v2 threshold,Changed
+Brene_Brown,top3mean,0.5,top3mean,0.5,No
+Eckhart_Tolle,top2mean,0.5,top2mean,0.5,No
+Eric_Thomas,mean,0.53,mean,0.54,threshold
+Gary_Vee,top3mean,0.5,top3mean,0.5,No
+Jay_Shetty,mean,0.8,mean,0.82,threshold
+Nick_Vujicic,mean,0.43,mean,0.43,No
+other_speaker_present,top3mean,0.76,top3mean,0.76,No
+music_present,mean,0.49,mean,0.49,No
+audience_reaction_present,max,0.68,max,0.68,No
+silence_present,top2mean,0.38,p75,0.34,"aggregation, threshold"

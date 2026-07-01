@@ -1,0 +1,2 @@
+macro_f1,micro_f1,samples_f1,exact_match,hamming_loss,jaccard,avg_true_labels,avg_pred_labels,label_count_abs_error,n_parent_clips,n_labels,objective_score,method,model_name
+0.8667076472087315,0.9435897435897436,0.9495084308233096,0.8523644752018454,0.01649365628604383,0.927431757016532,1.469434832756632,1.4544405997693195,0.014994232987312506,867,10,0.8515829705827123,initial_start_config_full_holdout,main_v08_human_corrected_balanced_3exit_20260610_084027

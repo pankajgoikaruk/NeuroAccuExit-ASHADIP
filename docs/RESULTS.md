@@ -1,3 +1,24 @@
+# ASHADIP / NeuroAccuExit — Results Log
+
+## Current recommended result: v0.9_4 LATS-v2
+
+| Method | Macro-F1 | Micro-F1 | Samples-F1 | Exact Match | Hamming Loss ↓ |
+|---|---:|---:|---:|---:|---:|
+| LATS-v1 final frozen config | 0.8667 | 0.9436 | 0.9495 | 0.8524 | 0.0165 |
+| **LATS-v2 metric-aware config** | **0.8673** | **0.9458** | **0.9517** | **0.8604** | **0.0158** |
+
+Main conclusion: LATS-v2 is the new recommended v0.9_4 result because it improves the complete parent-level multi-label prediction vector without retraining the base model.
+
+Detailed files:
+
+- `v0.9/v0.9_4/EXPERIMENT_SETUP.md`
+- `results/v0.9/V09_4_RESULTS_SUMMARY.md`
+- `reports/v0.9/V09_4_HUMAN_CORRECTED_BALANCED_EXPERIMENT_REPORT.md`
+- `tables/agentic_data_preprocessing_v0.9/v0.9_lats_v2/`
+- `tables/agentic_data_preprocessing_v0.9/v0.9_comparisons/`
+
+---
+
 \# ASHADIP / NeuroAccuExit — Results Log
 
 

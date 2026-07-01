@@ -1,0 +1,113 @@
+{
+  "name": "lats_v2_final_frozen_config_v09",
+  "description": "Metric-aware coordinate-search label-wise aggregation and threshold config.",
+  "model_name": "main_v08_human_corrected_balanced_3exit_20260610_084027",
+  "segment_pred_csv": "human_talk_workspace\\tata_v0.9_labelwise_calibration\\verification\\v08_parent_mean_fixed\\parent_eval_segment_probs_fixed_0p5_mean.csv",
+  "start_config_json": "human_talk_workspace\\tata_v0.9_labelwise_calibration\\lats_v09_search\\lats_final_frozen_config.json",
+  "objective_weights": {
+    "macro_f1": 0.4,
+    "micro_f1": 0.2,
+    "samples_f1": 0.2,
+    "exact_match": 0.15,
+    "hamming_loss": -0.05,
+    "label_count_abs_error": -0.05
+  },
+  "selection_rule": "For each seed, coordinate search optimises full multi-label objective on calibration parents. Final config uses most frequent aggregation per label and median threshold for that aggregation.",
+  "labels": [
+    "Brene_Brown",
+    "Eckhart_Tolle",
+    "Eric_Thomas",
+    "Gary_Vee",
+    "Jay_Shetty",
+    "Nick_Vujicic",
+    "other_speaker_present",
+    "music_present",
+    "audience_reaction_present",
+    "silence_present"
+  ],
+  "config": {
+    "Brene_Brown": {
+      "aggregation": "top3mean",
+      "threshold": 0.5
+    },
+    "Eckhart_Tolle": {
+      "aggregation": "top2mean",
+      "threshold": 0.5
+    },
+    "Eric_Thomas": {
+      "aggregation": "mean",
+      "threshold": 0.54
+    },
+    "Gary_Vee": {
+      "aggregation": "top3mean",
+      "threshold": 0.5
+    },
+    "Jay_Shetty": {
+      "aggregation": "mean",
+      "threshold": 0.82
+    },
+    "Nick_Vujicic": {
+      "aggregation": "mean",
+      "threshold": 0.43
+    },
+    "other_speaker_present": {
+      "aggregation": "top3mean",
+      "threshold": 0.76
+    },
+    "music_present": {
+      "aggregation": "mean",
+      "threshold": 0.49
+    },
+    "audience_reaction_present": {
+      "aggregation": "max",
+      "threshold": 0.68
+    },
+    "silence_present": {
+      "aggregation": "p75",
+      "threshold": 0.34
+    }
+  },
+  "initial_full_holdout_metrics": {
+    "macro_f1": 0.8667076472087315,
+    "micro_f1": 0.9435897435897436,
+    "samples_f1": 0.9495084308233096,
+    "exact_match": 0.8523644752018454,
+    "hamming_loss": 0.01649365628604383,
+    "jaccard": 0.927431757016532,
+    "avg_true_labels": 1.469434832756632,
+    "avg_pred_labels": 1.4544405997693195,
+    "label_count_abs_error": 0.014994232987312506,
+    "n_parent_clips": 867,
+    "n_labels": 10,
+    "objective_score": 0.8515829705827123,
+    "method": "initial_start_config_full_holdout",
+    "model_name": "main_v08_human_corrected_balanced_3exit_20260610_084027"
+  },
+  "final_full_holdout_metrics": {
+    "macro_f1": 0.8672555090173246,
+    "micro_f1": 0.9457855164226355,
+    "samples_f1": 0.9516998956445324,
+    "exact_match": 0.8604382929642446,
+    "hamming_loss": 0.01580161476355248,
+    "jaccard": 0.9308919646289889,
+    "avg_true_labels": 1.469434832756632,
+    "avg_pred_labels": 1.4452133794694348,
+    "label_count_abs_error": 0.02422145328719716,
+    "n_parent_clips": 867,
+    "n_labels": 10,
+    "objective_score": 0.8534638765624626,
+    "method": "lats_v2_final_frozen_config_full_holdout",
+    "model_name": "main_v08_human_corrected_balanced_3exit_20260610_084027",
+    "selection_source": "metric-aware coordinate search repeated splits; final method=mode, threshold=median",
+    "segment_pred_csv": "human_talk_workspace\\tata_v0.9_labelwise_calibration\\verification\\v08_parent_mean_fixed\\parent_eval_segment_probs_fixed_0p5_mean.csv",
+    "start_config_json": "human_talk_workspace\\tata_v0.9_labelwise_calibration\\lats_v09_search\\lats_final_frozen_config.json",
+    "seeds": 20,
+    "cal_fraction": 0.5,
+    "max_iterations": 5,
+    "threshold_min": 0.1,
+    "threshold_max": 0.95,
+    "threshold_step": 0.01,
+    "aggregation_methods": "mean,max,top2mean,top3mean,top4mean,top5mean,median,p75,p90,noisy_or",
+    "objective_weights": "macro_f1=0.40,micro_f1=0.20,samples_f1=0.20,exact_match=0.15,hamming_loss=-0.05,label_count_abs_error=-0.05"
+  }
+}

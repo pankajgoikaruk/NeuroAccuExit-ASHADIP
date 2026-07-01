@@ -1,0 +1,24 @@
+
+\section{LATS-v2: Metric-Aware Label-Wise Aggregation and Threshold Calibration}
+
+\subsection{Motivation}
+The v0.9 experiments showed that parent-level multi-label audio classification can be improved without retraining the base neural model. The v0.8-HCB model already produced strong segment-level probabilities, but parent-level inference remained sensitive to the aggregation and thresholding policy. LATS-v1 addressed this by selecting label-specific aggregation--threshold pairs. However, LATS-v1 primarily selected each label rule using label-wise optimisation. This can be suboptimal for multi-label prediction because improving one label in isolation can increase false positives and damage Exact Match, Hamming Loss, Micro-F1, or Samples-F1.
+
+LATS-v2 addresses this limitation by introducing a metric-aware coordinate search. Starting from the LATS-v1 frozen configuration, LATS-v2 evaluates candidate updates for one label at a time and accepts an update only if the complete parent-level multi-label objective improves. This changes the optimisation target from independent label-wise F1 to global prediction-set quality.
+
+\subsection{Metric-Aware Objective}
+The LATS-v2 objective is defined as:
+\begin{equation}
+\mathcal{J}
+=
+0.40\cdot\mathrm{MacroF1}
++0.20\cdot\mathrm{MicroF1}
++0.20\cdot\mathrm{SamplesF1}
++0.15\cdot\mathrm{ExactMatch}
+-0.05\cdot\mathrm{HammingLoss}
+-0.05\cdot |\bar{y}_{pred}-\bar{y}_{true}|.
+\end{equation}
+This objective preserves Macro-F1 while encouraging cleaner full-label-set predictions. The label-count penalty discourages over-prediction and under-prediction.
+
+\subsection{Key Finding}
+The central finding is that the best label-wise F1 configuration is not necessarily the best multi-label configuration. LATS-v2 slightly reduces the individual F1-score of \texttt{silence\_present}, but it reduces silence false positives and improves Exact Match, Hamming Loss, Micro-F1, and Samples-F1. This demonstrates that parent-level multi-label audio inference should be optimised at the prediction-set level rather than only at the independent label level.
