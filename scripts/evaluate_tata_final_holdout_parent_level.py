@@ -160,14 +160,20 @@ def main():
     tap_blocks = parse_tap_blocks(config["tap_blocks"])
     n_mels = int(config.get("n_mels", 64))
 
+    # Rebuild with the same hint-pass architecture used during training.
+    # Old no-hint runs have no/disabled exit_hint in config_used.json, so they remain safe.
     model_cfg = {
-        "exit_hint": {
-            "enable": False,
-            "dim": 8,
-            "source": "probs",
-            "detach": True,
-            "use_stats": True,
-        }
+        "exit_hint": config.get(
+            "exit_hint",
+            {
+                "enable": False,
+                "dim": 8,
+                "source": "probs",
+                "activation": "softmax",
+                "detach": True,
+                "use_stats": True,
+            },
+        )
     }
 
     model = build_audio_exit_net(

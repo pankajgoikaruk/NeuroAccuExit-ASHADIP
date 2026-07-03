@@ -452,6 +452,51 @@ def main():
         help="WeightedRandomSampler clean/synthetic balancing. 0 disables.",
     )
 
+    parser.add_argument(
+        "--exit_hint",
+        action="store_true",
+        help="Enable local exit-to-exit hint passing for later exits.",
+    )
+    parser.add_argument("--hint_dim", type=int, default=8)
+    parser.add_argument(
+        "--hint_source",
+        default="probs",
+        choices=["probs", "logits"],
+        help="Use previous-exit probabilities or logits as the hint summary source.",
+    )
+    parser.add_argument(
+        "--hint_activation",
+        default="sigmoid",
+        choices=["softmax", "sigmoid"],
+        help="Probability activation for hint summaries. Use sigmoid for multi-label BCE tasks.",
+    )
+    parser.add_argument(
+        "--hint_detach",
+        dest="hint_detach",
+        action="store_true",
+        default=True,
+        help="Detach previous-exit logits before building hints.",
+    )
+    parser.add_argument(
+        "--no_hint_detach",
+        dest="hint_detach",
+        action="store_false",
+        help="Allow hint gradients to flow through previous-exit logits.",
+    )
+    parser.add_argument(
+        "--hint_use_stats",
+        dest="hint_use_stats",
+        action="store_true",
+        default=True,
+        help="Append confidence, margin, and entropy to hint summaries.",
+    )
+    parser.add_argument(
+        "--no_hint_use_stats",
+        dest="hint_use_stats",
+        action="store_false",
+        help="Use only the base previous-exit hint vector without confidence/margin/entropy stats.",
+    )
+
     args = parser.parse_args()
 
     set_global_seed(args.seed)
@@ -498,16 +543,16 @@ def main():
     num_labels = len(labels)
     tap_blocks = parse_tap_blocks(args.tap_blocks)
 
-    # Important:
-    # For this first multi-label version, keep exit_hint disabled.
-    # Existing hint-passing was designed around softmax-style class probabilities.
     model_cfg = {
         "exit_hint": {
-            "enable": False,
-            "dim": 8,
-            "source": "probs",
-            "detach": True,
-            "use_stats": True,
+            "enable": bool(args.exit_hint),
+            "dim": int(args.hint_dim),
+            "source": str(args.hint_source),
+            # Multi-label human-talk experiments should use sigmoid.
+            # The shared ExitNet default remains softmax for old single-label runs.
+            "activation": str(args.hint_activation),
+            "detach": bool(args.hint_detach),
+            "use_stats": bool(args.hint_use_stats),
         }
     }
 
@@ -527,7 +572,7 @@ def main():
     print(f"Labels:           {labels}")
     print(f"Number of exits:  {num_exits}")
     print(f"Loss weights:     {loss_weights}")
-    print(f"Exit hint:        disabled for first multi-label version")
+    print(f"Exit hint:        {model_cfg['exit_hint']}")
     print("-" * 90)
 
     pos_weight = None

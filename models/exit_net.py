@@ -44,6 +44,7 @@ class ExitNet(nn.Module):
         hint_source: str = "probs",
         hint_detach: bool = True,
         hint_use_stats: bool = True,
+        hint_activation: str = "softmax",
     ):
         super().__init__()
 
@@ -84,11 +85,18 @@ class ExitNet(nn.Module):
         self.hint_source = str(hint_source).lower().strip()
         self.hint_detach = bool(hint_detach)
         self.hint_use_stats = bool(hint_use_stats)
+        self.hint_activation = str(hint_activation).lower().strip()
         self.use_exit_hints = self.hint_dim > 0
 
         if self.hint_source not in {"probs", "logits"}:
             raise ValueError(
                 f"hint_source must be 'probs' or 'logits', got {self.hint_source}"
+            )
+
+        if self.hint_activation not in {"softmax", "sigmoid"}:
+            raise ValueError(
+                "hint_activation must be 'softmax' or 'sigmoid', "
+                f"got {self.hint_activation}"
             )
 
         # base summary: num_classes values
@@ -131,16 +139,38 @@ class ExitNet(nn.Module):
     def num_exits(self) -> int:
         return len(self.exit_heads) + 1
 
+    def _hint_probs(self, logits: torch.Tensor) -> torch.Tensor:
+        """Return probabilities for hint construction.
+
+        Default remains softmax for backward compatibility with old
+        single-label experiments. Human-talk multi-label runs should set
+        hint_activation='sigmoid'.
+        """
+        if self.hint_activation == "sigmoid":
+            return torch.sigmoid(logits)
+        return F.softmax(logits, dim=1)
+
+    def _hint_entropy(self, probs: torch.Tensor) -> torch.Tensor:
+        if self.hint_activation == "sigmoid":
+            p = probs.clamp_min(1e-8).clamp_max(1.0 - 1e-8)
+            return -(p * torch.log(p) + (1.0 - p) * torch.log(1.0 - p)).sum(
+                dim=1, keepdim=True
+            )
+
+        return -(probs * torch.log(probs.clamp_min(1e-8))).sum(
+            dim=1, keepdim=True
+        )
+
     def _make_hint(self, logits: torch.Tensor, proj: nn.Module) -> torch.Tensor:
         src = logits.detach() if self.hint_detach else logits
 
         if self.hint_source == "probs":
-            base = F.softmax(src, dim=1)
+            base = self._hint_probs(src)
         else:
             base = src
 
         if self.hint_use_stats:
-            probs = F.softmax(src, dim=1)
+            probs = self._hint_probs(src)
 
             conf = probs.max(dim=1, keepdim=True).values
 
@@ -150,9 +180,7 @@ class ExitNet(nn.Module):
             else:
                 margin = top2[:, :1] - top2[:, 1:2]
 
-            entropy = -(probs * torch.log(probs.clamp_min(1e-8))).sum(
-                dim=1, keepdim=True
-            )
+            entropy = self._hint_entropy(probs)
 
             summary = torch.cat([base, conf, margin, entropy], dim=1)
         else:

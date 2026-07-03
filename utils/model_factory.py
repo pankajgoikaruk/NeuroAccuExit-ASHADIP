@@ -22,6 +22,11 @@ def _normalize_hint_cfg(model_cfg: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         "hint_source": str(hint_cfg.get("source", "probs")),
         "hint_detach": bool(hint_cfg.get("detach", True)),
         "hint_use_stats": bool(hint_cfg.get("use_stats", True)),
+        # Backward-compatible default is softmax. Multi-label human-talk
+        # experiments explicitly set activation='sigmoid'.
+        "hint_activation": str(
+            hint_cfg.get("activation", hint_cfg.get("hint_activation", "softmax"))
+        ),
     }
 
 

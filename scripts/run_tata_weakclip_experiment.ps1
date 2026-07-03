@@ -1,4 +1,4 @@
-﻿param(
+param(
   [string]$Manifest = "human_talk_workspace\tata_2\feature_cache\metadata\multilabel_features_manifest.csv",
   [string]$FeaturesRoot = "human_talk_workspace\tata_2\feature_cache\features",
   [string]$LabelsJson = "human_talk_workspace\tata_2\segment_cache\metadata\tata_labels.json",
@@ -20,6 +20,15 @@
 
   [switch]$UsePosWeight,
   [double]$PosWeightMax = 20.0,
+
+  [switch]$ExitHint,
+  [int]$HintDim = 8,
+  [ValidateSet("probs", "logits")]
+  [string]$HintSource = "probs",
+  [ValidateSet("softmax", "sigmoid")]
+  [string]$HintActivation = "sigmoid",
+  [bool]$HintDetach = $true,
+  [bool]$HintUseStats = $true,
 
   [switch]$IncludeCheckpoint
 )
@@ -61,6 +70,12 @@ try {
     Write-Host "Threshold    = $Threshold"
     Write-Host "Device       = $Device"
     Write-Host "UsePosWeight = $UsePosWeight"
+    Write-Host "ExitHint     = $ExitHint"
+    Write-Host "HintDim      = $HintDim"
+    Write-Host "HintSource   = $HintSource"
+    Write-Host "HintActivation = $HintActivation"
+    Write-Host "HintDetach   = $HintDetach"
+    Write-Host "HintUseStats = $HintUseStats"
 
     if (-not (Test-Path $Manifest)) {
         throw "Manifest not found: $Manifest"
@@ -94,6 +109,24 @@ try {
         $TrainArgs += "--use_pos_weight"
         $TrainArgs += "--pos_weight_max"
         $TrainArgs += "$PosWeightMax"
+    }
+
+    if ($ExitHint) {
+        $TrainArgs += "--exit_hint"
+        $TrainArgs += "--hint_dim"
+        $TrainArgs += "$HintDim"
+        $TrainArgs += "--hint_source"
+        $TrainArgs += "$HintSource"
+        $TrainArgs += "--hint_activation"
+        $TrainArgs += "$HintActivation"
+
+        if (-not $HintDetach) {
+            $TrainArgs += "--no_hint_detach"
+        }
+
+        if (-not $HintUseStats) {
+            $TrainArgs += "--no_hint_use_stats"
+        }
     }
 
     Write-Host ""
@@ -143,6 +176,12 @@ try {
         threshold = $Threshold
         use_pos_weight = [bool]$UsePosWeight
         pos_weight_max = $PosWeightMax
+        exit_hint = [bool]$ExitHint
+        hint_dim = $HintDim
+        hint_source = $HintSource
+        hint_activation = $HintActivation
+        hint_detach = $HintDetach
+        hint_use_stats = $HintUseStats
         include_checkpoint_in_package = [bool]$IncludeCheckpoint
     }
 
