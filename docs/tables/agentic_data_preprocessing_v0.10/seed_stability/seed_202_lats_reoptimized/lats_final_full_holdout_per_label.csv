@@ -1,0 +1,11 @@
+method,label,aggregation,threshold,precision,recall,f1,support,predicted_positive,tp,fp,fn,tn,hamming_errors
+lats_final_frozen_config_full_holdout,Brene_Brown,top2mean,0.5,0.96,0.9863013698630136,0.9729729729729729,73,75,72,3,1,791,4
+lats_final_frozen_config_full_holdout,Eckhart_Tolle,mean,0.5,1.0,0.9880952380952381,0.9940119760479043,84,83,83,0,1,783,1
+lats_final_frozen_config_full_holdout,Eric_Thomas,mean,0.33,0.9552238805970149,0.9411764705882353,0.9481481481481482,68,67,64,3,4,796,7
+lats_final_frozen_config_full_holdout,Gary_Vee,mean,0.47,0.9852941176470589,0.9852941176470589,0.9852941176470589,68,68,67,1,1,798,2
+lats_final_frozen_config_full_holdout,Jay_Shetty,mean,0.48,0.9574468085106383,1.0,0.9782608695652174,90,94,90,4,0,773,4
+lats_final_frozen_config_full_holdout,Nick_Vujicic,top3mean,0.5,0.98,1.0,0.98989898989899,49,50,49,1,0,817,1
+lats_final_frozen_config_full_holdout,other_speaker_present,mean,0.4,0.9536423841059603,0.9391304347826087,0.9463307776560789,460,453,432,21,28,386,49
+lats_final_frozen_config_full_holdout,music_present,top3mean,0.62,0.9723076923076923,0.9266862170087976,0.9489489489489489,341,325,316,9,25,517,34
+lats_final_frozen_config_full_holdout,audience_reaction_present,p90,0.64,0.6521739130434783,0.5172413793103449,0.576923076923077,29,23,15,8,14,830,22
+lats_final_frozen_config_full_holdout,silence_present,p75,0.47,1.0,0.25,0.4,12,3,3,0,9,855,9

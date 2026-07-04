@@ -1,0 +1,59 @@
+{
+  "name": "lats_v1_reoptimized",
+  "run": "no_hint",
+  "config": {
+    "Brene_Brown": {
+      "aggregation": "p75",
+      "threshold": 0.54
+    },
+    "Eckhart_Tolle": {
+      "aggregation": "top3mean",
+      "threshold": 0.5
+    },
+    "Eric_Thomas": {
+      "aggregation": "top4mean",
+      "threshold": 0.62
+    },
+    "Gary_Vee": {
+      "aggregation": "mean",
+      "threshold": 0.5
+    },
+    "Jay_Shetty": {
+      "aggregation": "p75",
+      "threshold": 0.91
+    },
+    "Nick_Vujicic": {
+      "aggregation": "p75",
+      "threshold": 0.34
+    },
+    "other_speaker_present": {
+      "aggregation": "noisy_or",
+      "threshold": 0.94
+    },
+    "music_present": {
+      "aggregation": "mean",
+      "threshold": 0.37
+    },
+    "audience_reaction_present": {
+      "aggregation": "top3mean",
+      "threshold": 0.23
+    },
+    "silence_present": {
+      "aggregation": "p75",
+      "threshold": 0.34
+    }
+  },
+  "metrics": {
+    "macro_f1": 0.8658101036619639,
+    "micro_f1": 0.9505882352941176,
+    "samples_f1": 0.9561597187894765,
+    "exact_match": 0.8673587081891581,
+    "hamming_loss": 0.01453287197231834,
+    "jaccard_score": 0.9356978085351788,
+    "avg_true_labels": 1.469434832756632,
+    "avg_pred_labels": 1.4717416378316033,
+    "parent_clips": 867,
+    "num_labels": 10,
+    "objective": 0.8569354546575135
+  }
+}

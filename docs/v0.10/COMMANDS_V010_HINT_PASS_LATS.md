@@ -1,154 +1,278 @@
-# V0.10 Hint-Pass + LATS-v2 Commands
+# v0.10 PowerShell Commands — Human-Talk Hint-Pass + LATS
 
-## Goal
-
-V0.10 tests whether the old exit-to-exit hint-pass idea can improve the current ASHADIP/LABLEX pipeline when combined with the frozen LATS-v2 parent-level inference policy.
-
-V0.9_4 baseline to beat:
-
-| Metric | Value |
-|---|---:|
-| Macro-F1 | 0.8673 |
-| Micro-F1 | 0.9458 |
-| Samples-F1 | 0.9517 |
-| Exact Match | 0.8604 |
-| Hamming Loss | 0.0158 |
-
-## Implementation status
-
-The current `agentic_data_preprocessing_v0.10` branch already has the model-side hint path:
-
-- `models/exit_net.py` supports `hint_dim`, `hint_source`, `hint_detach`, and optional hint statistics.
-- `utils/model_factory.py` reads `model.exit_hint` from YAML and passes hint settings into `ExitNet`.
-- `scripts/run_full.ps1` accepts `-ExitHint "true|false"` and forwards it to `training.train`.
-
-Therefore v0.10 should focus on controlled ablation and parent-level evaluation, not rewriting the whole model.
+These commands replace the older moth-data commands. Do **not** use `data\moth_sounds`, `data_caches`, or `configs\audio_moth.yaml` for this human-talk speaker experiment.
 
 ---
 
-## Step 1: Run 3-exit no-hint vs hint-pass ablation
-
-Run from repo root:
+## 1. Apply safe hint activation patch
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\v0.10\run_v010_hint_pass_ablation.ps1 `
-  -DataRoot "data\moth_sounds" `
-  -CacheRoot "data_caches" `
-  -RunsRoot "runs_v0.10_hint_pass" `
-  -Config "configs\audio_moth.yaml" `
-  -Device "cpu" `
+python scripts\v0.10\apply_v010_safe_hint_activation_patch.py
+
+python -m py_compile `
+  models\exit_net.py `
+  utils\model_factory.py `
+  training\train_multilabel.py `
+  scripts\evaluate_tata_final_holdout_parent_level.py
+```
+
+Check changes:
+
+```powershell
+git diff -- `
+  models\exit_net.py `
+  utils\model_factory.py `
+  training\train_multilabel.py `
+  scripts\run_tata_weakclip_experiment.ps1 `
+  scripts\evaluate_tata_final_holdout_parent_level.py
+```
+
+---
+
+## 2. Set shared paths
+
+```powershell
+$TrainManifest = "human_talk_workspace\tata_v0.8_human_corrected_balanced_pipeline\final_expanded_training_dataset_balanced\metadata\multilabel_features_manifest_balanced.csv"
+$TrainFeaturesRoot = "."
+$LabelsJson = "configs\human_talk_10label_schema.json"
+
+$HoldoutManifest = "human_talk_workspace\tata_v0.8_human_corrected_balanced_pipeline\corrected_holdout\multilabel_features_manifest_CORRECTED_LABELS.csv"
+$HoldoutFeaturesRoot = "human_talk_workspace\tata_v0.6_raw_pipeline\final_holdout_feature_cache\features"
+
+$WorkspaceRoot = "human_talk_workspace\tata_v0.10_hint_pass_lats_pipeline"
+$RunsRoot = "$WorkspaceRoot\main_models\runs"
+$PackagesRoot = "$WorkspaceRoot\packages"
+$LogsRoot = "$WorkspaceRoot\logs"
+
+Test-Path $TrainManifest
+Test-Path $LabelsJson
+Test-Path $TrainFeaturesRoot
+```
+
+Expected:
+
+```text
+True
+True
+True
+```
+
+---
+
+## 3. Train v0.10 no-hint control
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\run_tata_weakclip_experiment.ps1 `
+  -Manifest "$TrainManifest" `
+  -FeaturesRoot "$TrainFeaturesRoot" `
+  -LabelsJson "$LabelsJson" `
+  -WorkspaceRoot "$WorkspaceRoot" `
+  -RunsRoot "$RunsRoot" `
+  -PackagesRoot "$PackagesRoot" `
+  -LogsRoot "$LogsRoot" `
+  -Variant "main_v010_human_corrected_balanced_3exit_no_hint" `
   -TapBlocks "1,3" `
-  -InputMode "segment" `
-  -RunClipPolicy
+  -Epochs 40 `
+  -BatchSize 64 `
+  -LogEvery 0 `
+  -LR 0.001 `
+  -Threshold 0.5 `
+  -Device "cpu"
 ```
 
-For a ready train/val/test layout:
+---
+
+## 4. Train v0.10 hint-pass model
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\v0.10\run_v010_hint_pass_ablation.ps1 `
-  -DataRoot "PATH_TO_READY_DATA" `
-  -InputMode "ready" `
-  -RunsRoot "runs_v0.10_hint_pass" `
-  -Device "cpu" `
+powershell -ExecutionPolicy Bypass -File scripts\run_tata_weakclip_experiment.ps1 `
+  -Manifest "$TrainManifest" `
+  -FeaturesRoot "$TrainFeaturesRoot" `
+  -LabelsJson "$LabelsJson" `
+  -WorkspaceRoot "$WorkspaceRoot" `
+  -RunsRoot "$RunsRoot" `
+  -PackagesRoot "$PackagesRoot" `
+  -LogsRoot "$LogsRoot" `
+  -Variant "main_v010_human_corrected_balanced_3exit_hint_pass" `
   -TapBlocks "1,3" `
-  -RunClipPolicy
+  -ExitHint `
+  -HintDim 8 `
+  -HintSource "probs" `
+  -HintActivation "sigmoid" `
+  -Epochs 40 `
+  -BatchSize 64 `
+  -LogEvery 0 `
+  -LR 0.001 `
+  -Threshold 0.5 `
+  -Device "cpu"
 ```
 
-This creates two variants:
-
-```text
-v010_1-3_no_hint_<timestamp>
-v010_1-3_hint_pass_<timestamp>
-```
+Note: `HintDetach` and `HintUseStats` default to true. Omit them if PowerShell complains about Boolean conversion.
 
 ---
 
-## Step 2: Compare model-side greedy/clip results
+## 5. Evaluate a run on corrected holdout
 
-Inspect generated summaries under:
-
-```text
-runs_v0.10_hint_pass/<variant>/<variant>_###/
-```
-
-Compare no-hint and hint-pass on:
-
-- final exit accuracy / macro-F1
-- greedy policy accuracy
-- average exit depth
-- clip-level accuracy
-- compute saved
-- flip rate / consistency
-
----
-
-## Step 3: Apply frozen LATS-v2 to a segment probability CSV
-
-When you have a segment-level probability CSV for a v0.10 candidate in the same schema as v0.9:
-
-```text
-parent_clip_id
-Brene_Brown
-...
-silence_present
-exit3_prob_Brene_Brown
-...
-exit3_prob_silence_present
-```
-
-run:
+Set `$RunDir` manually or select the latest matching run.
 
 ```powershell
-$SegmentPredCsv = "PATH_TO_V010_SEGMENT_PROBS.csv"
-$ConfigJson = "docs\tables\agentic_data_preprocessing_v0.9\v0.9_lats_v2\lats_v2_final_frozen_config.json"
-$OutDir = "human_talk_workspace\tata_v0.10_hint_pass\frozen_lats_v2_eval"
+$RunDir = Get-ChildItem $RunsRoot -Directory |
+  Where-Object { $_.Name -like "main_v010_human_corrected_balanced_3exit_no_hint*" } |
+  Sort-Object LastWriteTime -Descending |
+  Select-Object -First 1
 
-New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
+$EvalOut = "$WorkspaceRoot\evaluation\no_hint_parent_mean_fixed"
+New-Item -ItemType Directory -Force -Path $EvalOut | Out-Null
 
-python scripts\v0.10\evaluate_frozen_lats_config_v010.py `
+python scripts\evaluate_tata_final_holdout_parent_level.py `
+  --run_dir "$($RunDir.FullName)" `
+  --holdout_manifest "$HoldoutManifest" `
+  --features_root "$HoldoutFeaturesRoot" `
+  --out_dir "$EvalOut" `
+  --threshold_mode fixed_0p5 `
+  --aggregation mean `
+  --device cpu `
+  --batch_size 128
+```
+
+The segment probability CSV is:
+
+```text
+$EvalOut\parent_eval_segment_probs_fixed_0p5_mean.csv
+```
+
+---
+
+## 6. Apply frozen old v0.9_4 LATS-v2 transfer
+
+```powershell
+$SegmentPredCsv = "$EvalOut\parent_eval_segment_probs_fixed_0p5_mean.csv"
+$FrozenOut = "$WorkspaceRoot\lats_v2_frozen\no_hint"
+New-Item -ItemType Directory -Force -Path $FrozenOut | Out-Null
+
+python scripts\v0.10\evaluate_frozen_lats_v2_baseline_recheck.py `
   --segment-pred-csv "$SegmentPredCsv" `
-  --labels-json "configs\human_talk_10label_schema.json" `
-  --config-json "$ConfigJson" `
-  --out-dir "$OutDir" `
+  --labels-json "$LabelsJson" `
+  --out-dir "$FrozenOut" `
+  --parent-id-col "parent_clip_id" `
+  --prob-prefix "exit3_prob_"
+```
+
+---
+
+## 7. Re-optimize LATS for v0.10 probabilities
+
+Use the v0.9 LATS search if available:
+
+```powershell
+$SegmentPredCsv = "$EvalOut\parent_eval_segment_probs_fixed_0p5_mean.csv"
+$LatsOut = "$WorkspaceRoot\lats_reoptimized\no_hint"
+New-Item -ItemType Directory -Force -Path $LatsOut | Out-Null
+
+python scripts\v0.9\run_lats_labelwise_aggregation_threshold_search_v09.py `
+  --segment-pred-csv "$SegmentPredCsv" `
+  --labels-json "$LabelsJson" `
+  --out-dir "$LatsOut" `
   --parent-id-col "parent_clip_id" `
   --prob-prefix "exit3_prob_" `
-  --model-name "v0.10_hint_pass_candidate"
+  --seeds 20 `
+  --cal-fraction 0.5 `
+  --threshold-min 0.10 `
+  --threshold-max 0.95 `
+  --threshold-step 0.01 `
+  --aggregation-methods "mean,max,top2mean,top3mean,p75,p90" `
+  --model-name "$($RunDir.Name)"
 ```
 
-Inspect:
+For metric-aware coordinate LATS-v2, start from the LATS-v1 result and run the coordinate-search implementation used in v0.9_4/v0.10.
+
+---
+
+## 8. Seed-stability check for v0.10 no-hint
 
 ```powershell
-Import-Csv "$OutDir\v010_frozen_lats_eval.csv" |
-  Format-Table method, macro_f1, micro_f1, samples_f1, exact_match, hamming_loss, avg_pred_labels -AutoSize
+$Seeds = @(101, 202, 303)
+
+$WorkspaceRoot = "human_talk_workspace\tata_v0.10_hint_pass_lats_pipeline"
+$RunsRoot = "$WorkspaceRoot\main_models\runs_seed_stability"
+$EvalRoot = "$WorkspaceRoot\seed_stability_eval"
+$LatsRoot = "$WorkspaceRoot\seed_stability_lats_reoptimized"
+
+New-Item -ItemType Directory -Force -Path $RunsRoot | Out-Null
+New-Item -ItemType Directory -Force -Path $EvalRoot | Out-Null
+New-Item -ItemType Directory -Force -Path $LatsRoot | Out-Null
+
+foreach ($Seed in $Seeds) {
+
+    $Variant = "main_v010_no_hint_seed_$Seed"
+
+    python -m training.train_multilabel `
+      --manifest "$TrainManifest" `
+      --features_root "$TrainFeaturesRoot" `
+      --labels_json "$LabelsJson" `
+      --runs_root "$RunsRoot" `
+      --variant "$Variant" `
+      --tap_blocks "1,3" `
+      --epochs 40 `
+      --batch_size 64 `
+      --log_every 0 `
+      --lr 0.001 `
+      --threshold 0.5 `
+      --seed $Seed `
+      --device cpu
+
+    $RunDir = Get-ChildItem $RunsRoot -Directory |
+      Where-Object { $_.Name -like "$Variant*" } |
+      Sort-Object LastWriteTime -Descending |
+      Select-Object -First 1
+
+    $EvalOut = "$EvalRoot\seed_$Seed`_parent_mean_fixed"
+    New-Item -ItemType Directory -Force -Path $EvalOut | Out-Null
+
+    python scripts\evaluate_tata_final_holdout_parent_level.py `
+      --run_dir "$($RunDir.FullName)" `
+      --holdout_manifest "$HoldoutManifest" `
+      --features_root "$HoldoutFeaturesRoot" `
+      --out_dir "$EvalOut" `
+      --threshold_mode fixed_0p5 `
+      --aggregation mean `
+      --device cpu `
+      --batch_size 128
+
+    $SegmentPredCsv = "$EvalOut\parent_eval_segment_probs_fixed_0p5_mean.csv"
+    $LatsOut = "$LatsRoot\seed_$Seed`_lats_reoptimized"
+    New-Item -ItemType Directory -Force -Path $LatsOut | Out-Null
+
+    python scripts\v0.9\run_lats_labelwise_aggregation_threshold_search_v09.py `
+      --segment-pred-csv "$SegmentPredCsv" `
+      --labels-json "$LabelsJson" `
+      --out-dir "$LatsOut" `
+      --parent-id-col "parent_clip_id" `
+      --prob-prefix "exit3_prob_" `
+      --seeds 20 `
+      --cal-fraction 0.5 `
+      --threshold-min 0.10 `
+      --threshold-max 0.95 `
+      --threshold-step 0.01 `
+      --aggregation-methods "mean,max,top2mean,top3mean,p75,p90" `
+      --model-name "$($RunDir.Name)"
+}
 ```
 
----
+Summarize seeds:
 
-## Acceptance rule
-
-Accept a v0.10 hint-pass candidate only if it beats LATS-v2 clearly or gives similar quality with better compute:
-
-```text
-Macro-F1   > 0.8673
-Micro-F1   >= 0.9458
-Samples-F1 >= 0.9517
-Exact      >= 0.8604
-Hamming    <= 0.0158
+```powershell
+Get-ChildItem $LatsRoot -Recurse -Filter "lats_final_full_holdout_eval.csv" |
+  ForEach-Object {
+    $row = Import-Csv $_.FullName
+    [PSCustomObject]@{
+      Seed = ($_.Directory.Name -replace "seed_", "" -replace "_lats_reoptimized", "")
+      MacroF1 = [double]$row.macro_f1
+      MicroF1 = [double]$row.micro_f1
+      SamplesF1 = [double]$row.samples_f1
+      Exact = [double]$row.exact_match
+      Hamming = [double]$row.hamming_loss
+      AvgPredLabels = [double]$row.avg_pred_labels
+    }
+  } | Sort-Object Seed | Format-Table -AutoSize
 ```
-
-If quality is similar, also consider:
-
-```text
-lower average exit depth
-higher compute saved
-lower flip rate
-better exit consistency
-```
-
----
-
-## Interpretation
-
-V0.9 improved the parent-level decision policy without retraining.
-
-V0.10 tests whether architectural hint passing can improve the segment-level probabilities that are later consumed by the frozen LATS-v2 parent-level inference policy.

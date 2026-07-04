@@ -1,0 +1,194 @@
+{
+  "name": "lats_final_frozen_config_v09",
+  "description": "Final label-wise aggregation and threshold config selected from repeated LATS calibration splits.",
+  "model_name": "main_v010_no_hint_seed_101_20260704_120456",
+  "segment_pred_csv": "human_talk_workspace\\tata_v0.10_hint_pass_lats_pipeline\\seed_stability_eval\\seed_101_parent_mean_fixed\\parent_eval_segment_probs_fixed_0p5_mean.csv",
+  "selection_rule": "aggregation = most frequently selected method; threshold = median selected threshold for that method",
+  "labels": [
+    "Brene_Brown",
+    "Eckhart_Tolle",
+    "Eric_Thomas",
+    "Gary_Vee",
+    "Jay_Shetty",
+    "Nick_Vujicic",
+    "other_speaker_present",
+    "music_present",
+    "audience_reaction_present",
+    "silence_present"
+  ],
+  "config": {
+    "Brene_Brown": {
+      "aggregation": "top3mean",
+      "threshold": 0.51,
+      "selection_count": 6,
+      "selection_fraction": 0.3,
+      "threshold_median_selected_method": 0.51,
+      "threshold_mean_selected_method": 0.5066666666666667,
+      "threshold_std_selected_method": 0.005163977794943227,
+      "all_method_counts": {
+        "p90": 2,
+        "max": 6,
+        "mean": 3,
+        "top3mean": 6,
+        "top2mean": 3
+      }
+    },
+    "Eckhart_Tolle": {
+      "aggregation": "top3mean",
+      "threshold": 0.5,
+      "selection_count": 15,
+      "selection_fraction": 0.75,
+      "threshold_median_selected_method": 0.5,
+      "threshold_mean_selected_method": 0.5,
+      "threshold_std_selected_method": 0.0,
+      "all_method_counts": {
+        "top3mean": 15,
+        "top2mean": 4,
+        "mean": 1
+      }
+    },
+    "Eric_Thomas": {
+      "aggregation": "mean",
+      "threshold": 0.59,
+      "selection_count": 15,
+      "selection_fraction": 0.75,
+      "threshold_median_selected_method": 0.59,
+      "threshold_mean_selected_method": 0.6086666666666667,
+      "threshold_std_selected_method": 0.03907258203224698,
+      "all_method_counts": {
+        "mean": 15,
+        "top2mean": 2,
+        "top3mean": 2,
+        "p75": 1
+      }
+    },
+    "Gary_Vee": {
+      "aggregation": "top2mean",
+      "threshold": 0.5,
+      "selection_count": 11,
+      "selection_fraction": 0.55,
+      "threshold_median_selected_method": 0.5,
+      "threshold_mean_selected_method": 0.5,
+      "threshold_std_selected_method": 0.0,
+      "all_method_counts": {
+        "top2mean": 11,
+        "top3mean": 8,
+        "mean": 1
+      }
+    },
+    "Jay_Shetty": {
+      "aggregation": "p75",
+      "threshold": 0.79,
+      "selection_count": 9,
+      "selection_fraction": 0.45,
+      "threshold_median_selected_method": 0.79,
+      "threshold_mean_selected_method": 0.6866666666666666,
+      "threshold_std_selected_method": 0.13086252328302403,
+      "all_method_counts": {
+        "top2mean": 6,
+        "p75": 9,
+        "mean": 2,
+        "top3mean": 3
+      }
+    },
+    "Nick_Vujicic": {
+      "aggregation": "mean",
+      "threshold": 0.43,
+      "selection_count": 14,
+      "selection_fraction": 0.7,
+      "threshold_median_selected_method": 0.43,
+      "threshold_mean_selected_method": 0.4492857142857142,
+      "threshold_std_selected_method": 0.030246242160558805,
+      "all_method_counts": {
+        "top2mean": 4,
+        "mean": 14,
+        "top3mean": 1,
+        "p75": 1
+      }
+    },
+    "other_speaker_present": {
+      "aggregation": "top3mean",
+      "threshold": 0.78,
+      "selection_count": 14,
+      "selection_fraction": 0.7,
+      "threshold_median_selected_method": 0.78,
+      "threshold_mean_selected_method": 0.7835714285714285,
+      "threshold_std_selected_method": 0.013926810257774164,
+      "all_method_counts": {
+        "top3mean": 14,
+        "mean": 6
+      }
+    },
+    "music_present": {
+      "aggregation": "mean",
+      "threshold": 0.31,
+      "selection_count": 7,
+      "selection_fraction": 0.35,
+      "threshold_median_selected_method": 0.31,
+      "threshold_mean_selected_method": 0.29714285714285715,
+      "threshold_std_selected_method": 0.05468524655221178,
+      "all_method_counts": {
+        "top3mean": 2,
+        "p90": 1,
+        "p75": 7,
+        "mean": 7,
+        "top2mean": 3
+      }
+    },
+    "audience_reaction_present": {
+      "aggregation": "mean",
+      "threshold": 0.21,
+      "selection_count": 11,
+      "selection_fraction": 0.55,
+      "threshold_median_selected_method": 0.21,
+      "threshold_mean_selected_method": 0.21363636363636365,
+      "threshold_std_selected_method": 0.039817766706013856,
+      "all_method_counts": {
+        "mean": 11,
+        "p75": 3,
+        "p90": 2,
+        "top2mean": 1,
+        "max": 2,
+        "top3mean": 1
+      }
+    },
+    "silence_present": {
+      "aggregation": "top2mean",
+      "threshold": 0.5,
+      "selection_count": 13,
+      "selection_fraction": 0.65,
+      "threshold_median_selected_method": 0.5,
+      "threshold_mean_selected_method": 0.49384615384615393,
+      "threshold_std_selected_method": 0.05993586315644161,
+      "all_method_counts": {
+        "top2mean": 13,
+        "top3mean": 4,
+        "max": 1,
+        "mean": 1,
+        "p90": 1
+      }
+    }
+  },
+  "full_holdout_metrics": {
+    "macro_f1": 0.8623658934975417,
+    "micro_f1": 0.9353312302839116,
+    "samples_f1": 0.946729279947273,
+    "exact_match": 0.8373702422145328,
+    "hamming_loss": 0.018915801614763552,
+    "jaccard": 0.921280276816609,
+    "avg_true_labels": 1.469434832756632,
+    "avg_pred_labels": 1.455594002306805,
+    "n_parent_clips": 867,
+    "n_labels": 10,
+    "method": "lats_final_frozen_config_full_holdout",
+    "model_name": "main_v010_no_hint_seed_101_20260704_120456",
+    "segment_pred_csv": "human_talk_workspace\\tata_v0.10_hint_pass_lats_pipeline\\seed_stability_eval\\seed_101_parent_mean_fixed\\parent_eval_segment_probs_fixed_0p5_mean.csv",
+    "selection_source": "median/mode from repeated calibration splits",
+    "seeds": 20,
+    "cal_fraction": 0.5,
+    "threshold_min": 0.1,
+    "threshold_max": 0.95,
+    "threshold_step": 0.01,
+    "aggregation_methods": "mean,max,top2mean,top3mean,p75,p90"
+  }
+}

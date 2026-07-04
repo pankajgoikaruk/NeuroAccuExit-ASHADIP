@@ -1,0 +1,189 @@
+{
+  "name": "lats_final_frozen_config_v09",
+  "description": "Final label-wise aggregation and threshold config selected from repeated LATS calibration splits.",
+  "model_name": "main_v010_no_hint_seed_202_20260704_130056",
+  "segment_pred_csv": "human_talk_workspace\\tata_v0.10_hint_pass_lats_pipeline\\seed_stability_eval\\seed_202_parent_mean_fixed\\parent_eval_segment_probs_fixed_0p5_mean.csv",
+  "selection_rule": "aggregation = most frequently selected method; threshold = median selected threshold for that method",
+  "labels": [
+    "Brene_Brown",
+    "Eckhart_Tolle",
+    "Eric_Thomas",
+    "Gary_Vee",
+    "Jay_Shetty",
+    "Nick_Vujicic",
+    "other_speaker_present",
+    "music_present",
+    "audience_reaction_present",
+    "silence_present"
+  ],
+  "config": {
+    "Brene_Brown": {
+      "aggregation": "top2mean",
+      "threshold": 0.5,
+      "selection_count": 7,
+      "selection_fraction": 0.35,
+      "threshold_median_selected_method": 0.5,
+      "threshold_mean_selected_method": 0.5242857142857144,
+      "threshold_std_selected_method": 0.09536895771286429,
+      "all_method_counts": {
+        "p75": 3,
+        "top2mean": 7,
+        "mean": 4,
+        "p90": 2,
+        "top3mean": 4
+      }
+    },
+    "Eckhart_Tolle": {
+      "aggregation": "mean",
+      "threshold": 0.5,
+      "selection_count": 8,
+      "selection_fraction": 0.4,
+      "threshold_median_selected_method": 0.5,
+      "threshold_mean_selected_method": 0.5,
+      "threshold_std_selected_method": 0.0,
+      "all_method_counts": {
+        "mean": 8,
+        "top3mean": 7,
+        "top2mean": 5
+      }
+    },
+    "Eric_Thomas": {
+      "aggregation": "mean",
+      "threshold": 0.33,
+      "selection_count": 8,
+      "selection_fraction": 0.4,
+      "threshold_median_selected_method": 0.33,
+      "threshold_mean_selected_method": 0.33499999999999996,
+      "threshold_std_selected_method": 0.049856938190329,
+      "all_method_counts": {
+        "top3mean": 6,
+        "max": 2,
+        "p75": 4,
+        "mean": 8
+      }
+    },
+    "Gary_Vee": {
+      "aggregation": "mean",
+      "threshold": 0.47,
+      "selection_count": 13,
+      "selection_fraction": 0.65,
+      "threshold_median_selected_method": 0.47,
+      "threshold_mean_selected_method": 0.48615384615384616,
+      "threshold_std_selected_method": 0.04174095940808849,
+      "all_method_counts": {
+        "mean": 13,
+        "p75": 7
+      }
+    },
+    "Jay_Shetty": {
+      "aggregation": "mean",
+      "threshold": 0.48,
+      "selection_count": 7,
+      "selection_fraction": 0.35,
+      "threshold_median_selected_method": 0.48,
+      "threshold_mean_selected_method": 0.48857142857142855,
+      "threshold_std_selected_method": 0.010690449676496985,
+      "all_method_counts": {
+        "top3mean": 7,
+        "p75": 6,
+        "mean": 7
+      }
+    },
+    "Nick_Vujicic": {
+      "aggregation": "top3mean",
+      "threshold": 0.5,
+      "selection_count": 19,
+      "selection_fraction": 0.95,
+      "threshold_median_selected_method": 0.5,
+      "threshold_mean_selected_method": 0.5042105263157894,
+      "threshold_std_selected_method": 0.005072572735017885,
+      "all_method_counts": {
+        "top3mean": 19,
+        "mean": 1
+      }
+    },
+    "other_speaker_present": {
+      "aggregation": "mean",
+      "threshold": 0.4,
+      "selection_count": 8,
+      "selection_fraction": 0.4,
+      "threshold_median_selected_method": 0.4,
+      "threshold_mean_selected_method": 0.39249999999999996,
+      "threshold_std_selected_method": 0.02052872551885701,
+      "all_method_counts": {
+        "top3mean": 5,
+        "mean": 8,
+        "top2mean": 7
+      }
+    },
+    "music_present": {
+      "aggregation": "top3mean",
+      "threshold": 0.62,
+      "selection_count": 6,
+      "selection_fraction": 0.3,
+      "threshold_median_selected_method": 0.62,
+      "threshold_mean_selected_method": 0.5900000000000001,
+      "threshold_std_selected_method": 0.09165151389911681,
+      "all_method_counts": {
+        "top3mean": 6,
+        "p90": 4,
+        "mean": 4,
+        "p75": 6
+      }
+    },
+    "audience_reaction_present": {
+      "aggregation": "p90",
+      "threshold": 0.64,
+      "selection_count": 8,
+      "selection_fraction": 0.4,
+      "threshold_median_selected_method": 0.64,
+      "threshold_mean_selected_method": 0.6425000000000001,
+      "threshold_std_selected_method": 0.007071067811865481,
+      "all_method_counts": {
+        "p90": 8,
+        "p75": 3,
+        "mean": 1,
+        "top2mean": 1,
+        "max": 4,
+        "top3mean": 3
+      }
+    },
+    "silence_present": {
+      "aggregation": "p75",
+      "threshold": 0.47,
+      "selection_count": 12,
+      "selection_fraction": 0.6,
+      "threshold_median_selected_method": 0.47,
+      "threshold_mean_selected_method": 0.42249999999999993,
+      "threshold_std_selected_method": 0.09235553829925659,
+      "all_method_counts": {
+        "p75": 12,
+        "top2mean": 1,
+        "top3mean": 4,
+        "max": 3
+      }
+    }
+  },
+  "full_holdout_metrics": {
+    "macro_f1": 0.8740789877808396,
+    "micro_f1": 0.947117296222664,
+    "samples_f1": 0.9565167243367935,
+    "exact_match": 0.8673587081891581,
+    "hamming_loss": 0.015340253748558247,
+    "jaccard": 0.9362745098039216,
+    "avg_true_labels": 1.469434832756632,
+    "avg_pred_labels": 1.4313725490196079,
+    "n_parent_clips": 867,
+    "n_labels": 10,
+    "method": "lats_final_frozen_config_full_holdout",
+    "model_name": "main_v010_no_hint_seed_202_20260704_130056",
+    "segment_pred_csv": "human_talk_workspace\\tata_v0.10_hint_pass_lats_pipeline\\seed_stability_eval\\seed_202_parent_mean_fixed\\parent_eval_segment_probs_fixed_0p5_mean.csv",
+    "selection_source": "median/mode from repeated calibration splits",
+    "seeds": 20,
+    "cal_fraction": 0.5,
+    "threshold_min": 0.1,
+    "threshold_max": 0.95,
+    "threshold_step": 0.01,
+    "aggregation_methods": "mean,max,top2mean,top3mean,p75,p90"
+  }
+}
