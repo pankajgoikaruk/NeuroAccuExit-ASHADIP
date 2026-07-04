@@ -1,0 +1,11 @@
+label,final_aggregation,final_threshold,selection_count,selection_fraction,threshold_mean_selected_method,threshold_median_selected_method,threshold_std_selected_method,cal_f1_mean_selected_method,cal_f1_median_selected_method,method_counts_json
+Brene_Brown,p75,0.5,11,0.55,0.5,0.5,0.0,0.9927817392796295,0.9876543209876543,"{""mean"": 2, ""p75"": 11, ""top3mean"": 7}"
+Eckhart_Tolle,mean,0.5,20,1.0,0.5,0.5,0.0,1.0,1.0,"{""mean"": 20}"
+Eric_Thomas,mean,0.5,15,0.75,0.4933333333333333,0.5,0.023804761428476186,0.9319836199344456,0.9253731343283583,"{""mean"": 15, ""top3mean"": 5}"
+Gary_Vee,top3mean,0.51,14,0.7,0.52,0.51,0.018397324220156015,1.0,1.0,"{""mean"": 6, ""top3mean"": 14}"
+Jay_Shetty,p75,0.95,7,0.35,0.9500000000000001,0.95,1.199177923332954e-16,0.9816005114041939,0.9859154929577464,"{""max"": 1, ""mean"": 5, ""p75"": 7, ""top2mean"": 1, ""top3mean"": 6}"
+Nick_Vujicic,p75,0.39,16,0.8,0.45,0.39,0.10184956226382777,0.9794784340297129,0.9790849673202614,"{""mean"": 2, ""p75"": 16, ""top2mean"": 1, ""top3mean"": 1}"
+other_speaker_present,mean,0.38,14,0.7,0.37785714285714295,0.38,0.01625686668105864,0.9630649733035027,0.9625534309848769,"{""mean"": 14, ""p90"": 1, ""top2mean"": 1, ""top3mean"": 4}"
+music_present,p75,0.48,8,0.4,0.49124999999999996,0.485,0.06266407036161721,0.9701629111203084,0.9678522443304587,"{""mean"": 5, ""p75"": 8, ""top2mean"": 2, ""top3mean"": 5}"
+audience_reaction_present,max,0.65,8,0.4,0.70375,0.65,0.09590732133530935,0.45171626984126984,0.4714285714285714,"{""max"": 8, ""mean"": 5, ""p90"": 4, ""top3mean"": 3}"
+silence_present,p75,0.39,13,0.65,0.3761538461538461,0.39,0.029871519752227092,0.5353167406275289,0.5555555555555556,"{""mean"": 1, ""p75"": 13, ""top3mean"": 6}"

@@ -1,9 +1,19 @@
 # v0.10 Safe Hint Activation Patch
 
-This patch keeps the shared `ExitNet` backward-compatible:
+This patch keeps the shared `ExitNet` backward-compatible while allowing human-talk multi-label hint-pass to use sigmoid probabilities.
 
-- Default hint activation remains `softmax` for old single-label / moth experiments.
-- Human-talk multi-label v0.10 can explicitly use `sigmoid` by passing `--hint_activation sigmoid` or `-HintActivation "sigmoid"`.
+---
+
+## Compatibility rule
+
+| Experiment type | Hint activation |
+|---|---|
+| Old moth / single-label experiments | `softmax` default |
+| Human-talk multi-label v0.10 | explicit `sigmoid` |
+
+This avoids breaking old experiments while making the v0.10 multi-label hint vector semantically correct.
+
+---
 
 ## Apply
 
@@ -17,6 +27,8 @@ python -m py_compile `
   scripts\evaluate_tata_final_holdout_parent_level.py
 ```
 
+---
+
 ## Check
 
 ```powershell
@@ -28,6 +40,8 @@ git diff -- `
   scripts\evaluate_tata_final_holdout_parent_level.py
 ```
 
+---
+
 ## Human-talk hint-pass run must use
 
 ```powershell
@@ -36,3 +50,9 @@ git diff -- `
 ```
 
 Old experiments that do not pass `hint_activation` keep the shared model default: `softmax`.
+
+---
+
+## Final empirical outcome
+
+The patch was technically correct, but the current standard hint-pass method did not improve the human-talk multi-label results. The patch can remain because it is backward-compatible and useful for future gated/label-aware hinting experiments.

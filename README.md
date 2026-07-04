@@ -1,32 +1,84 @@
-# NeuroAccuExit-ASHADIP — Agentic Data Preprocessing v0.9_4
+# NeuroAccuExit-ASHADIP — Agentic Data Preprocessing v0.10
 
-This README documents the frozen novelty sub-branch `agentic_data_preprocessing_v0.9_4`, which extends the v0.9_3 LATS work with **LATS-v2: Metric-Aware Label-wise Aggregation and Threshold Coordinate Search**.
+This repository documentation now records the v0.10 human-talk speaker/context experiment. The aim of v0.10 was to test whether the old **exit-to-exit hint-pass** idea improves the current multi-label ASHADIP/LABLEX pipeline when combined with parent-level LATS inference optimisation.
 
-The key result is that **LATS-v2** improves parent-level human-talk multi-label classification without retraining the base audio model. It starts from the LATS-v1 frozen configuration and then performs coordinate search over label-specific aggregation--threshold pairs, accepting a label update only when the full multi-label objective improves.
-
-> The underlying neural model remains `main_v08_human_corrected_balanced_3exit_20260610_084027`. The novelty in v0.9_4 is the metric-aware inference policy, not retraining.
+The outcome is an important controlled finding: **standard hint-pass should not be accepted as the final method for the current human-talk multi-label dataset.** The strongest stable result remains **v0.9_4 LATS-v2**, while v0.10 no-hint is useful as a diagnostic/stability ablation.
 
 ---
 
-## Branch summary
+## Current final decision
 
-| Item | Details |
+| Decision item | Outcome |
 |---|---|
-| Branch | `agentic_data_preprocessing_v0.9_4` |
-| Parent branch | `agentic_data_preprocessing_v0.9_3` |
-| Main purpose | Freeze LATS-v2 as a metric-aware parent-level inference optimisation layer |
-| Training status | No retraining |
-| Base model reused | `main_v08_human_corrected_balanced_3exit_20260610_084027` |
-| Evaluation level | Parent/clip level from frozen segment-level probabilities |
-| Holdout set | Corrected human-talk holdout |
+| Stable final baseline | `v0.9_4 / LATS-v2 metric-aware coordinate search` |
+| Best single v0.10 run | `v0.10 no-hint + LATS-v2 coordinate re-optimized` |
+| Hint-pass status | Rejected for current dataset; useful negative result |
+| Reason | Hint-pass did not outperform no-hint after recalibration and was weaker in global consistency |
+| Next research action | Document v0.10 as diagnostic; do not continue more tuning unless testing label-aware/gated hinting |
+
+---
+
+## Dataset and evaluation setting
+
+| Item | Value |
+|---|---|
+| Task | Human-talk multi-label speaker/context detection |
 | Parent clips | 867 |
 | Segments | 4,335 |
-| Labels | 10 labels: 6 target speakers + `other_speaker_present`, `music_present`, `audience_reaction_present`, `silence_present` |
-| Previous best | LATS-v1 final frozen config |
-| New final method | LATS-v2 metric-aware coordinate-search config |
-| Search methods | `mean`, `max`, `top2mean`, `top3mean`, `top4mean`, `top5mean`, `median`, `p75`, `p90`, `noisy_or` |
-| Threshold range | 0.10 to 0.95, step 0.01 |
-| Repeated splits | 20 |
+| Train rows | 25,519 |
+| Validation rows | 1,883 |
+| Test rows | 1,961 |
+| Labels | 10 |
+| Label schema | `configs/human_talk_10label_schema.json` |
+| Training manifest | `human_talk_workspace/tata_v0.8_human_corrected_balanced_pipeline/final_expanded_training_dataset_balanced/metadata/multilabel_features_manifest_balanced.csv` |
+| Corrected holdout manifest | `human_talk_workspace/tata_v0.8_human_corrected_balanced_pipeline/corrected_holdout/multilabel_features_manifest_CORRECTED_LABELS.csv` |
+| Parent ID column | `parent_clip_id` |
+| Probability prefix | `exit3_prob_` |
+
+Labels:
+
+```text
+Brene_Brown, Eckhart_Tolle, Eric_Thomas, Gary_Vee, Jay_Shetty, Nick_Vujicic,
+other_speaker_present, music_present, audience_reaction_present, silence_present
+```
+
+---
+
+## Main result comparison
+
+| Method | Macro-F1 | Micro-F1 | Samples-F1 | Exact | Hamming ↓ | Avg pred labels |
+|---|---:|---:|---:|---:|---:|---:|
+| v0.9_4 baseline — frozen LATS-v2 | 0.8673 | 0.9458 | 0.9517 | 0.8604 | 0.0158 | 1.4452 |
+| v0.10 no-hint — frozen old LATS-v2 transfer | 0.8452 | 0.9247 | 0.9252 | 0.8062 | 0.0212 | 1.3495 |
+| v0.10 no-hint — LATS-v1 re-optimized | 0.8658 | 0.9506 | 0.9562 | 0.8674 | 0.0145 | 1.4717 |
+| v0.10 no-hint — LATS-v2 coordinate re-optimized | 0.8624 | 0.9531 | 0.9589 | 0.8766 | 0.0137 | 1.4591 |
+| v0.10 hint-pass — frozen old LATS-v2 transfer | 0.8180 | 0.9155 | 0.9225 | 0.7878 | 0.0242 | 1.3956 |
+| v0.10 hint-pass — LATS-v1 re-optimized | 0.8634 | 0.9447 | 0.9535 | 0.8639 | 0.0160 | 1.4291 |
+| v0.10 hint-pass — LATS-v2 coordinate re-optimized | 0.8632 | 0.9440 | 0.9536 | 0.8570 | 0.0164 | 1.4556 |
+
+---
+
+## Seed-stability check for v0.10 no-hint
+
+| Seed | Macro-F1 | Micro-F1 | Samples-F1 | Exact | Hamming ↓ | Avg pred labels |
+|---:|---:|---:|---:|---:|---:|---:|
+| 101 | 0.8624 | 0.9353 | 0.9467 | 0.8374 | 0.0189 | 1.4556 |
+| 202 | 0.8741 | 0.9471 | 0.9565 | 0.8674 | 0.0153 | 1.4314 |
+| 303 | 0.8607 | 0.9492 | 0.9560 | 0.8731 | 0.0149 | 1.4614 |
+| **Mean** | **0.8657** | **0.9439** | **0.9531** | **0.8593** | **0.0164** | **1.4494** |
+| Std | 0.0073 | 0.0075 | 0.0055 | 0.0192 | 0.0022 | 0.0159 |
+
+### Stability conclusion
+
+The v0.10 no-hint model can improve global metrics in some seeds, but the result is not stable enough to replace the v0.9_4 final baseline.
+
+Compared with v0.9_4:
+
+- Seed 202 and Seed 303 are promising.
+- Seed 101 is clearly weaker.
+- The cross-seed mean is below v0.9_4 on Macro-F1 and Micro-F1 and slightly worse on Hamming Loss.
+
+Therefore, v0.10 no-hint should be recorded as a **stability/diagnostic ablation**, not the new final method.
 
 ---
 
@@ -34,138 +86,61 @@ The key result is that **LATS-v2** improves parent-level human-talk multi-label 
 
 | ID | Research question | Finding |
 |---|---|---|
-| RQ1 | Can parent-level multi-label performance be improved without retraining? | Yes. LATS-v2 improves over LATS-v1 while keeping the base model frozen. |
-| RQ2 | Is independent label-wise F1 optimisation sufficient? | Not fully. LATS-v2 shows that full multi-label objective optimisation improves Exact Match and Hamming Loss. |
-| RQ3 | What changed compared with LATS-v1? | Only three labels changed: `Eric_Thomas`, `Jay_Shetty`, and `silence_present`. |
-| RQ4 | Why did LATS-v2 improve? | It reduced false positives and total label errors, especially for `silence_present`. |
-| RQ5 | Should LATS-v2 replace LATS-v1? | Yes. It is the new best v0.9_4 result because all major full-holdout global metrics improve. |
+| RQ1 | Does old frozen v0.9_4 LATS-v2 transfer directly to v0.10 probabilities? | No. Frozen transfer is weak for both no-hint and hint-pass, showing that v0.10 probability distributions changed. |
+| RQ2 | Does v0.10-specific label-wise aggregation and threshold search recover performance? | Yes. Re-optimized LATS greatly improves both v0.10 no-hint and hint-pass results. |
+| RQ3 | Does hint-pass beat the no-hint control? | No. Hint-pass remains weaker than no-hint after both LATS-v1 and LATS-v2 re-optimization. |
+| RQ4 | Is v0.10 no-hint better than v0.9_4? | Only as a single-run trade-off: it improves Micro-F1, Samples-F1, Exact Match, and Hamming Loss, but loses Macro-F1. Across seeds, the improvement is not stable. |
+| RQ5 | What is the strongest scientific contribution? | LATS-v2 metric-aware inference optimisation remains the strongest stable contribution. Hint-pass is a useful negative result for multi-label speaker/context audio. |
 
 ---
 
+## Why no-hint v0.10 sometimes improved without hint-pass
 
-# Agentic Data Preprocessing v0.9_4 — LATS-v2 Metric-Aware Coordinate Search
+v0.10 no-hint is not identical to v0.9_4. It is a newly trained model checkpoint, so the segment-level probability distribution changes due to training variation, checkpoint selection, and run-specific calibration. The improvement in the best v0.10 no-hint run comes mainly from **v0.10-specific LATS re-optimization**, not from architecture changes.
 
-This document updates the v0.9 documentation line from **LATS-v1** to **LATS-v2**. LATS-v2 is a post-hoc inference-time optimisation layer over frozen segment-level probabilities from `main_v08_human_corrected_balanced_3exit_20260610_084027`. No model retraining is performed.
+In short:
 
-## Final decision
+```text
+v0.10 no-hint improvement = retrained probability distribution + new LATS policy search
+not hint-pass
+```
 
-**Use LATS-v2 as the new best v0.9_4 result.** The Macro-F1 gain over LATS-v1 is small, but LATS-v2 improves the complete multi-label prediction quality: Micro-F1, Samples-F1, Exact Match, Hamming Loss, and Jaccard all improve.
+---
 
-## Global result comparison
+## Why hint-pass did not transfer well
 
-| Method                      |   Macro-F1 |   Micro-F1 |   Samples-F1 |   Exact Match |   Hamming Loss ↓ |   Avg pred labels |
-|:----------------------------|-----------:|-----------:|-------------:|--------------:|-----------------:|------------------:|
-| v0.8 mean-all baseline      |     0.7801 |     0.9332 |       0.9406 |        0.8397 |           0.0194 |            1.4302 |
-| v0.8 simple event-max       |     0.832  |     0.9285 |       0.9375 |        0.8235 |           0.0211 |            1.4844 |
-| v0.9 frozen frequency map   |     0.8512 |     0.9372 |       0.9482 |        0.842  |           0.0185 |            1.4694 |
-| v0.9 frozen + Gary mean     |     0.8518 |     0.9374 |       0.9464 |        0.8431 |           0.0183 |            1.4614 |
-| LATS-v1 final frozen config |     0.8667 |     0.9436 |       0.9495 |        0.8524 |           0.0165 |            1.4544 |
-| LATS-v2 metric-aware config |     0.8673 |     0.9458 |       0.9517 |        0.8604 |           0.0158 |            1.4452 |
+Hint-pass worked better in the older moth setting because that task was closer to single-label or binary classification. In human-talk multi-label detection, early exits may see only incomplete evidence. Passing early-exit probabilities forward can propagate partial or biased label beliefs, especially for rare/bursty labels such as `audience_reaction_present` and `silence_present`.
 
-## LATS-v1 vs LATS-v2 difference
+The current finding is:
 
-| Metric                |   LATS-v1 |   LATS-v2 |   Difference |
-|:----------------------|----------:|----------:|-------------:|
-| Macro-F1              |    0.8667 |    0.8673 |       0.0005 |
-| Micro-F1              |    0.9436 |    0.9458 |       0.0022 |
-| Samples-F1            |    0.9495 |    0.9517 |       0.0022 |
-| Exact Match           |    0.8524 |    0.8604 |       0.0081 |
-| Hamming Loss ↓        |    0.0165 |    0.0158 |      -0.0007 |
-| Jaccard               |    0.9274 |    0.9309 |       0.0035 |
-| Avg true labels       |    1.4694 |    1.4694 |       0      |
-| Avg pred labels       |    1.4544 |    1.4452 |      -0.0092 |
-| Label-count abs error |    0.015  |    0.0242 |       0.0092 |
+```text
+Standard exit-to-exit hint-pass does not reliably improve multi-label speaker/context detection.
+Future versions need label-aware or gated hinting, not plain previous-exit probability hints.
+```
 
-## What changed from LATS-v1 to LATS-v2?
+---
 
-| Label                     | LATS-v1 aggregation   |   LATS-v1 threshold | LATS-v2 aggregation   |   LATS-v2 threshold | Changed                |
-|:--------------------------|:----------------------|--------------------:|:----------------------|--------------------:|:-----------------------|
-| Brene_Brown               | top3mean              |                0.5  | top3mean              |                0.5  | No                     |
-| Eckhart_Tolle             | top2mean              |                0.5  | top2mean              |                0.5  | No                     |
-| Eric_Thomas               | mean                  |                0.53 | mean                  |                0.54 | threshold              |
-| Gary_Vee                  | top3mean              |                0.5  | top3mean              |                0.5  | No                     |
-| Jay_Shetty                | mean                  |                0.8  | mean                  |                0.82 | threshold              |
-| Nick_Vujicic              | mean                  |                0.43 | mean                  |                0.43 | No                     |
-| other_speaker_present     | top3mean              |                0.76 | top3mean              |                0.76 | No                     |
-| music_present             | mean                  |                0.49 | mean                  |                0.49 | No                     |
-| audience_reaction_present | max                   |                0.68 | max                   |                0.68 | No                     |
-| silence_present           | top2mean              |                0.38 | p75                   |                0.34 | aggregation, threshold |
+## Recommended next step
 
-Only three labels changed: `Eric_Thomas`, `Jay_Shetty`, and `silence_present`. The first two changes are small threshold tightening updates. The third is a rule change from `top2mean` to `p75` for `silence_present`, which reduces false positives and improves global multi-label consistency.
+Stop additional v0.10 tuning for now and write the report around these decisions:
 
-## Final LATS-v2 configuration
+1. Freeze **v0.9_4 LATS-v2** as the stable main result.
+2. Include **v0.10 no-hint seed stability** as an ablation.
+3. Include **v0.10 hint-pass** as a negative/diagnostic result.
+4. Propose future work: label-aware hinting, speaker-only hints, Exit2-to-Exit3 hints only, or gated hint fusion.
 
-| Label                     | Aggregation   |   Threshold |
-|:--------------------------|:--------------|------------:|
-| Brene_Brown               | top3mean      |        0.5  |
-| Eckhart_Tolle             | top2mean      |        0.5  |
-| Eric_Thomas               | mean          |        0.54 |
-| Gary_Vee                  | top3mean      |        0.5  |
-| Jay_Shetty                | mean          |        0.82 |
-| Nick_Vujicic              | mean          |        0.43 |
-| other_speaker_present     | top3mean      |        0.76 |
-| music_present             | mean          |        0.49 |
-| audience_reaction_present | max           |        0.68 |
-| silence_present           | p75           |        0.34 |
+---
 
-## Label-wise changes
+## Updated documentation package
 
-| Label                     |   LATS-v1 F1 |   LATS-v2 F1 |   F1 change |   LATS-v1 errors |   LATS-v2 errors |   Error change |   LATS-v1 pred+ |   LATS-v2 pred+ |
-|:--------------------------|-------------:|-------------:|------------:|-----------------:|-----------------:|---------------:|----------------:|----------------:|
-| Brene_Brown               |       0.979  |       0.979  |      0      |                3 |                3 |              0 |              70 |              70 |
-| Eckhart_Tolle             |       1      |       1      |      0      |                0 |                0 |              0 |              84 |              84 |
-| Eric_Thomas               |       0.9343 |       0.9412 |      0.0069 |                9 |                8 |             -1 |              69 |              68 |
-| Gary_Vee                  |       0.9853 |       0.9853 |      0      |                2 |                2 |              0 |              68 |              68 |
-| Jay_Shetty                |       0.967  |       0.9724 |      0.0053 |                6 |                5 |             -1 |              92 |              91 |
-| Nick_Vujicic              |       0.9897 |       0.9897 |      0      |                1 |                1 |              0 |              48 |              48 |
-| other_speaker_present     |       0.9444 |       0.9444 |      0      |               51 |               51 |              0 |             457 |             457 |
-| music_present             |       0.9556 |       0.9556 |      0      |               30 |               30 |              0 |             335 |             335 |
-| audience_reaction_present |       0.6087 |       0.6087 |      0      |               18 |               18 |              0 |              17 |              17 |
-| silence_present           |       0.303  |       0.2963 |     -0.0067 |               23 |               19 |             -4 |              21 |              15 |
+The v0.10 documentation is under:
 
-## Repeated split comparison
+```text
+docs/v0.10/
+```
 
-| Metric          |   LATS-v1 mean |   LATS-v1 std |   LATS-v2 mean |   LATS-v2 std |   Mean difference |
-|:----------------|---------------:|--------------:|---------------:|--------------:|------------------:|
-| Macro-F1        |         0.8309 |        0.0154 |         0.8304 |        0.017  |           -0.0006 |
-| Micro-F1        |         0.9293 |        0.0067 |         0.9326 |        0.0065 |            0.0033 |
-| Samples-F1      |         0.9369 |        0.0073 |         0.9402 |        0.0066 |            0.0032 |
-| Exact Match     |         0.8179 |        0.0182 |         0.8275 |        0.0147 |            0.0096 |
-| Hamming Loss ↓  |         0.0207 |        0.0021 |         0.0197 |        0.002  |           -0.001  |
-| Avg pred labels |         1.4606 |        0.032  |         1.4502 |        0.0319 |           -0.0104 |
-| Objective score |       nan      |      nan      |         0.8283 |        0.0075 |          nan      |
+Key result tables are under:
 
-## LATS-v1 stability
-
-| Version   | Label                     | Final aggregation   |   Final threshold | Selection count   |   Selection fraction | Stability   |
-|:----------|:--------------------------|:--------------------|------------------:|:------------------|---------------------:|:------------|
-| LATS-v1   | Brene_Brown               | top3mean            |              0.5  | 8/20              |                 0.4  | Low         |
-| LATS-v1   | Eckhart_Tolle             | top2mean            |              0.5  | 19/20             |                 0.95 | High        |
-| LATS-v1   | Eric_Thomas               | mean                |              0.53 | 10/20             |                 0.5  | Moderate    |
-| LATS-v1   | Gary_Vee                  | top3mean            |              0.5  | 11/20             |                 0.55 | Moderate    |
-| LATS-v1   | Jay_Shetty                | mean                |              0.8  | 14/20             |                 0.7  | Moderate    |
-| LATS-v1   | Nick_Vujicic              | mean                |              0.43 | 10/20             |                 0.5  | Moderate    |
-| LATS-v1   | other_speaker_present     | top3mean            |              0.76 | 10/20             |                 0.5  | Moderate    |
-| LATS-v1   | music_present             | mean                |              0.49 | 14/20             |                 0.7  | Moderate    |
-| LATS-v1   | audience_reaction_present | max                 |              0.68 | 11/20             |                 0.55 | Moderate    |
-| LATS-v1   | silence_present           | top2mean            |              0.38 | 15/20             |                 0.75 | High        |
-
-## LATS-v2 stability
-
-| Version   | Label                     | Final aggregation   |   Final threshold | Selection count   |   Selection fraction | Stability   |
-|:----------|:--------------------------|:--------------------|------------------:|:------------------|---------------------:|:------------|
-| LATS-v2   | Brene_Brown               | top3mean            |              0.5  | 11/20             |                 0.55 | Moderate    |
-| LATS-v2   | Eckhart_Tolle             | top2mean            |              0.5  | 20/20             |                 1    | High        |
-| LATS-v2   | Eric_Thomas               | mean                |              0.54 | 8/20              |                 0.4  | Low         |
-| LATS-v2   | Gary_Vee                  | top3mean            |              0.5  | 9/20              |                 0.45 | Low         |
-| LATS-v2   | Jay_Shetty                | mean                |              0.82 | 11/20             |                 0.55 | Moderate    |
-| LATS-v2   | Nick_Vujicic              | mean                |              0.43 | 11/20             |                 0.55 | Moderate    |
-| LATS-v2   | other_speaker_present     | top3mean            |              0.76 | 6/20              |                 0.3  | Low         |
-| LATS-v2   | music_present             | mean                |              0.49 | 12/20             |                 0.6  | Moderate    |
-| LATS-v2   | audience_reaction_present | max                 |              0.68 | 9/20              |                 0.45 | Low         |
-| LATS-v2   | silence_present           | p75                 |              0.34 | 10/20             |                 0.5  | Moderate    |
-
-
-## Important reporting note
-
-The repeated split table is the safer stability evidence. The final full-holdout result applies a frozen configuration selected from repeated splits over the corrected holdout. Therefore, describe this as a corrected-holdout result, not as an external unseen-test result.
+```text
+docs/tables/agentic_data_preprocessing_v0.10/
+```
