@@ -1,8 +1,8 @@
 # NeuroAccuExit-ASHADIP — Agentic Data Preprocessing v0.10
 
-This repository documentation now records the v0.10 human-talk speaker/context experiment. The aim of v0.10 was to test whether the old **exit-to-exit hint-pass** idea improves the current multi-label ASHADIP/LABLEX pipeline when combined with parent-level LATS inference optimisation.
+This documentation records the latest human-talk speaker/context multi-label experiments for v0.9_4 and v0.10, including **hint-pass**, **LATS re-optimization**, **seed stability**, and the latest **no-hint + `pos_weight` cap5 diagnostic run**.
 
-The outcome is an important controlled finding: **standard hint-pass should not be accepted as the final method for the current human-talk multi-label dataset.** The strongest stable result remains **v0.9_4 LATS-v2**, while v0.10 no-hint is useful as a diagnostic/stability ablation.
+The final outcome is unchanged: **v0.9_4 LATS-v2 remains the stable final result**. v0.10 no-hint remains a useful diagnostic/stability ablation. Current standard hint-pass and `pos_weight cap5` should not be adopted as final methods.
 
 ---
 
@@ -12,9 +12,11 @@ The outcome is an important controlled finding: **standard hint-pass should not 
 |---|---|
 | Stable final baseline | `v0.9_4 / LATS-v2 metric-aware coordinate search` |
 | Best single v0.10 run | `v0.10 no-hint + LATS-v2 coordinate re-optimized` |
+| Stable v0.10 replacement? | No; seed stability is not strong enough |
 | Hint-pass status | Rejected for current dataset; useful negative result |
-| Reason | Hint-pass did not outperform no-hint after recalibration and was weaker in global consistency |
-| Next research action | Document v0.10 as diagnostic; do not continue more tuning unless testing label-aware/gated hinting |
+| `pos_weight cap5` status | Rejected; worse than v0.9_4 and worse than previous v0.10 no-hint results |
+| Strongest contribution | LATS-v2 metric-aware parent-level inference optimization |
+| Next action | Report/document results; avoid more tuning unless testing a new hypothesis |
 
 ---
 
@@ -44,41 +46,76 @@ other_speaker_present, music_present, audience_reaction_present, silence_present
 
 ---
 
-## Main result comparison
+## Complete method comparison
 
-| Method | Macro-F1 | Micro-F1 | Samples-F1 | Exact | Hamming ↓ | Avg pred labels |
-|---|---:|---:|---:|---:|---:|---:|
-| v0.9_4 baseline — frozen LATS-v2 | 0.8673 | 0.9458 | 0.9517 | 0.8604 | 0.0158 | 1.4452 |
-| v0.10 no-hint — frozen old LATS-v2 transfer | 0.8452 | 0.9247 | 0.9252 | 0.8062 | 0.0212 | 1.3495 |
-| v0.10 no-hint — LATS-v1 re-optimized | 0.8658 | 0.9506 | 0.9562 | 0.8674 | 0.0145 | 1.4717 |
-| v0.10 no-hint — LATS-v2 coordinate re-optimized | 0.8624 | 0.9531 | 0.9589 | 0.8766 | 0.0137 | 1.4591 |
-| v0.10 hint-pass — frozen old LATS-v2 transfer | 0.8180 | 0.9155 | 0.9225 | 0.7878 | 0.0242 | 1.3956 |
-| v0.10 hint-pass — LATS-v1 re-optimized | 0.8634 | 0.9447 | 0.9535 | 0.8639 | 0.0160 | 1.4291 |
-| v0.10 hint-pass — LATS-v2 coordinate re-optimized | 0.8632 | 0.9440 | 0.9536 | 0.8570 | 0.0164 | 1.4556 |
+| method | macro_f1 | micro_f1 | samples_f1 | exact_match | hamming_loss | avg_pred_labels | decision |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| v0.9_4 baseline — frozen LATS-v2 | 0.8673 | 0.9458 | 0.9517 | 0.8604 | 0.0158 | 1.4452 | Stable final baseline |
+| v0.10 no-hint — frozen old LATS-v2 transfer | 0.8452 | 0.9247 | 0.9252 | 0.8062 | 0.0212 | 1.3495 | Frozen policy transfer failed |
+| v0.10 no-hint — LATS-v1 re-optimized | 0.8658 | 0.9506 | 0.9562 | 0.8674 | 0.0145 | 1.4717 | Strong single-run recovery |
+| v0.10 no-hint — LATS-v2 coordinate re-optimized | 0.8624 | 0.9531 | 0.9589 | 0.8766 | 0.0137 | 1.4591 | Best single v0.10 global-consistency run |
+| v0.10 hint-pass — frozen old LATS-v2 transfer | 0.8180 | 0.9155 | 0.9225 | 0.7878 | 0.0242 | 1.3956 | Hint-pass transfer weak |
+| v0.10 hint-pass — LATS-v1 re-optimized | 0.8634 | 0.9447 | 0.9535 | 0.8639 | 0.0160 | 1.4291 | Recovered but not best |
+| v0.10 hint-pass — LATS-v2 coordinate re-optimized | 0.8632 | 0.9440 | 0.9536 | 0.8570 | 0.0164 | 1.4556 | Rejected vs no-hint |
+| v0.10 no-hint + pos_weight cap5 — fixed 0.5 mean | 0.8009 | 0.8939 | 0.9088 | 0.7232 | 0.0330 | 1.6401 | Over-predicted positives before LATS |
+| v0.10 no-hint + pos_weight cap5 — LATS-v2 macro-priority | 0.8511 | 0.9413 | 0.9481 | 0.8478 | 0.0171 | 1.4371 | Rejected; worse than baseline and no-hint |
 
 ---
 
-## Seed-stability check for v0.10 no-hint
+## Main conclusion
 
-| Seed | Macro-F1 | Micro-F1 | Samples-F1 | Exact | Hamming ↓ | Avg pred labels |
-|---:|---:|---:|---:|---:|---:|---:|
+```text
+Keep v0.9_4 LATS-v2 as the stable final baseline.
+Reject current standard hint-pass.
+Reject pos_weight cap5.
+Use v0.10 no-hint only as diagnostic/stability evidence.
+```
+
+---
+
+## v0.10 no-hint seed-stability check
+
+| seed | macro_f1 | micro_f1 | samples_f1 | exact_match | hamming_loss | avg_pred_labels |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | 101 | 0.8624 | 0.9353 | 0.9467 | 0.8374 | 0.0189 | 1.4556 |
 | 202 | 0.8741 | 0.9471 | 0.9565 | 0.8674 | 0.0153 | 1.4314 |
 | 303 | 0.8607 | 0.9492 | 0.9560 | 0.8731 | 0.0149 | 1.4614 |
-| **Mean** | **0.8657** | **0.9439** | **0.9531** | **0.8593** | **0.0164** | **1.4494** |
-| Std | 0.0073 | 0.0075 | 0.0055 | 0.0192 | 0.0022 | 0.0159 |
 
-### Stability conclusion
+Mean result:
 
-The v0.10 no-hint model can improve global metrics in some seeds, but the result is not stable enough to replace the v0.9_4 final baseline.
+```text
+Macro-F1   = 0.8657
+Micro-F1   = 0.9439
+Samples-F1 = 0.9531
+Exact      = 0.8593
+Hamming    = 0.0164
+```
 
-Compared with v0.9_4:
+Compared with v0.9_4, the seed mean is slightly weaker in Macro-F1, Micro-F1, Exact Match, and Hamming Loss. Therefore v0.10 no-hint is promising but not stable enough to replace v0.9_4.
 
-- Seed 202 and Seed 303 are promising.
-- Seed 101 is clearly weaker.
-- The cross-seed mean is below v0.9_4 on Macro-F1 and Micro-F1 and slightly worse on Hamming Loss.
+---
 
-Therefore, v0.10 no-hint should be recorded as a **stability/diagnostic ablation**, not the new final method.
+## Latest `pos_weight cap5` finding
+
+The `pos_weight cap5` experiment was intended to test whether label-imbalance-aware BCE can improve rare labels more reliably than hint-pass. It did **not** help.
+
+Important note:
+
+```text
+The produced run is seed_101202303, so it is a single diagnostic run, not a true 3-seed stability run.
+```
+
+Best `pos_weight cap5` after LATS-v2 macro-priority re-optimization:
+
+```text
+Macro-F1   = 0.8511
+Micro-F1   = 0.9413
+Samples-F1 = 0.9481
+Exact      = 0.8478
+Hamming    = 0.0171
+```
+
+This is worse than v0.9_4 and worse than the previous no-hint seed mean.
 
 ---
 
@@ -86,61 +123,20 @@ Therefore, v0.10 no-hint should be recorded as a **stability/diagnostic ablation
 
 | ID | Research question | Finding |
 |---|---|---|
-| RQ1 | Does old frozen v0.9_4 LATS-v2 transfer directly to v0.10 probabilities? | No. Frozen transfer is weak for both no-hint and hint-pass, showing that v0.10 probability distributions changed. |
-| RQ2 | Does v0.10-specific label-wise aggregation and threshold search recover performance? | Yes. Re-optimized LATS greatly improves both v0.10 no-hint and hint-pass results. |
-| RQ3 | Does hint-pass beat the no-hint control? | No. Hint-pass remains weaker than no-hint after both LATS-v1 and LATS-v2 re-optimization. |
-| RQ4 | Is v0.10 no-hint better than v0.9_4? | Only as a single-run trade-off: it improves Micro-F1, Samples-F1, Exact Match, and Hamming Loss, but loses Macro-F1. Across seeds, the improvement is not stable. |
-| RQ5 | What is the strongest scientific contribution? | LATS-v2 metric-aware inference optimisation remains the strongest stable contribution. Hint-pass is a useful negative result for multi-label speaker/context audio. |
-
----
-
-## Why no-hint v0.10 sometimes improved without hint-pass
-
-v0.10 no-hint is not identical to v0.9_4. It is a newly trained model checkpoint, so the segment-level probability distribution changes due to training variation, checkpoint selection, and run-specific calibration. The improvement in the best v0.10 no-hint run comes mainly from **v0.10-specific LATS re-optimization**, not from architecture changes.
-
-In short:
-
-```text
-v0.10 no-hint improvement = retrained probability distribution + new LATS policy search
-not hint-pass
-```
-
----
-
-## Why hint-pass did not transfer well
-
-Hint-pass worked better in the older moth setting because that task was closer to single-label or binary classification. In human-talk multi-label detection, early exits may see only incomplete evidence. Passing early-exit probabilities forward can propagate partial or biased label beliefs, especially for rare/bursty labels such as `audience_reaction_present` and `silence_present`.
-
-The current finding is:
-
-```text
-Standard exit-to-exit hint-pass does not reliably improve multi-label speaker/context detection.
-Future versions need label-aware or gated hinting, not plain previous-exit probability hints.
-```
-
----
-
-## Recommended next step
-
-Stop additional v0.10 tuning for now and write the report around these decisions:
-
-1. Freeze **v0.9_4 LATS-v2** as the stable main result.
-2. Include **v0.10 no-hint seed stability** as an ablation.
-3. Include **v0.10 hint-pass** as a negative/diagnostic result.
-4. Propose future work: label-aware hinting, speaker-only hints, Exit2-to-Exit3 hints only, or gated hint fusion.
+| RQ1 | Does frozen v0.9_4 LATS-v2 transfer directly to v0.10 probabilities? | No. Frozen transfer is weak for both no-hint and hint-pass. |
+| RQ2 | Does v0.10-specific LATS re-optimization recover performance? | Yes. Re-optimized LATS improves both no-hint and hint-pass outputs. |
+| RQ3 | Does hint-pass beat no-hint? | No. Current standard hint-pass is weaker than no-hint after recalibration. |
+| RQ4 | Is v0.10 no-hint better than v0.9_4? | Only in some single-run/global metrics, not stably across seeds. |
+| RQ5 | Does `pos_weight cap5` improve rare-label Macro-F1 enough to help? | No. It lowers overall performance and should be rejected. |
+| RQ6 | What is the strongest final contribution? | LATS-v2 metric-aware inference-policy optimization. |
 
 ---
 
 ## Updated documentation package
 
-The v0.10 documentation is under:
+Detailed files are under:
 
 ```text
 docs/v0.10/
-```
-
-Key result tables are under:
-
-```text
 docs/tables/agentic_data_preprocessing_v0.10/
 ```

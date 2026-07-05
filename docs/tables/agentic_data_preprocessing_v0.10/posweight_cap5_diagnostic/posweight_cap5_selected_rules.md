@@ -1,0 +1,12 @@
+| label | aggregation | threshold |
+| --- | --- | ---: |
+| Brene_Brown | mean | 0.3600 |
+| Eckhart_Tolle | mean | 0.2000 |
+| Eric_Thomas | p75 | 0.9300 |
+| Gary_Vee | mean | 0.5400 |
+| Jay_Shetty | top3mean | 0.9400 |
+| Nick_Vujicic | mean | 0.3000 |
+| other_speaker_present | mean | 0.6700 |
+| music_present | mean | 0.4800 |
+| audience_reaction_present | top2mean | 0.8800 |
+| silence_present | max | 0.8500 |

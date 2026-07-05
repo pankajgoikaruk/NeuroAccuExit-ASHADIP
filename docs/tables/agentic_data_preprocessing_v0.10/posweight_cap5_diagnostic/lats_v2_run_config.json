@@ -1,0 +1,14 @@
+{
+  "segment_pred_csv": "human_talk_workspace\\tata_v0.10_hint_pass_lats_pipeline\\posweight_stability_eval\\seed_101202303_cap_5_parent_mean_fixed\\parent_eval_segment_probs_fixed_0p5_mean.csv",
+  "labels_json": "configs\\human_talk_10label_schema.json",
+  "out_dir": "human_talk_workspace\\tata_v0.10_hint_pass_lats_pipeline\\posweight_stability_lats_reoptimized\\seed_101202303_cap_5_lats_v2_macro_priority",
+  "parent_id_col": "parent_clip_id",
+  "prob_prefix": "exit3_prob_",
+  "threshold_min": 0.1,
+  "threshold_max": 0.95,
+  "threshold_step": 0.01,
+  "aggregation_methods": "mean,max,top2mean,top3mean,p75,p90",
+  "objective": "macro_priority",
+  "max_iter": 20,
+  "model_name": "main_v010_no_hint_posweight_cap5_seed_101202303_20260705_112722"
+}

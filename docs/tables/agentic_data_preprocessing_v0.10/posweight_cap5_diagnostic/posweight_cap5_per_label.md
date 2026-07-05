@@ -1,0 +1,12 @@
+| label | precision | recall | f1 | support | predicted_positive |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Brene_Brown | 0.9863 | 0.9863 | 0.9863 | 73 | 73 |
+| Eckhart_Tolle | 1.0000 | 1.0000 | 1.0000 | 84 | 84 |
+| Eric_Thomas | 0.9552 | 0.9412 | 0.9481 | 68 | 67 |
+| Gary_Vee | 0.9855 | 1.0000 | 0.9927 | 68 | 69 |
+| Jay_Shetty | 0.9278 | 1.0000 | 0.9626 | 90 | 97 |
+| Nick_Vujicic | 1.0000 | 1.0000 | 1.0000 | 49 | 49 |
+| other_speaker_present | 0.9363 | 0.9261 | 0.9311 | 460 | 455 |
+| music_present | 0.9727 | 0.9413 | 0.9568 | 341 | 330 |
+| audience_reaction_present | 0.5625 | 0.3103 | 0.4000 | 29 | 16 |
+| silence_present | 0.5000 | 0.2500 | 0.3333 | 12 | 6 |

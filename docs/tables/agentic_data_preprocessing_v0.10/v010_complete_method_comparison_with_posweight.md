@@ -1,19 +1,3 @@
-# v0.10 Experiment Report — Hint-Pass, LATS, Seed Stability, and Pos-Weight
-
-## Final decision
-
-v0.10 does not replace v0.9_4. The stable final result remains:
-
-```text
-v0.9_4 + LATS-v2 metric-aware coordinate search
-```
-
-The latest `pos_weight cap5` diagnostic also failed to improve the outcome.
-
----
-
-## Complete comparison
-
 | method | macro_f1 | micro_f1 | samples_f1 | exact_match | hamming_loss | avg_pred_labels | decision |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
 | v0.9_4 baseline — frozen LATS-v2 | 0.8673 | 0.9458 | 0.9517 | 0.8604 | 0.0158 | 1.4452 | Stable final baseline |
@@ -25,13 +9,3 @@ The latest `pos_weight cap5` diagnostic also failed to improve the outcome.
 | v0.10 hint-pass — LATS-v2 coordinate re-optimized | 0.8632 | 0.9440 | 0.9536 | 0.8570 | 0.0164 | 1.4556 | Rejected vs no-hint |
 | v0.10 no-hint + pos_weight cap5 — fixed 0.5 mean | 0.8009 | 0.8939 | 0.9088 | 0.7232 | 0.0330 | 1.6401 | Over-predicted positives before LATS |
 | v0.10 no-hint + pos_weight cap5 — LATS-v2 macro-priority | 0.8511 | 0.9413 | 0.9481 | 0.8478 | 0.0171 | 1.4371 | Rejected; worse than baseline and no-hint |
-
----
-
-## Interpretation
-
-1. **LATS-v2 is still the strongest contribution.**
-2. **Hint-pass is not helpful in its current standard form.**
-3. **v0.10 no-hint is promising but seed-sensitive.**
-4. **`pos_weight cap5` over-corrected the training objective and reduced final performance.**
-5. The project should now report these as controlled ablations rather than continue tuning.

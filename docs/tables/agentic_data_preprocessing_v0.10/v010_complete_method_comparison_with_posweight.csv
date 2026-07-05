@@ -1,0 +1,10 @@
+method,macro_f1,micro_f1,samples_f1,exact_match,hamming_loss,avg_pred_labels,decision
+v0.9_4 baseline — frozen LATS-v2,0.867256,0.945786,0.9517,0.860438,0.015802,1.445213,Stable final baseline
+v0.10 no-hint — frozen old LATS-v2 transfer,0.845184,0.924714,0.925183,0.806228,0.021223,1.349481,Frozen policy transfer failed
+v0.10 no-hint — LATS-v1 re-optimized,0.8658,0.9506,0.9562,0.8674,0.0145,1.4717,Strong single-run recovery
+v0.10 no-hint — LATS-v2 coordinate re-optimized,0.8624,0.9531,0.9589,0.8766,0.0137,1.4591,Best single v0.10 global-consistency run
+v0.10 hint-pass — frozen old LATS-v2 transfer,0.817995,0.915459,0.922453,0.787774,0.024221,1.395617,Hint-pass transfer weak
+v0.10 hint-pass — LATS-v1 re-optimized,0.8634,0.9447,0.9535,0.8639,0.016,1.4291,Recovered but not best
+v0.10 hint-pass — LATS-v2 coordinate re-optimized,0.8632,0.944,0.9536,0.857,0.0164,1.4556,Rejected vs no-hint
+v0.10 no-hint + pos_weight cap5 — fixed 0.5 mean,0.800915,0.893917,0.908793,0.723183,0.032987,1.640138,Over-predicted positives before LATS
+v0.10 no-hint + pos_weight cap5 — LATS-v2 macro-priority,0.851098,0.94127,0.948097,0.847751,0.01707,1.43714,Rejected; worse than baseline and no-hint

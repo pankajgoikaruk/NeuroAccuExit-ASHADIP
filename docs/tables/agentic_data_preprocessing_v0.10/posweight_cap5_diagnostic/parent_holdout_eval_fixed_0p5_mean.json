@@ -1,0 +1,323 @@
+{
+  "run_dir": "C:\\Users\\wwwsa\\PycharmProjects\\NeuroAccuExit-ASHADIP\\human_talk_workspace\\tata_v0.10_hint_pass_lats_pipeline\\main_models\\runs_posweight_stability\\main_v010_no_hint_posweight_cap5_seed_101202303_20260705_112722",
+  "holdout_manifest": "human_talk_workspace\\tata_v0.8_human_corrected_balanced_pipeline\\corrected_holdout\\multilabel_features_manifest_CORRECTED_LABELS.csv",
+  "features_root": "human_talk_workspace\\tata_v0.6_raw_pipeline\\final_holdout_feature_cache\\features",
+  "threshold_mode": "fixed_0p5",
+  "aggregation": "mean",
+  "parent_clips": 867,
+  "segment_rows": 4335,
+  "labels": [
+    "Brene_Brown",
+    "Eckhart_Tolle",
+    "Eric_Thomas",
+    "Gary_Vee",
+    "Jay_Shetty",
+    "Nick_Vujicic",
+    "other_speaker_present",
+    "music_present",
+    "audience_reaction_present",
+    "silence_present"
+  ],
+  "static": {
+    "exit_1": {
+      "macro_f1": 0.3399934053565054,
+      "micro_f1": 0.5642438856355494,
+      "samples_f1": 0.5478002965892239,
+      "exact_match": 0.23414071510957324,
+      "hamming_loss": 0.1459054209919262,
+      "jaccard_score": 0.4653210303729335,
+      "avg_true_labels": 1.469434832756632,
+      "avg_pred_labels": 1.8788927335640138,
+      "per_label": {
+        "Brene_Brown": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 73,
+          "predicted_positive": 0
+        },
+        "Eckhart_Tolle": {
+          "precision": 0.535483870967742,
+          "recall": 0.9880952380952381,
+          "f1": 0.694560669456067,
+          "support": 84,
+          "predicted_positive": 155
+        },
+        "Eric_Thomas": {
+          "precision": 0.28421052631578947,
+          "recall": 0.39705882352941174,
+          "f1": 0.3312883435582822,
+          "support": 68,
+          "predicted_positive": 95
+        },
+        "Gary_Vee": {
+          "precision": 0.12345679012345678,
+          "recall": 0.29411764705882354,
+          "f1": 0.17391304347826086,
+          "support": 68,
+          "predicted_positive": 162
+        },
+        "Jay_Shetty": {
+          "precision": 0.32727272727272727,
+          "recall": 0.8,
+          "f1": 0.4645161290322581,
+          "support": 90,
+          "predicted_positive": 220
+        },
+        "Nick_Vujicic": {
+          "precision": 1.0,
+          "recall": 0.02040816326530612,
+          "f1": 0.04,
+          "support": 49,
+          "predicted_positive": 1
+        },
+        "other_speaker_present": {
+          "precision": 0.6330798479087453,
+          "recall": 0.7239130434782609,
+          "f1": 0.6754563894523327,
+          "support": 460,
+          "predicted_positive": 526
+        },
+        "music_present": {
+          "precision": 0.6634615384615384,
+          "recall": 0.8093841642228738,
+          "f1": 0.7291941875825627,
+          "support": 341,
+          "predicted_positive": 416
+        },
+        "audience_reaction_present": {
+          "precision": 0.11538461538461539,
+          "recall": 0.20689655172413793,
+          "f1": 0.14814814814814814,
+          "support": 29,
+          "predicted_positive": 52
+        },
+        "silence_present": {
+          "precision": 0.5,
+          "recall": 0.08333333333333333,
+          "f1": 0.14285714285714285,
+          "support": 12,
+          "predicted_positive": 2
+        }
+      }
+    },
+    "exit_2": {
+      "macro_f1": 0.6510810415497165,
+      "micro_f1": 0.7517680339462518,
+      "samples_f1": 0.7666941286318448,
+      "exact_match": 0.47058823529411764,
+      "hamming_loss": 0.0809688581314879,
+      "jaccard_score": 0.6929065743944637,
+      "avg_true_labels": 1.469434832756632,
+      "avg_pred_labels": 1.792387543252595,
+      "per_label": {
+        "Brene_Brown": {
+          "precision": 0.875,
+          "recall": 0.863013698630137,
+          "f1": 0.8689655172413793,
+          "support": 73,
+          "predicted_positive": 72
+        },
+        "Eckhart_Tolle": {
+          "precision": 0.9880952380952381,
+          "recall": 0.9880952380952381,
+          "f1": 0.9880952380952381,
+          "support": 84,
+          "predicted_positive": 84
+        },
+        "Eric_Thomas": {
+          "precision": 0.37735849056603776,
+          "recall": 0.8823529411764706,
+          "f1": 0.5286343612334802,
+          "support": 68,
+          "predicted_positive": 159
+        },
+        "Gary_Vee": {
+          "precision": 0.7386363636363636,
+          "recall": 0.9558823529411765,
+          "f1": 0.8333333333333334,
+          "support": 68,
+          "predicted_positive": 88
+        },
+        "Jay_Shetty": {
+          "precision": 0.7258064516129032,
+          "recall": 1.0,
+          "f1": 0.8411214953271028,
+          "support": 90,
+          "predicted_positive": 124
+        },
+        "Nick_Vujicic": {
+          "precision": 1.0,
+          "recall": 0.2857142857142857,
+          "f1": 0.4444444444444444,
+          "support": 49,
+          "predicted_positive": 14
+        },
+        "other_speaker_present": {
+          "precision": 0.7105263157894737,
+          "recall": 0.8217391304347826,
+          "f1": 0.7620967741935484,
+          "support": 460,
+          "predicted_positive": 532
+        },
+        "music_present": {
+          "precision": 0.9037267080745341,
+          "recall": 0.8533724340175953,
+          "f1": 0.8778280542986425,
+          "support": 341,
+          "predicted_positive": 322
+        },
+        "audience_reaction_present": {
+          "precision": 0.12096774193548387,
+          "recall": 0.5172413793103449,
+          "f1": 0.19607843137254902,
+          "support": 29,
+          "predicted_positive": 124
+        },
+        "silence_present": {
+          "precision": 0.11428571428571428,
+          "recall": 0.3333333333333333,
+          "f1": 0.1702127659574468,
+          "support": 12,
+          "predicted_positive": 35
+        }
+      }
+    },
+    "exit_3": {
+      "macro_f1": 0.800915404809816,
+      "micro_f1": 0.8939169139465876,
+      "samples_f1": 0.9087933212500686,
+      "exact_match": 0.7231833910034602,
+      "hamming_loss": 0.03298731257208766,
+      "jaccard_score": 0.8658208381391773,
+      "avg_true_labels": 1.469434832756632,
+      "avg_pred_labels": 1.6401384083044983,
+      "per_label": {
+        "Brene_Brown": {
+          "precision": 1.0,
+          "recall": 0.958904109589041,
+          "f1": 0.9790209790209791,
+          "support": 73,
+          "predicted_positive": 70
+        },
+        "Eckhart_Tolle": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 84,
+          "predicted_positive": 84
+        },
+        "Eric_Thomas": {
+          "precision": 0.7951807228915663,
+          "recall": 0.9705882352941176,
+          "f1": 0.8741721854304636,
+          "support": 68,
+          "predicted_positive": 83
+        },
+        "Gary_Vee": {
+          "precision": 0.9714285714285714,
+          "recall": 1.0,
+          "f1": 0.9855072463768116,
+          "support": 68,
+          "predicted_positive": 70
+        },
+        "Jay_Shetty": {
+          "precision": 0.8333333333333334,
+          "recall": 1.0,
+          "f1": 0.9090909090909091,
+          "support": 90,
+          "predicted_positive": 108
+        },
+        "Nick_Vujicic": {
+          "precision": 1.0,
+          "recall": 0.8979591836734694,
+          "f1": 0.946236559139785,
+          "support": 49,
+          "predicted_positive": 44
+        },
+        "other_speaker_present": {
+          "precision": 0.8152173913043478,
+          "recall": 0.9782608695652174,
+          "f1": 0.8893280632411067,
+          "support": 460,
+          "predicted_positive": 552
+        },
+        "music_present": {
+          "precision": 0.9753846153846154,
+          "recall": 0.9296187683284457,
+          "f1": 0.9519519519519519,
+          "support": 341,
+          "predicted_positive": 325
+        },
+        "audience_reaction_present": {
+          "precision": 0.2608695652173913,
+          "recall": 0.41379310344827586,
+          "f1": 0.32,
+          "support": 29,
+          "predicted_positive": 46
+        },
+        "silence_present": {
+          "precision": 0.1,
+          "recall": 0.3333333333333333,
+          "f1": 0.15384615384615385,
+          "support": 12,
+          "predicted_positive": 40
+        }
+      }
+    }
+  },
+  "static_summary_rows": [
+    {
+      "model": "main_v010_no_hint_posweight_cap5_seed_101202303_20260705_112722",
+      "threshold_mode": "fixed_0p5",
+      "aggregation": "mean",
+      "split": "final_raw_holdout_parent_level",
+      "exit": 1,
+      "parent_clips": 867,
+      "macro_f1": 0.3399934053565054,
+      "micro_f1": 0.5642438856355494,
+      "samples_f1": 0.5478002965892239,
+      "exact_match": 0.23414071510957324,
+      "hamming_loss": 0.1459054209919262,
+      "jaccard_score": 0.4653210303729335,
+      "avg_true_labels": 1.469434832756632,
+      "avg_pred_labels": 1.8788927335640138
+    },
+    {
+      "model": "main_v010_no_hint_posweight_cap5_seed_101202303_20260705_112722",
+      "threshold_mode": "fixed_0p5",
+      "aggregation": "mean",
+      "split": "final_raw_holdout_parent_level",
+      "exit": 2,
+      "parent_clips": 867,
+      "macro_f1": 0.6510810415497165,
+      "micro_f1": 0.7517680339462518,
+      "samples_f1": 0.7666941286318448,
+      "exact_match": 0.47058823529411764,
+      "hamming_loss": 0.0809688581314879,
+      "jaccard_score": 0.6929065743944637,
+      "avg_true_labels": 1.469434832756632,
+      "avg_pred_labels": 1.792387543252595
+    },
+    {
+      "model": "main_v010_no_hint_posweight_cap5_seed_101202303_20260705_112722",
+      "threshold_mode": "fixed_0p5",
+      "aggregation": "mean",
+      "split": "final_raw_holdout_parent_level",
+      "exit": 3,
+      "parent_clips": 867,
+      "macro_f1": 0.800915404809816,
+      "micro_f1": 0.8939169139465876,
+      "samples_f1": 0.9087933212500686,
+      "exact_match": 0.7231833910034602,
+      "hamming_loss": 0.03298731257208766,
+      "jaccard_score": 0.8658208381391773,
+      "avg_true_labels": 1.469434832756632,
+      "avg_pred_labels": 1.6401384083044983
+    }
+  ],
+  "outputs": {
+    "static_csv": "human_talk_workspace\\tata_v0.10_hint_pass_lats_pipeline\\posweight_stability_eval\\seed_101202303_cap_5_parent_mean_fixed\\parent_holdout_static_fixed_0p5_mean.csv",
+    "segment_probs_csv": "human_talk_workspace\\tata_v0.10_hint_pass_lats_pipeline\\posweight_stability_eval\\seed_101202303_cap_5_parent_mean_fixed\\parent_eval_segment_probs_fixed_0p5_mean.csv"
+  }
+}

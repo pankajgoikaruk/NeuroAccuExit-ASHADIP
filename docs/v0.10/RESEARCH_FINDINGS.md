@@ -1,59 +1,63 @@
-# v0.10 Research Findings
+# v0.10 Research Questions and Findings
 
 ## Research questions
 
-| ID | Research question | Finding |
+| ID | Research question | Answer |
 |---|---|---|
-| RQ1 | Can standard exit-to-exit hint-pass improve the human-talk multi-label pipeline? | No. It did not outperform the no-hint control after recalibration. |
-| RQ2 | Does frozen v0.9_4 LATS-v2 transfer to retrained v0.10 models? | No. Frozen transfer underperformed, showing that thresholds must be recalibrated when probabilities shift. |
-| RQ3 | Does v0.10-specific LATS re-optimization help? | Yes. It strongly improves both no-hint and hint-pass outputs compared with frozen transfer. |
-| RQ4 | Can v0.10 no-hint replace v0.9_4? | Not yet. It is promising in some seeds but not stable across the 3-seed check. |
-| RQ5 | What is the strongest current contribution? | LATS-v2 metric-aware inference-policy optimization remains the strongest stable contribution. |
+| RQ1 | Can frozen v0.9_4 LATS-v2 transfer directly to v0.10 probabilities? | No. v0.10 probabilities require re-optimization. |
+| RQ2 | Can v0.10-specific LATS recover performance? | Yes. LATS re-optimization is effective. |
+| RQ3 | Does standard hint-pass improve the human-talk multi-label task? | No. It does not beat no-hint. |
+| RQ4 | Is v0.10 no-hint a stable replacement for v0.9_4? | No. It is promising but seed-sensitive. |
+| RQ5 | Does `pos_weight cap5` improve rare-label performance enough to help? | No. It reduces overall final performance. |
+| RQ6 | What should be reported as the main contribution? | LATS-v2 metric-aware parent-level inference optimization. |
 
 ---
 
-## Why hint-pass likely failed
+## Main findings
 
-The previous hint-pass idea was more suitable for simpler single-label/binary audio tasks. The human-talk task is multi-label: one parent clip can contain a target speaker, other speaker, music, audience reaction, and silence indicators together.
+### Finding 1: LATS-v2 is the key improvement
 
-In this setting, early exits may produce incomplete label evidence. Passing those early probabilities forward can propagate bias into later exits. This is especially risky for rare or bursty labels such as:
+LATS-v2 improves global parent-level performance without retraining the base model.
+
+### Finding 2: Hint-pass does not transfer well
+
+The older hint-pass idea may fit simpler single-label/binary audio tasks, but the current multi-label speaker/context setting is more complex. Early-exit probabilities can pass incomplete or biased beliefs forward.
+
+### Finding 3: Pos-weight cap5 is too aggressive
+
+The raw fixed 0.5 result predicted too many labels:
 
 ```text
-audience_reaction_present
-silence_present
+avg_true_labels = 1.4694
+avg_pred_labels = 1.6401
 ```
 
-The result is that hint-pass may improve some raw label scores but hurt global multi-label consistency.
+After LATS, the result was still weaker than baseline.
+
+### Finding 4: v0.10 no-hint remains useful as an ablation
+
+Some v0.10 no-hint seeds improve global consistency metrics, but the seed mean is not strong enough to replace v0.9_4.
 
 ---
 
-## Why no-hint v0.10 sometimes improved
+## Final report wording
 
-v0.10 no-hint is a newly trained checkpoint. Even with the same architecture, the probabilities differ from v0.9_4 due to random seed, batch ordering, checkpoint selection, and validation dynamics. After LATS-v2 re-optimization, some seeds produced better global metrics.
-
-Therefore, the v0.10 no-hint gain is best described as:
-
-```text
-retrained probability distribution + v0.10-specific LATS calibration
-```
-
-not as a hint-pass gain.
+> The v0.10 experiments show that neither standard hint-pass nor capped `pos_weight` training reliably improves the human-talk multi-label pipeline. Although v0.10-specific LATS re-optimization recovers strong performance, seed-stability analysis indicates that v0.10 no-hint is not stable enough to replace the v0.9_4 LATS-v2 baseline. The final contribution is therefore the LATS-v2 metric-aware inference policy, while hint-pass and `pos_weight cap5` are retained as controlled negative ablations.
 
 ---
 
 ## Future work
 
-Standard hint-pass should not be continued in its current form. Future work should test more selective hinting:
+Only consider more tuning if there is a clear new hypothesis:
 
-1. Hint only speaker labels, not context labels.
-2. Use hints only from Exit 2 to Exit 3.
-3. Add learnable label-wise hint gates.
-4. Use separate speaker/context hint vectors.
-5. Use consistency regularization instead of feeding raw previous-exit probabilities.
-6. Combine LATS with uncertainty or calibration-aware thresholding.
+1. Lower `pos_weight` cap, such as 2.0 or 3.0.
+2. Label-aware/gated hint passing.
+3. Speaker-only hint vectors.
+4. Exit2-to-Exit3-only hints.
+5. Consistency loss instead of feeding previous-exit probabilities.
 
----
+Recommended current action:
 
-## Paper/report wording
-
-> The v0.10 hint-pass ablation shows that standard exit-to-exit probability hinting does not directly transfer from simpler audio classification settings to multi-label speaker/context detection. Re-optimized LATS substantially improves v0.10 outputs, confirming the importance of model-specific inference calibration. However, hint-pass remains weaker than the no-hint control, and the promising no-hint gains are not stable across seeds. This supports retaining v0.9_4 LATS-v2 as the stable final baseline while documenting v0.10 as a diagnostic ablation and negative hint-pass result.
+```text
+Stop tuning and write the report.
+```

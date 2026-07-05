@@ -1,0 +1,170 @@
+
+== Training command ==
+python -m training.train_multilabel --manifest human_talk_workspace\tata_v0.8_human_corrected_balanced_pipeline\final_expanded_training_dataset_balanced\metadata\multilabel_features_manifest_balanced.csv --features_root . --labe
+ls_json configs\human_talk_10label_schema.json --runs_root human_talk_workspace\tata_v0.10_hint_pass_lats_pipeline\main_models\runs_posweight_stability --variant main_v010_no_hint_posweight_cap5_seed_101202303 --tap_blocks 1,3 --epochs 40 --batch_size 64 --log_every 0 --lr 0.001 --threshold 0.5 --device cpu --use_pos_weight --pos_weight_max 5
+
+Multi-label training
+------------------------------------------------------------------------------------------
+Manifest:      C:\Users\wwwsa\PycharmProjects\NeuroAccuExit-ASHADIP\human_talk_workspace\tata_v0.8_human_corrected_balanced_pipeline\final_expanded_training_dataset_balanced\metadata\multilabel_features_manifest_balanced.csv    
+Features root: C:\Users\wwwsa\PycharmProjects\NeuroAccuExit-ASHADIP
+Labels JSON:   C:\Users\wwwsa\PycharmProjects\NeuroAccuExit-ASHADIP\configs\human_talk_10label_schema.json
+Run dir:       human_talk_workspace\tata_v0.10_hint_pass_lats_pipeline\main_models\runs_posweight_stability\main_v010_no_hint_posweight_cap5_seed_101202303_20260705_112722
+Device:        cpu
+Tap blocks:    1,3
+Epochs:        40
+Batch size:    64
+Log every:     0
+LR:            0.001
+Threshold:     0.5
+------------------------------------------------------------------------------------------
+[INFO] Multi-label dataset loaded
+  labels: ['Brene_Brown', 'Eckhart_Tolle', 'Eric_Thomas', 'Gary_Vee', 'Jay_Shetty', 'Nick_Vujicic', 'other_speaker_present', 'music_present', 'audience_reaction_present', 'silence_present']
+  train rows: 25519
+  val rows:   1883
+  test rows:  1961
+[INFO] Train positive label counts:
+  Brene_Brown: 2645
+  Eckhart_Tolle: 2870
+  Eric_Thomas: 2570
+  Gary_Vee: 2780
+  Jay_Shetty: 3750
+  Nick_Vujicic: 2110
+  other_speaker_present: 7928
+  music_present: 10165
+  audience_reaction_present: 3997
+  silence_present: 1569
+
+Model
+------------------------------------------------------------------------------------------
+Number of labels: 10
+Labels:           ['Brene_Brown', 'Eckhart_Tolle', 'Eric_Thomas', 'Gary_Vee', 'Jay_Shetty', 'Nick_Vujicic', 'other_speaker_present', 'music_present', 'audience_reaction_present', 'silence_present']
+Number of exits:  3
+Loss weights:     [0.3, 0.3, 1.0]
+Exit hint:        {'enable': False, 'dim': 8, 'source': 'probs', 'activation': 'sigmoid', 'detach': True, 'use_stats': True}
+------------------------------------------------------------------------------------------
+
+Positive label weights:
+  Brene_Brown: 5.0000
+  Eckhart_Tolle: 5.0000
+  Eric_Thomas: 5.0000
+  Gary_Vee: 5.0000
+  Jay_Shetty: 5.0000
+  Nick_Vujicic: 5.0000
+  other_speaker_present: 2.2188
+  music_present: 1.5105
+  audience_reaction_present: 5.0000
+  silence_present: 5.0000
+Epoch 001/40 | loss=1.1559 | final_exit_macroF1=0.6157 | final_exit_microF1=0.6230 | exact_match=0.3394 | hamming=0.1208
+Epoch 002/40 | loss=0.9370 | final_exit_macroF1=0.5487 | final_exit_microF1=0.5691 | exact_match=0.2273 | hamming=0.1565
+Epoch 003/40 | loss=0.8607 | final_exit_macroF1=0.6549 | final_exit_microF1=0.6659 | exact_match=0.3367 | hamming=0.1123
+Epoch 004/40 | loss=0.8174 | final_exit_macroF1=0.6470 | final_exit_microF1=0.6678 | exact_match=0.3309 | hamming=0.1132
+Epoch 005/40 | loss=0.7836 | final_exit_macroF1=0.6607 | final_exit_microF1=0.6974 | exact_match=0.3893 | hamming=0.1014
+Epoch 006/40 | loss=0.7584 | final_exit_macroF1=0.7275 | final_exit_microF1=0.7406 | exact_match=0.4562 | hamming=0.0827
+Epoch 007/40 | loss=0.7399 | final_exit_macroF1=0.6866 | final_exit_microF1=0.6925 | exact_match=0.3787 | hamming=0.1043
+Epoch 008/40 | loss=0.7209 | final_exit_macroF1=0.7276 | final_exit_microF1=0.7347 | exact_match=0.4116 | hamming=0.0875
+Epoch 009/40 | loss=0.7070 | final_exit_macroF1=0.6851 | final_exit_microF1=0.6964 | exact_match=0.3293 | hamming=0.1059
+Epoch 010/40 | loss=0.6946 | final_exit_macroF1=0.7189 | final_exit_microF1=0.7358 | exact_match=0.4716 | hamming=0.0843
+Epoch 011/40 | loss=0.6860 | final_exit_macroF1=0.7356 | final_exit_microF1=0.7379 | exact_match=0.3983 | hamming=0.0864
+Epoch 012/40 | loss=0.6727 | final_exit_macroF1=0.7555 | final_exit_microF1=0.7652 | exact_match=0.4689 | hamming=0.0751
+Epoch 013/40 | loss=0.6660 | final_exit_macroF1=0.7311 | final_exit_microF1=0.7365 | exact_match=0.3983 | hamming=0.0891
+Epoch 014/40 | loss=0.6578 | final_exit_macroF1=0.7014 | final_exit_microF1=0.7262 | exact_match=0.4275 | hamming=0.0910
+Epoch 015/40 | loss=0.6524 | final_exit_macroF1=0.7432 | final_exit_microF1=0.7539 | exact_match=0.4753 | hamming=0.0792
+Epoch 016/40 | loss=0.6466 | final_exit_macroF1=0.6470 | final_exit_microF1=0.6702 | exact_match=0.3144 | hamming=0.1158
+Epoch 017/40 | loss=0.6371 | final_exit_macroF1=0.7437 | final_exit_microF1=0.7459 | exact_match=0.4902 | hamming=0.0806
+Epoch 018/40 | loss=0.6337 | final_exit_macroF1=0.7195 | final_exit_microF1=0.7231 | exact_match=0.3946 | hamming=0.0921
+Epoch 019/40 | loss=0.6291 | final_exit_macroF1=0.7174 | final_exit_microF1=0.7382 | exact_match=0.4472 | hamming=0.0866
+Epoch 020/40 | loss=0.6250 | final_exit_macroF1=0.7495 | final_exit_microF1=0.7422 | exact_match=0.3861 | hamming=0.0886
+Epoch 021/40 | loss=0.6182 | final_exit_macroF1=0.7408 | final_exit_microF1=0.7423 | exact_match=0.4615 | hamming=0.0809
+Epoch 022/40 | loss=0.6126 | final_exit_macroF1=0.7300 | final_exit_microF1=0.7496 | exact_match=0.4227 | hamming=0.0823
+Epoch 023/40 | loss=0.6115 | final_exit_macroF1=0.7308 | final_exit_microF1=0.7474 | exact_match=0.4180 | hamming=0.0854
+Epoch 024/40 | loss=0.6049 | final_exit_macroF1=0.7441 | final_exit_microF1=0.7563 | exact_match=0.4955 | hamming=0.0773
+Epoch 025/40 | loss=0.5999 | final_exit_macroF1=0.7322 | final_exit_microF1=0.7418 | exact_match=0.4551 | hamming=0.0814
+Epoch 026/40 | loss=0.5988 | final_exit_macroF1=0.7348 | final_exit_microF1=0.7534 | exact_match=0.4376 | hamming=0.0824
+Epoch 027/40 | loss=0.5958 | final_exit_macroF1=0.7627 | final_exit_microF1=0.7547 | exact_match=0.4243 | hamming=0.0812
+Epoch 028/40 | loss=0.5924 | final_exit_macroF1=0.7470 | final_exit_microF1=0.7608 | exact_match=0.4610 | hamming=0.0782
+Epoch 029/40 | loss=0.5884 | final_exit_macroF1=0.7851 | final_exit_microF1=0.7842 | exact_match=0.4859 | hamming=0.0700
+Epoch 030/40 | loss=0.5843 | final_exit_macroF1=0.7371 | final_exit_microF1=0.7462 | exact_match=0.4010 | hamming=0.0832
+Epoch 031/40 | loss=0.5827 | final_exit_macroF1=0.7547 | final_exit_microF1=0.7597 | exact_match=0.4727 | hamming=0.0776
+Epoch 032/40 | loss=0.5768 | final_exit_macroF1=0.7501 | final_exit_microF1=0.7519 | exact_match=0.4610 | hamming=0.0829
+Epoch 033/40 | loss=0.5767 | final_exit_macroF1=0.7801 | final_exit_microF1=0.7753 | exact_match=0.5093 | hamming=0.0709
+Epoch 034/40 | loss=0.5704 | final_exit_macroF1=0.7448 | final_exit_microF1=0.7600 | exact_match=0.4663 | hamming=0.0784
+Epoch 035/40 | loss=0.5680 | final_exit_macroF1=0.7701 | final_exit_microF1=0.7706 | exact_match=0.4434 | hamming=0.0753
+Epoch 036/40 | loss=0.5675 | final_exit_macroF1=0.7827 | final_exit_microF1=0.7836 | exact_match=0.5507 | hamming=0.0671
+Epoch 037/40 | loss=0.5637 | final_exit_macroF1=0.7614 | final_exit_microF1=0.7705 | exact_match=0.4806 | hamming=0.0753
+Epoch 038/40 | loss=0.5625 | final_exit_macroF1=0.7431 | final_exit_microF1=0.7538 | exact_match=0.4472 | hamming=0.0784
+Epoch 039/40 | loss=0.5585 | final_exit_macroF1=0.7213 | final_exit_microF1=0.7361 | exact_match=0.4488 | hamming=0.0852
+Epoch 040/40 | loss=0.5567 | final_exit_macroF1=0.7540 | final_exit_microF1=0.7610 | exact_match=0.5220 | hamming=0.0749
+C:\Users\wwwsa\PycharmProjects\NeuroAccuExit-ASHADIP\training\train_multilabel.py:697: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implici
+tly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, th
+e default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly 
+allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  model.load_state_dict(torch.load(best_path, map_location=device))
+
+Training completed.
+------------------------------------------------------------------------------------------
+Best epoch: 29
+Best validation final-exit macro-F1: 0.7851
+Run dir: human_talk_workspace\tata_v0.10_hint_pass_lats_pipeline\main_models\runs_posweight_stability\main_v010_no_hint_posweight_cap5_seed_101202303_20260705_112722
+Best checkpoint: human_talk_workspace\tata_v0.10_hint_pass_lats_pipeline\main_models\runs_posweight_stability\main_v010_no_hint_posweight_cap5_seed_101202303_20260705_112722\ckpt\best.pt
+                                                                                                                                                                                                                                    Test metrics by exit:                                                                                                                                                                                                                 Exit 1: macroF1=0.3636, microF1=0.4763, samplesF1=0.4758, exact_match=0.1458, hamming=0.1891                                                                                                                                        Exit 2: macroF1=0.6679, microF1=0.6943, samplesF1=0.7095, exact_match=0.3529, hamming=0.1028                                                                                                                                        Exit 3: macroF1=0.7941, microF1=0.7921, samplesF1=0.8070, exact_match=0.4895, hamming=0.0674                                                                                                                                                                                                                                                                                                                                                                          
+Final-exit per-label test F1:
+  Brene_Brown: P=0.7907, R=0.9067, F1=0.8447, support=150, pred_pos=172
+  Eckhart_Tolle: P=0.9627, R=0.9556, F1=0.9591, support=135, pred_pos=134
+  Eric_Thomas: P=0.6181, R=0.9111, F1=0.7365, support=135, pred_pos=199
+  Gary_Vee: P=0.8756, R=0.9263, F1=0.9003, support=190, pred_pos=201
+  Jay_Shetty: P=0.7337, R=0.9962, F1=0.8450, support=260, pred_pos=353
+  Nick_Vujicic: P=0.8000, R=0.8267, F1=0.8131, support=150, pred_pos=155
+  other_speaker_present: P=0.4760, R=0.7750, F1=0.5897, support=511, pred_pos=832
+  music_present: P=0.8814, R=0.8940, F1=0.8877, support=632, pred_pos=641
+  audience_reaction_present: P=0.8276, R=0.9064, F1=0.8652, support=609, pred_pos=667
+  silence_present: P=0.3580, R=0.8286, F1=0.5000, support=70, pred_pos=162
+------------------------------------------------------------------------------------------
+
+== Training complete ==
+RunDir = C:\Users\wwwsa\PycharmProjects\NeuroAccuExit-ASHADIP\human_talk_workspace\tata_v0.10_hint_pass_lats_pipeline\main_models\runs_posweight_stability\main_v010_no_hint_posweight_cap5_seed_101202303_20260705_112722
+
+== Package complete ==
+ZIP created:
+human_talk_workspace\tata_v0.10_hint_pass_lats_pipeline\packages_posweight_stability\main_v010_no_hint_posweight_cap5_seed_101202303_results_to_share_20260705_112720.zip
+
+Original run files remain at:
+C:\Users\wwwsa\PycharmProjects\NeuroAccuExit-ASHADIP\human_talk_workspace\tata_v0.10_hint_pass_lats_pipeline\main_models\runs_posweight_stability\main_v010_no_hint_posweight_cap5_seed_101202303_20260705_112722
+RunDir = C:\Users\wwwsa\PycharmProjects\NeuroAccuExit-ASHADIP\human_talk_workspace\tata_v0.10_hint_pass_lats_pipeline\main_models\runs_posweight_stability\main_v010_no_hint_posweight_cap5_seed_101202303_20260705_112722
+
+Evaluating corrected holdout for seed 101202303
+
+Parent-level final holdout evaluation complete
+------------------------------------------------------------------------------------------
+Run:            main_v010_no_hint_posweight_cap5_seed_101202303_20260705_112722
+Parent clips:   867
+Segments:       4335
+Threshold mode: fixed_0p5
+Aggregation:    mean
+
+                                                          model threshold_mode aggregation                          split  exit  parent_clips  macro_f1  micro_f1  samples_f1  exact_match  hamming_loss  jaccard_score  avg_true_labels  avg_pred_labels
+main_v010_no_hint_posweight_cap5_seed_101202303_20260705_112722      fixed_0p5        mean final_raw_holdout_parent_level     1           867  0.339993  0.564244    0.547800     0.234141      0.145905       0.465321         1.469435         1.878893
+main_v010_no_hint_posweight_cap5_seed_101202303_20260705_112722      fixed_0p5        mean final_raw_holdout_parent_level     2           867  0.651081  0.751768    0.766694     0.470588      0.080969       0.692907         1.469435         1.792388
+main_v010_no_hint_posweight_cap5_seed_101202303_20260705_112722      fixed_0p5        mean final_raw_holdout_parent_level     3           867  0.800915  0.893917    0.908793     0.723183      0.032987       0.865821         1.469435         1.640138
+
+Output JSON: human_talk_workspace\tata_v0.10_hint_pass_lats_pipeline\posweight_stability_eval\seed_101202303_cap_5_parent_mean_fixed\parent_holdout_eval_fixed_0p5_mean.json
+
+Running LATS-v2 coordinate re-optimization for seed 101202303
+LATS-v2 coordinate re-optimization complete
+ macro_f1  micro_f1  samples_f1  exact_match  hamming_loss  avg_true_labels  avg_pred_labels  parent_clips                                                      model_name      objective                                           
+                                                                                                          segment_pred_csv
+ 0.851098   0.94127    0.948097     0.847751       0.01707         1.469435          1.43714           867 main_v010_no_hint_posweight_cap5_seed_101202303_20260705_112722 macro_priority human_talk_workspace\tata_v0.10_hint_pass_lats_pipeline\posweight_stability_eval\seed_101202303_cap_5_parent_mean_fixed\parent_eval_segment_probs_fixed_0p5_mean.csv
+Saved to: human_talk_workspace\tata_v0.10_hint_pass_lats_pipeline\posweight_stability_lats_reoptimized\seed_101202303_cap_5_lats_v2_macro_priority
+
+============================================================
+Summary table
+============================================================
+
+Run                                                   MacroF1           MicroF1         SamplesF1             Exact            Hamming    AvgPredLabels
+---                                                   -------           -------         ---------             -----            -------    -------------
+seed_101202303_cap_5_lats_v2_macro_priority 0.851097889116893 0.941269841269841 0.948096885813149 0.847750865051903 0.0170703575547866 1.43713956170704
+
+
+
+Done. Compare against v0.9_4 baseline:
+Macro=0.867256 Micro=0.945786 Samples=0.951700 Exact=0.860438 Hamming=0.015802
+(ASHADIP_V0) PS C:\Users\wwwsa\PycharmProjects\NeuroAccuExit-ASHADIP> 
