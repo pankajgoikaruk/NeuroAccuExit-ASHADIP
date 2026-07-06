@@ -2,6 +2,7 @@ param(
   [string]$BaseTrainManifest = "human_talk_workspace\tata_v0.8_human_corrected_balanced_pipeline\final_expanded_training_dataset_balanced\metadata\multilabel_features_manifest_balanced.csv",
   [string]$LowEnergyMaskedManifest = "human_talk_workspace\tata_v0.9_pipeline\tata_triage_model\silence_recovered_v09\human_reviewed_masked_v09\feature_cache\metadata\multilabel_features_manifest_v09_HUMAN_REVIEWED_MASKED.csv",
   [string]$TataLawyerRepoRoot = "",
+  [string]$LowEnergyFeaturesRoot = "",
   [string]$CorrectedHoldoutManifest = "human_talk_workspace\tata_v0.8_human_corrected_balanced_pipeline\corrected_holdout\multilabel_features_manifest_CORRECTED_LABELS.csv",
   [string]$HoldoutFeaturesRoot = "human_talk_workspace\tata_v0.6_raw_pipeline\final_holdout_feature_cache\features",
   [string]$LabelsJson = "configs\human_talk_10label_schema.json",
@@ -67,9 +68,16 @@ $LowEnergyMaskedManifest = Resolve-LowEnergyManifest `
   -RepoRoot $TataLawyerRepoRoot `
   -RelativePath $RelativeLowEnergyMaskedManifest
 
-Write-Host "LowEnergyMaskedManifest = $LowEnergyMaskedManifest" -ForegroundColor DarkGray
+if (-not $LowEnergyFeaturesRoot) {
+  # Manifest layout: ...\feature_cache\metadata\manifest.csv
+  # Feature root:    ...\feature_cache\features
+  $LowEnergyFeaturesRoot = Join-Path (Split-Path (Split-Path $LowEnergyMaskedManifest -Parent) -Parent) "features"
+}
 
-foreach ($Path in @($BaseTrainManifest, $CorrectedHoldoutManifest, $LabelsJson, $TrainFeaturesRoot, $HoldoutFeaturesRoot)) {
+Write-Host "LowEnergyMaskedManifest = $LowEnergyMaskedManifest" -ForegroundColor DarkGray
+Write-Host "LowEnergyFeaturesRoot  = $LowEnergyFeaturesRoot" -ForegroundColor DarkGray
+
+foreach ($Path in @($BaseTrainManifest, $CorrectedHoldoutManifest, $LabelsJson, $TrainFeaturesRoot, $HoldoutFeaturesRoot, $LowEnergyFeaturesRoot)) {
   if (-not (Test-Path $Path)) {
     throw "Required path not found: $Path"
   }
@@ -85,19 +93,50 @@ python scripts\v0.10_1\audit_low_energy_recovered_manifest.py `
   --labels-json "$LabelsJson" `
   --out-dir "$WorkspaceRoot\audit"
 
+if ($LASTEXITCODE -ne 0) {
+  throw "Low-energy audit failed with exit code $LASTEXITCODE"
+}
+
 # 2) Build copied/augmented training manifest.
 # Default behavior: train split only, fully-known reviewed rows only, exclude corrected-holdout parent overlap.
 python scripts\v0.10_1\build_v010_1_low_energy_augmented_manifest.py `
   --base-train-manifest "$BaseTrainManifest" `
   --low-energy-masked-manifest "$LowEnergyMaskedManifest" `
+  --low-energy-features-root "$LowEnergyFeaturesRoot" `
   --corrected-holdout-manifest "$CorrectedHoldoutManifest" `
   --labels-json "$LabelsJson" `
   --workspace-root "$WorkspaceRoot" `
   --include-splits "train"
 
+if ($LASTEXITCODE -ne 0) {
+  throw "Augmented manifest build failed with exit code $LASTEXITCODE"
+}
+
 $AugmentedManifest = "$WorkspaceRoot\metadata\multilabel_features_manifest_v010_1_LOW_ENERGY_AUGMENTED.csv"
 if (-not (Test-Path $AugmentedManifest)) {
   throw "Augmented manifest was not created: $AugmentedManifest"
+}
+
+# Quick manifest check: no low-energy train row should still point to recovered_low_energy as a relative loader path.
+$BadPathCount = python - <<'PY'
+import pandas as pd
+from pathlib import Path
+manifest = Path(r"$AugmentedManifest")
+df = pd.read_csv(manifest, low_memory=False)
+if "feat_relpath" not in df.columns:
+    print("MISSING_FEAT_RELPATH")
+else:
+    s = df["feat_relpath"].astype(str)
+    bad = s.str.replace("\\\\", "/", regex=False).str.startswith("recovered_low_energy/").sum()
+    print(int(bad))
+PY
+
+$BadPathCount = ($BadPathCount | Select-Object -Last 1).Trim()
+if ($BadPathCount -eq "MISSING_FEAT_RELPATH") {
+  throw "Augmented manifest is missing feat_relpath, which training requires."
+}
+if ([int]$BadPathCount -gt 0) {
+  throw "Augmented manifest still contains $BadPathCount relative recovered_low_energy feat_relpath rows. Pull latest branch and rebuild workspace."
 }
 
 # 3) Train no-hint model only.
@@ -123,6 +162,10 @@ powershell -ExecutionPolicy Bypass -File scripts\run_tata_weakclip_experiment.ps
   -Threshold 0.5 `
   -Device "$Device"
 
+if ($LASTEXITCODE -ne 0) {
+  throw "Training failed with exit code $LASTEXITCODE. Evaluation/LATS will not run until training completes."
+}
+
 $RunDir = Get-ChildItem $RunsRoot -Directory |
   Where-Object { $_.Name -like "$Variant*" } |
   Sort-Object LastWriteTime -Descending |
@@ -130,6 +173,11 @@ $RunDir = Get-ChildItem $RunsRoot -Directory |
 
 if ($null -eq $RunDir) {
   throw "No run directory found for $Variant under $RunsRoot"
+}
+
+$BestCkpt = Join-Path $RunDir.FullName "ckpt\best.pt"
+if (-not (Test-Path $BestCkpt)) {
+  throw "Training run finished without ckpt\best.pt: $BestCkpt"
 }
 
 Write-Host "RunDir = $($RunDir.FullName)" -ForegroundColor Green
@@ -148,6 +196,10 @@ python scripts\evaluate_tata_final_holdout_parent_level.py `
   --device "$Device" `
   --batch_size 128
 
+if ($LASTEXITCODE -ne 0) {
+  throw "Holdout evaluation failed with exit code $LASTEXITCODE"
+}
+
 $SegmentPredCsv = "$EvalOut\parent_eval_segment_probs_fixed_0p5_mean.csv"
 if (-not (Test-Path $SegmentPredCsv)) {
   throw "Segment prediction CSV not found: $SegmentPredCsv"
@@ -165,6 +217,10 @@ python scripts\v0.10\run_v010_lats_v2_coordinate_reoptimize.py `
   --prob-prefix "exit3_prob_" `
   --objective "$Objective" `
   --model-name "$($RunDir.Name)"
+
+if ($LASTEXITCODE -ne 0) {
+  throw "LATS-v2 reoptimization failed with exit code $LASTEXITCODE"
+}
 
 $SummaryCsv = "$LatsOut\lats_v2_coordinate_reoptimized_summary.csv"
 Write-Host ""
