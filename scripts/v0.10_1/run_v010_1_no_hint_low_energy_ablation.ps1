@@ -70,8 +70,16 @@ $LowEnergyMaskedManifest = Resolve-LowEnergyManifest `
 
 if (-not $LowEnergyFeaturesRoot) {
   # Manifest layout: ...\feature_cache\metadata\manifest.csv
-  # Feature root:    ...\feature_cache\features
-  $LowEnergyFeaturesRoot = Join-Path (Split-Path (Split-Path $LowEnergyMaskedManifest -Parent) -Parent) "features"
+  # Possible feature layouts:
+  #   ...\feature_cache\features\<feat_relpath>
+  #   ...\feature_cache\<feat_relpath>
+  $FeatureCacheRoot = Split-Path (Split-Path $LowEnergyMaskedManifest -Parent) -Parent
+  $CandidateFeaturesDir = Join-Path $FeatureCacheRoot "features"
+  if (Test-Path $CandidateFeaturesDir) {
+    $LowEnergyFeaturesRoot = $CandidateFeaturesDir
+  } else {
+    $LowEnergyFeaturesRoot = $FeatureCacheRoot
+  }
 }
 
 Write-Host "LowEnergyMaskedManifest = $LowEnergyMaskedManifest" -ForegroundColor DarkGray
