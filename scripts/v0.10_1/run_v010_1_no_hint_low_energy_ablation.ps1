@@ -118,24 +118,12 @@ if (-not (Test-Path $AugmentedManifest)) {
 }
 
 # Quick manifest check: no low-energy train row should still point to recovered_low_energy as a relative loader path.
-$BadPathCount = python - <<'PY'
-import pandas as pd
-from pathlib import Path
-manifest = Path(r"$AugmentedManifest")
-df = pd.read_csv(manifest, low_memory=False)
-if "feat_relpath" not in df.columns:
-    print("MISSING_FEAT_RELPATH")
-else:
-    s = df["feat_relpath"].astype(str)
-    bad = s.str.replace("\\\\", "/", regex=False).str.startswith("recovered_low_energy/").sum()
-    print(int(bad))
-PY
-
-$BadPathCount = ($BadPathCount | Select-Object -Last 1).Trim()
-if ($BadPathCount -eq "MISSING_FEAT_RELPATH") {
+$AugRows = Import-Csv $AugmentedManifest
+if (($AugRows | Select-Object -First 1).PSObject.Properties.Name -notcontains "feat_relpath") {
   throw "Augmented manifest is missing feat_relpath, which training requires."
 }
-if ([int]$BadPathCount -gt 0) {
+$BadPathCount = @($AugRows | Where-Object { $_.feat_relpath -like "recovered_low_energy*" }).Count
+if ($BadPathCount -gt 0) {
   throw "Augmented manifest still contains $BadPathCount relative recovered_low_energy feat_relpath rows. Pull latest branch and rebuild workspace."
 }
 
