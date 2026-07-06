@@ -1,6 +1,7 @@
 param(
   [string]$BaseTrainManifest = "human_talk_workspace\tata_v0.8_human_corrected_balanced_pipeline\final_expanded_training_dataset_balanced\metadata\multilabel_features_manifest_balanced.csv",
   [string]$LowEnergyMaskedManifest = "human_talk_workspace\tata_v0.9_pipeline\tata_triage_model\silence_recovered_v09\human_reviewed_masked_v09\feature_cache\metadata\multilabel_features_manifest_v09_HUMAN_REVIEWED_MASKED.csv",
+  [string]$TataLawyerRepoRoot = "",
   [string]$CorrectedHoldoutManifest = "human_talk_workspace\tata_v0.8_human_corrected_balanced_pipeline\corrected_holdout\multilabel_features_manifest_CORRECTED_LABELS.csv",
   [string]$HoldoutFeaturesRoot = "human_talk_workspace\tata_v0.6_raw_pipeline\final_holdout_feature_cache\features",
   [string]$LabelsJson = "configs\human_talk_10label_schema.json",
@@ -21,7 +22,54 @@ $env:KMP_DUPLICATE_LIB_OK = "TRUE"
 Write-Host "== v0.10_1 no-hint + low-energy recovery ablation ==" -ForegroundColor Cyan
 Write-Host "Safety: source manifests are read-only; outputs go to $WorkspaceRoot" -ForegroundColor Yellow
 
-foreach ($Path in @($BaseTrainManifest, $LowEnergyMaskedManifest, $CorrectedHoldoutManifest, $LabelsJson, $TrainFeaturesRoot, $HoldoutFeaturesRoot)) {
+$RelativeLowEnergyMaskedManifest = "human_talk_workspace\tata_v0.9_pipeline\tata_triage_model\silence_recovered_v09\human_reviewed_masked_v09\feature_cache\metadata\multilabel_features_manifest_v09_HUMAN_REVIEWED_MASKED.csv"
+
+function Resolve-LowEnergyManifest {
+  param(
+    [string]$RequestedPath,
+    [string]$RepoRoot,
+    [string]$RelativePath
+  )
+
+  if ($RequestedPath -and (Test-Path $RequestedPath)) {
+    return (Resolve-Path $RequestedPath).Path
+  }
+
+  if ($RepoRoot) {
+    $Candidate = Join-Path $RepoRoot $RelativePath
+    if (Test-Path $Candidate) {
+      return (Resolve-Path $Candidate).Path
+    }
+  }
+
+  $SiblingCandidate = Join-Path (Split-Path (Get-Location).Path -Parent) (Join-Path "TATA-LAWYER" $RelativePath)
+  if (Test-Path $SiblingCandidate) {
+    return (Resolve-Path $SiblingCandidate).Path
+  }
+
+  $CurrentName = Split-Path (Get-Location).Path -Leaf
+  if ($CurrentName -ne "TATA-LAWYER") {
+    Write-Host "" -ForegroundColor Yellow
+    Write-Host "Low-energy masked manifest was not found in the ASHADIP repo." -ForegroundColor Yellow
+    Write-Host "This file belongs to your local TATA-LAWYER workspace." -ForegroundColor Yellow
+    Write-Host "Pass either:" -ForegroundColor Yellow
+    Write-Host "  -TataLawyerRepoRoot C:\path\to\TATA-LAWYER" -ForegroundColor Yellow
+    Write-Host "or:" -ForegroundColor Yellow
+    Write-Host "  -LowEnergyMaskedManifest C:\path\to\multilabel_features_manifest_v09_HUMAN_REVIEWED_MASKED.csv" -ForegroundColor Yellow
+    Write-Host "" -ForegroundColor Yellow
+  }
+
+  throw "Required low-energy masked manifest not found: $RequestedPath"
+}
+
+$LowEnergyMaskedManifest = Resolve-LowEnergyManifest `
+  -RequestedPath $LowEnergyMaskedManifest `
+  -RepoRoot $TataLawyerRepoRoot `
+  -RelativePath $RelativeLowEnergyMaskedManifest
+
+Write-Host "LowEnergyMaskedManifest = $LowEnergyMaskedManifest" -ForegroundColor DarkGray
+
+foreach ($Path in @($BaseTrainManifest, $CorrectedHoldoutManifest, $LabelsJson, $TrainFeaturesRoot, $HoldoutFeaturesRoot)) {
   if (-not (Test-Path $Path)) {
     throw "Required path not found: $Path"
   }
