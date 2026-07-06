@@ -1,6 +1,6 @@
 # v0.10_1 Low-Energy Recovery Ablation
 
-This note records the planned v0.10_1 ablation for testing whether manually reviewed TATA-LAWYER low-energy one-second samples can improve the current NeuroAccuExit human-talk model without risking the original manifests.
+This note records the v0.10_1 ablation for testing whether manually reviewed TATA-LAWYER low-energy one-second samples can improve the current NeuroAccuExit human-talk model without risking the original manifests.
 
 ## Safety policy
 
@@ -83,24 +83,33 @@ The experiment should use:
 LowEnergyFeatureMode = feat_relpath
 ```
 
-## Acceptance target
+## Final result
 
-Promote v0.10_1 only if it beats the selected v0.10 no-hint result:
+The v0.10_1 low-energy recovery ablation completed successfully but did **not** beat the selected v0.10 no-hint LATS-v2 result.
 
-| Metric | Target |
-|---|---:|
-| Macro-F1 | >= 0.8624 |
-| Micro-F1 | >= 0.9531 |
-| Samples-F1 | >= 0.9589 |
-| Exact Match | >= 0.8766 |
-| Hamming Loss | <= 0.0137 |
+| Model | Macro-F1 | Micro-F1 | Samples-F1 | Exact Match | Hamming Loss |
+|---|---:|---:|---:|---:|---:|
+| Selected v0.10 no-hint + LATS-v2 | **0.8624** | **0.9531** | **0.9589** | **0.8766** | **0.0137** |
+| v0.10_1 low-energy recovery + LATS-v2 | 0.8581 | 0.9446 | 0.9519 | 0.8570 | 0.0160 |
 
-## Expected research question
+Lower Hamming Loss is better. v0.10_1 is worse on every final parent-level metric.
+
+## Research question
 
 > Does adding linked, manually reviewed low-energy one-second evidence improve difficult labels such as `silence_present` and `audience_reaction_present` without hurting global multi-label consistency?
 
-## Decision rule
+## Research finding
 
-If v0.10_1 improves `silence_present` but hurts Exact/Hamming, document it as a useful low-energy diagnostic rather than a new final model.
+The answer from this ablation is **no**. The low-energy rows were linked correctly and no corrected-holdout parent leakage was detected, but adding 667 recovered low-energy training rows did not improve the final corrected-holdout parent-level result.
 
-If it improves global metrics and bottleneck labels, promote it as the new selected v0.10_1 result.
+## Decision
+
+```text
+Do not promote v0.10_1 as the final model.
+Keep selected v0.10 no-hint + LATS-v2 as the current best outcome.
+Document v0.10_1 as a valid negative/diagnostic ablation.
+```
+
+## Future direction
+
+A stronger version may require a masked-loss training path, label-aware calibration, or a separate low-energy specialist rather than directly mixing recovered low-energy rows into the main training distribution.
