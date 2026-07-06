@@ -12,9 +12,9 @@ Safety rules:
   - corrected-holdout parent overlap is excluded by default;
   - only fully-known reviewed rows are used by default, because the existing
     training.train_multilabel script does not apply per-label masks;
-  - low-energy feature_path values are rewritten to absolute paths under the
-    TATA-LAWYER feature cache so ASHADIP can read features without copying or
-    modifying the source repository.
+  - low-energy feature path columns, especially feat_relpath used by the
+    ASHADIP dataset loader, are rewritten to absolute paths under the
+    TATA-LAWYER feature cache.
 """
 
 from __future__ import annotations
@@ -40,7 +40,9 @@ DEFAULT_LABELS = [
     "silence_present",
 ]
 
-FEATURE_PATH_COLUMNS = ["feature_path", "features_path", "npy_path"]
+# The current training loader reads feat_relpath, not feature_path.
+# Keep the other names for compatibility with older manifests/reports.
+FEATURE_PATH_COLUMNS = ["feat_relpath", "feature_path", "features_path", "npy_path"]
 
 
 def _read_labels(labels_json: Optional[str]) -> List[str]:
@@ -87,13 +89,16 @@ def _normalize_split_value(x: object) -> str:
 
 
 def _dedupe_key_columns(df: pd.DataFrame, parent_col: str) -> List[str]:
+    # Prefer semantic segment identity over path identity, because low-energy rows
+    # may have absolute TATA-LAWYER paths while old copied rows may be relative.
     candidates = [
-        ["feature_path"],
-        ["features_path"],
-        ["npy_path"],
         [parent_col, "start_sec", "end_sec"],
         [parent_col, "segment_start_sec", "segment_end_sec"],
         [parent_col, "window_start_sec", "window_end_sec"],
+        ["feat_relpath"],
+        ["feature_path"],
+        ["features_path"],
+        ["npy_path"],
     ]
     for cols in candidates:
         if all(c in df.columns for c in cols):
@@ -101,20 +106,40 @@ def _dedupe_key_columns(df: pd.DataFrame, parent_col: str) -> List[str]:
     return []
 
 
-def _detect_feature_col(df: pd.DataFrame) -> Optional[str]:
-    for col in FEATURE_PATH_COLUMNS:
-        if col in df.columns:
-            return col
-    return None
+def _present_feature_cols(df: pd.DataFrame) -> List[str]:
+    return [col for col in FEATURE_PATH_COLUMNS if col in df.columns]
 
 
 def _auto_low_energy_features_root(low_manifest_path: Path) -> Path:
     # Expected TATA-LAWYER layout:
     #   .../feature_cache/metadata/manifest.csv
-    #   .../feature_cache/features/<feature_path>
+    #   .../feature_cache/features/<feat_relpath>
     if low_manifest_path.parent.name.lower() == "metadata":
         return low_manifest_path.parent.parent / "features"
     return low_manifest_path.parent / "features"
+
+
+def _resolve_feature_candidate(raw_value: str, features_root: Path, low_manifest_path: Path) -> Path:
+    raw_value = str(raw_value).strip().replace("\\", "/")
+    raw_path = Path(raw_value)
+
+    if raw_path.is_absolute():
+        return raw_path.resolve()
+
+    # Primary: feature_cache/features/<relative feature path>
+    candidate = features_root / raw_path
+    if candidate.exists():
+        return candidate.resolve()
+
+    # Fallbacks for manifests that already include features/ or feature_cache/.
+    alt1 = low_manifest_path.parent.parent / raw_path
+    if alt1.exists():
+        return alt1.resolve()
+    alt2 = low_manifest_path.parent / raw_path
+    if alt2.exists():
+        return alt2.resolve()
+
+    return candidate.resolve()
 
 
 def _rewrite_low_energy_feature_paths(
@@ -122,16 +147,19 @@ def _rewrite_low_energy_feature_paths(
     low_manifest_path: Path,
     low_energy_features_root: Optional[str],
 ) -> tuple[pd.DataFrame, dict]:
-    """Rewrite only selected low-energy rows to absolute feature paths.
+    """Rewrite selected low-energy rows to absolute feature paths.
 
-    Base rows are left untouched. Low-energy rows come from a separate TATA-LAWYER
-    workspace, so relative paths such as recovered_low_energy/train/... must be
-    resolved against the TATA-LAWYER feature cache before ASHADIP training.
+    The ASHADIP dataset loader reads feat_relpath and joins it with features_root.
+    If feat_relpath stays as recovered_low_energy/... then training searches inside
+    NeuroAccuExit-ASHADIP. Therefore, when feat_relpath is present, it is rewritten
+    to the resolved absolute TATA-LAWYER .npy path. Other path columns are also
+    synchronized to the same absolute path to avoid future ambiguity.
     """
     reviewed = reviewed.copy()
-    feature_col = _detect_feature_col(reviewed)
+    present_cols = _present_feature_cols(reviewed)
     report = {
-        "feature_column_detected": feature_col,
+        "feature_columns_detected": present_cols,
+        "feature_column_used_by_loader": "feat_relpath" if "feat_relpath" in present_cols else None,
         "low_energy_features_root": None,
         "low_energy_feature_paths_rewritten": 0,
         "low_energy_feature_paths_already_absolute": 0,
@@ -139,46 +167,33 @@ def _rewrite_low_energy_feature_paths(
         "low_energy_feature_missing_examples": [],
     }
 
-    if feature_col is None:
+    if not present_cols:
         return reviewed, report
 
+    source_col = "feat_relpath" if "feat_relpath" in present_cols else present_cols[0]
     features_root = Path(low_energy_features_root) if low_energy_features_root else _auto_low_energy_features_root(low_manifest_path)
     features_root = features_root.resolve()
     report["low_energy_features_root"] = str(features_root)
 
-    rewritten = []
+    resolved_paths = []
     already_abs = 0
     missing_examples = []
 
-    for raw_value in reviewed[feature_col].astype(str):
-        raw_value = raw_value.strip()
-        raw_path = Path(raw_value)
-
-        if raw_path.is_absolute():
-            candidate = raw_path
+    for raw_value in reviewed[source_col].astype(str):
+        raw_value_norm = raw_value.strip().replace("\\", "/")
+        if Path(raw_value_norm).is_absolute():
             already_abs += 1
-        else:
-            # Primary: feature_cache/features/<relative feature_path>
-            candidate = features_root / raw_path
-
-            # Fallbacks for manifests that already include features/ or feature_cache/
-            if not candidate.exists():
-                alt1 = low_manifest_path.parent.parent / raw_path
-                alt2 = low_manifest_path.parent / raw_path
-                if alt1.exists():
-                    candidate = alt1
-                elif alt2.exists():
-                    candidate = alt2
-
-        candidate = candidate.resolve()
-        rewritten.append(str(candidate))
+        candidate = _resolve_feature_candidate(raw_value_norm, features_root, low_manifest_path)
+        resolved_paths.append(str(candidate))
         if not candidate.exists() and len(missing_examples) < 10:
             missing_examples.append(str(candidate))
 
-    reviewed.loc[:, feature_col] = rewritten
-    report["low_energy_feature_paths_rewritten"] = int(len(rewritten) - already_abs)
+    for col in present_cols:
+        reviewed.loc[:, col] = resolved_paths
+
+    report["low_energy_feature_paths_rewritten"] = int(len(resolved_paths) - already_abs)
     report["low_energy_feature_paths_already_absolute"] = int(already_abs)
-    report["low_energy_feature_paths_missing_after_rewrite"] = int(sum(not Path(x).exists() for x in rewritten))
+    report["low_energy_feature_paths_missing_after_rewrite"] = int(sum(not Path(x).exists() for x in resolved_paths))
     report["low_energy_feature_missing_examples"] = missing_examples
 
     if report["low_energy_feature_paths_missing_after_rewrite"]:
