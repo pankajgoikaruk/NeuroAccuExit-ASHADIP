@@ -11,7 +11,10 @@ Safety rules:
   - low-energy rows are linked through parent_clip_id;
   - corrected-holdout parent overlap is excluded by default;
   - only fully-known reviewed rows are used by default, because the existing
-    training.train_multilabel script does not apply per-label masks.
+    training.train_multilabel script does not apply per-label masks;
+  - low-energy feature_path values are rewritten to absolute paths under the
+    TATA-LAWYER feature cache so ASHADIP can read features without copying or
+    modifying the source repository.
 """
 
 from __future__ import annotations
@@ -20,7 +23,7 @@ import argparse
 import json
 import shutil
 from pathlib import Path
-from typing import Iterable, List, Optional
+from typing import List, Optional
 
 import pandas as pd
 
@@ -36,6 +39,8 @@ DEFAULT_LABELS = [
     "audience_reaction_present",
     "silence_present",
 ]
+
+FEATURE_PATH_COLUMNS = ["feature_path", "features_path", "npy_path"]
 
 
 def _read_labels(labels_json: Optional[str]) -> List[str]:
@@ -96,10 +101,101 @@ def _dedupe_key_columns(df: pd.DataFrame, parent_col: str) -> List[str]:
     return []
 
 
+def _detect_feature_col(df: pd.DataFrame) -> Optional[str]:
+    for col in FEATURE_PATH_COLUMNS:
+        if col in df.columns:
+            return col
+    return None
+
+
+def _auto_low_energy_features_root(low_manifest_path: Path) -> Path:
+    # Expected TATA-LAWYER layout:
+    #   .../feature_cache/metadata/manifest.csv
+    #   .../feature_cache/features/<feature_path>
+    if low_manifest_path.parent.name.lower() == "metadata":
+        return low_manifest_path.parent.parent / "features"
+    return low_manifest_path.parent / "features"
+
+
+def _rewrite_low_energy_feature_paths(
+    reviewed: pd.DataFrame,
+    low_manifest_path: Path,
+    low_energy_features_root: Optional[str],
+) -> tuple[pd.DataFrame, dict]:
+    """Rewrite only selected low-energy rows to absolute feature paths.
+
+    Base rows are left untouched. Low-energy rows come from a separate TATA-LAWYER
+    workspace, so relative paths such as recovered_low_energy/train/... must be
+    resolved against the TATA-LAWYER feature cache before ASHADIP training.
+    """
+    reviewed = reviewed.copy()
+    feature_col = _detect_feature_col(reviewed)
+    report = {
+        "feature_column_detected": feature_col,
+        "low_energy_features_root": None,
+        "low_energy_feature_paths_rewritten": 0,
+        "low_energy_feature_paths_already_absolute": 0,
+        "low_energy_feature_paths_missing_after_rewrite": 0,
+        "low_energy_feature_missing_examples": [],
+    }
+
+    if feature_col is None:
+        return reviewed, report
+
+    features_root = Path(low_energy_features_root) if low_energy_features_root else _auto_low_energy_features_root(low_manifest_path)
+    features_root = features_root.resolve()
+    report["low_energy_features_root"] = str(features_root)
+
+    rewritten = []
+    already_abs = 0
+    missing_examples = []
+
+    for raw_value in reviewed[feature_col].astype(str):
+        raw_value = raw_value.strip()
+        raw_path = Path(raw_value)
+
+        if raw_path.is_absolute():
+            candidate = raw_path
+            already_abs += 1
+        else:
+            # Primary: feature_cache/features/<relative feature_path>
+            candidate = features_root / raw_path
+
+            # Fallbacks for manifests that already include features/ or feature_cache/
+            if not candidate.exists():
+                alt1 = low_manifest_path.parent.parent / raw_path
+                alt2 = low_manifest_path.parent / raw_path
+                if alt1.exists():
+                    candidate = alt1
+                elif alt2.exists():
+                    candidate = alt2
+
+        candidate = candidate.resolve()
+        rewritten.append(str(candidate))
+        if not candidate.exists() and len(missing_examples) < 10:
+            missing_examples.append(str(candidate))
+
+    reviewed.loc[:, feature_col] = rewritten
+    report["low_energy_feature_paths_rewritten"] = int(len(rewritten) - already_abs)
+    report["low_energy_feature_paths_already_absolute"] = int(already_abs)
+    report["low_energy_feature_paths_missing_after_rewrite"] = int(sum(not Path(x).exists() for x in rewritten))
+    report["low_energy_feature_missing_examples"] = missing_examples
+
+    if report["low_energy_feature_paths_missing_after_rewrite"]:
+        raise FileNotFoundError(
+            "Some selected low-energy feature files were not found after path rewrite. "
+            "Check --low-energy-features-root. Examples:\n"
+            + "\n".join(missing_examples)
+        )
+
+    return reviewed, report
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build v0.10_1 low-energy augmented manifest safely.")
     parser.add_argument("--base-train-manifest", default="human_talk_workspace/tata_v0.8_human_corrected_balanced_pipeline/final_expanded_training_dataset_balanced/metadata/multilabel_features_manifest_balanced.csv")
     parser.add_argument("--low-energy-masked-manifest", default="human_talk_workspace/tata_v0.9_pipeline/tata_triage_model/silence_recovered_v09/human_reviewed_masked_v09/feature_cache/metadata/multilabel_features_manifest_v09_HUMAN_REVIEWED_MASKED.csv")
+    parser.add_argument("--low-energy-features-root", default="", help="Optional TATA-LAWYER feature_cache/features root. Auto-derived from manifest if omitted.")
     parser.add_argument("--corrected-holdout-manifest", default="human_talk_workspace/tata_v0.8_human_corrected_balanced_pipeline/corrected_holdout/multilabel_features_manifest_CORRECTED_LABELS.csv")
     parser.add_argument("--labels-json", default="configs/human_talk_10label_schema.json")
     parser.add_argument("--workspace-root", default="human_talk_workspace/tata_v0.10_1_low_energy_recovery_ablation")
@@ -133,9 +229,9 @@ def main() -> None:
     shutil.copy2(holdout_path, copies_dir / holdout_path.name)
 
     labels = _read_labels(args.labels_json)
-    base_df = pd.read_csv(base_path)
-    low_df = pd.read_csv(low_path)
-    holdout_df = pd.read_csv(holdout_path)
+    base_df = pd.read_csv(base_path, low_memory=False)
+    low_df = pd.read_csv(low_path, low_memory=False)
+    holdout_df = pd.read_csv(holdout_path, low_memory=False)
 
     parent_col = args.parent_id_col
     if parent_col not in base_df.columns:
@@ -184,6 +280,12 @@ def main() -> None:
     if holdout_overlap_filtered and not args.allow_holdout_parent_overlap:
         reviewed = reviewed[~holdout_overlap_mask].copy()
 
+    reviewed, feature_rewrite_report = _rewrite_low_energy_feature_paths(
+        reviewed=reviewed,
+        low_manifest_path=low_path,
+        low_energy_features_root=args.low_energy_features_root or None,
+    )
+
     base_df = base_df.copy()
     base_df["v010_1_source"] = "base_manifest_copy"
     base_df["v010_1_low_energy_added"] = False
@@ -230,6 +332,7 @@ def main() -> None:
         "include_splits": sorted(included_splits),
         "allow_partial_mask": bool(args.allow_partial_mask),
         "allow_holdout_parent_overlap": bool(args.allow_holdout_parent_overlap),
+        **feature_rewrite_report,
         "safety_policy": "No source manifest was modified. Only copied/source_copies and metadata output were written.",
     }
     report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
