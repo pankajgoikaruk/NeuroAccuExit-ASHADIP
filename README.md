@@ -1,22 +1,45 @@
-# NeuroAccuExit-ASHADIP — Agentic Data Preprocessing v0.10
+# NeuroAccuExit-ASHADIP — Active Budget and Anytime Exit v0.1
 
-This documentation records the latest human-talk speaker/context multi-label experiments for v0.9_4 and v0.10, including **hint-pass**, **LATS re-optimization**, **seed stability**, and the latest **no-hint + `pos_weight` cap5 diagnostic run**.
+This branch extends the human-talk multi-label NeuroAccuExit system from a verified **full-depth reference** toward **standard Early-Exit**, **budget-aware Early-Exit**, and **anytime inference**.
 
-The final outcome is unchanged: **v0.9_4 LATS-v2 remains the stable final result**. v0.10 no-hint remains a useful diagnostic/stability ablation. Current standard hint-pass and `pos_weight cap5` should not be adopted as final methods.
+The previous v0.10 work established the strongest reproducible final-exit inference configuration. This branch freezes that result and uses it as the sole full-computation quality reference for all subsequent efficiency experiments.
 
 ---
 
-## Current final decision
+## Branch identity
+
+| Item | Value |
+|---|---|
+| Git branch | `active_budget_anytime_exit_v0.1` |
+| Documentation name | **NeuroAccuExit — Active Budget and Anytime Exit v0.1** |
+| Source branch | `agentic_data_preprocessing_v0.10` |
+| Task | Human-talk multi-label speaker/context detection |
+| Current phase | Full-depth baseline frozen; standard Early-Exit is the next experiment |
+| Main purpose | Measure and control the quality–computation trade-off across exits |
+
+This branch is intentionally restricted to:
+
+1. standard sample-wise Early-Exit;
+2. true staged inference that skips unnecessary deeper computation;
+3. budget-aware Early-Exit;
+4. anytime quality-versus-cost evaluation.
+
+The branch does not reopen the completed hint-pass or `pos_weight cap5` investigations unless a new, clearly defined hypothesis requires them.
+
+---
+
+## Current branch decision
 
 | Decision item | Outcome |
 |---|---|
-| Stable final baseline | `v0.9_4 / LATS-v2 metric-aware coordinate search` |
-| Best single v0.10 run | `v0.10 no-hint + LATS-v2 coordinate re-optimized` |
-| Stable v0.10 replacement? | No; seed stability is not strong enough |
-| Hint-pass status | Rejected for current dataset; useful negative result |
-| `pos_weight cap5` status | Rejected; worse than v0.9_4 and worse than previous v0.10 no-hint results |
-| Strongest contribution | LATS-v2 metric-aware parent-level inference optimization |
-| Next action | Report/document results; avoid more tuning unless testing a new hypothesis |
+| Canonical full-depth baseline | `v0.10 no-hint + frozen historical LATS-v2` |
+| Full-depth probability source | Exit 3, using columns prefixed by `exit3_prob_` |
+| Parent-level policy | Frozen label-specific LATS-v2 aggregation and thresholds |
+| Secondary frozen result | Direct coordinate re-optimisation; ablation only |
+| Standard hint-pass | Not selected for the current multi-label dataset |
+| `pos_weight cap5` | Not selected |
+| Next experiment | Standard Early-Exit evaluation against the frozen baseline |
+| Future experiments | Budget-aware Early-Exit and anytime inference |
 
 ---
 
@@ -27,116 +50,305 @@ The final outcome is unchanged: **v0.9_4 LATS-v2 remains the stable final result
 | Task | Human-talk multi-label speaker/context detection |
 | Parent clips | 867 |
 | Segments | 4,335 |
-| Train rows | 25,519 |
+| Training rows | 25,519 |
 | Validation rows | 1,883 |
 | Test rows | 1,961 |
 | Labels | 10 |
 | Label schema | `configs/human_talk_10label_schema.json` |
 | Training manifest | `human_talk_workspace/tata_v0.8_human_corrected_balanced_pipeline/final_expanded_training_dataset_balanced/metadata/multilabel_features_manifest_balanced.csv` |
 | Corrected holdout manifest | `human_talk_workspace/tata_v0.8_human_corrected_balanced_pipeline/corrected_holdout/multilabel_features_manifest_CORRECTED_LABELS.csv` |
-| Parent ID column | `parent_clip_id` |
-| Probability prefix | `exit3_prob_` |
+| Parent identifier | `parent_clip_id` |
+| Full-depth probability prefix | `exit3_prob_` |
 
 Labels:
 
 ```text
-Brene_Brown, Eckhart_Tolle, Eric_Thomas, Gary_Vee, Jay_Shetty, Nick_Vujicic,
-other_speaker_present, music_present, audience_reaction_present, silence_present
+Brene_Brown
+Eckhart_Tolle
+Eric_Thomas
+Gary_Vee
+Jay_Shetty
+Nick_Vujicic
+other_speaker_present
+music_present
+audience_reaction_present
+silence_present
 ```
 
 ---
 
-## Complete method comparison
+## Canonical full-depth baseline
 
-| method | macro_f1 | micro_f1 | samples_f1 | exact_match | hamming_loss | avg_pred_labels | decision |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| v0.9_4 baseline — frozen LATS-v2 | 0.8673 | 0.9458 | 0.9517 | 0.8604 | 0.0158 | 1.4452 | Stable final baseline |
-| v0.10 no-hint — frozen old LATS-v2 transfer | 0.8452 | 0.9247 | 0.9252 | 0.8062 | 0.0212 | 1.3495 | Frozen policy transfer failed |
-| v0.10 no-hint — LATS-v1 re-optimized | 0.8658 | 0.9506 | 0.9562 | 0.8674 | 0.0145 | 1.4717 | Strong single-run recovery |
-| v0.10 no-hint — LATS-v2 coordinate re-optimized | 0.8624 | 0.9531 | 0.9589 | 0.8766 | 0.0137 | 1.4591 | Best single v0.10 global-consistency run |
-| v0.10 hint-pass — frozen old LATS-v2 transfer | 0.8180 | 0.9155 | 0.9225 | 0.7878 | 0.0242 | 1.3956 | Hint-pass transfer weak |
-| v0.10 hint-pass — LATS-v1 re-optimized | 0.8634 | 0.9447 | 0.9535 | 0.8639 | 0.0160 | 1.4291 | Recovered but not best |
-| v0.10 hint-pass — LATS-v2 coordinate re-optimized | 0.8632 | 0.9440 | 0.9536 | 0.8570 | 0.0164 | 1.4556 | Rejected vs no-hint |
-| v0.10 no-hint + pos_weight cap5 — fixed 0.5 mean | 0.8009 | 0.8939 | 0.9088 | 0.7232 | 0.0330 | 1.6401 | Over-predicted positives before LATS |
-| v0.10 no-hint + pos_weight cap5 — LATS-v2 macro-priority | 0.8511 | 0.9413 | 0.9481 | 0.8478 | 0.0171 | 1.4371 | Rejected; worse than baseline and no-hint |
+The official quality reference for this branch is:
+
+```text
+v0.10 no-hint + frozen historical LATS-v2
+```
+
+It uses final-exit segment probabilities and the exact committed historical LATS-v2 parent-level configuration. Reproduction applies the frozen rules directly; it performs no neural-network retraining, threshold search, or aggregation-method search.
+
+### Exact reproduced result
+
+| Metric | Exact value | Paper value |
+|---|---:|---:|
+| Macro-F1 | 0.8623815322333925 | **0.8624** |
+| Micro-F1 | 0.9531311539976368 | **0.9531** |
+| Samples-F1 | 0.9588894381281925 | **0.9589** |
+| Exact Match | 0.8765859284890427 | **0.8766** |
+| Hamming Loss ↓ | 0.013725490196078431 | **0.0137** |
+| Average predicted labels | 1.4590542099192618 | 1.4591 |
+| Parent clips | 867 | 867 |
+
+### Interpretation
+
+- This is a **full-depth, final-exit** result.
+- It is the only baseline used to calculate Early-Exit quality retention or degradation.
+- `1.4591` is the average number of predicted positive labels per parent clip.
+- `1.4591` is **not** average exit depth.
+- Average exit depth, exit distribution, computation saving, and latency will be introduced by the Early-Exit experiments.
 
 ---
 
-## Main conclusion
+## Secondary frozen result
+
+The direct coordinate re-optimisation result is retained as a post-hoc inference-policy ablation:
+
+| Metric | Secondary result | Difference from canonical |
+|---|---:|---:|
+| Macro-F1 | 0.8598605 | −0.0025210 |
+| Micro-F1 | 0.9547260 | +0.0015948 |
+| Samples-F1 | 0.9619926 | +0.0031032 |
+| Exact Match | 0.8800461 | +0.0034602 |
+| Hamming Loss ↓ | 0.0131488 | −0.0005767 |
+| Average predicted labels | 1.4348328 | −0.0242215 |
+
+This variant improves several global/sample-level metrics but reduces Macro-F1 and does not reproduce the original historical LATS-v2 procedure. It is therefore frozen for analysis but must not replace the canonical baseline.
+
+---
+
+## Why this baseline was selected
+
+The canonical result was selected because it:
+
+1. exactly matches the committed historical v0.10 LATS-v2 configuration;
+2. reproduces all metrics deterministically from the frozen probability CSV;
+3. represents the complete final-exit computation path;
+4. preserves the original label-specific aggregation and threshold choices;
+5. provides a stable reference for standard, budget-aware, and anytime inference;
+6. is fully packaged with inputs, outputs, code snapshots, environment information, and integrity hashes.
+
+The earlier `v0.9_4 / LATS-v2` result remains an important historical stability result from the previous research phase. However, the experiments in `active_budget_anytime_exit_v0.1` use the verified v0.10 no-hint frozen result above as their branch-specific full-depth comparator.
+
+---
+
+## Frozen LATS-v2 parent-level rules
+
+| Label | Aggregation | Threshold |
+|---|---|---:|
+| Brene Brown | `p75` | 0.54 |
+| Eckhart Tolle | `top3mean` | 0.50 |
+| Eric Thomas | `top4mean` | 0.62 |
+| Gary Vee | `mean` | 0.50 |
+| Jay Shetty | `p75` | 0.91 |
+| Nick Vujicic | `p75` | 0.34 |
+| Other speaker present | `noisy_or` | 0.94 |
+| Music present | `mean` | 0.37 |
+| Audience reaction present | `top3mean` | 0.23 |
+| Silence present | `p75` | 0.42 |
+
+These rules are applied to final-exit segment probabilities to obtain one prediction vector per parent clip.
+
+---
+
+## Reproducibility package
+
+The complete frozen package is stored at:
 
 ```text
-Keep v0.9_4 LATS-v2 as the stable final baseline.
-Reject current standard hint-pass.
-Reject pos_weight cap5.
-Use v0.10 no-hint only as diagnostic/stability evidence.
+docs/tables/active_budget_anytime_exit_v0.1/full_depth_baselines/
+```
+
+Key contents:
+
+| Path | Purpose |
+|---|---|
+| `README.md` | Package overview and canonical-baseline declaration |
+| `PAPER_READY_BASELINE_SUMMARY.md` | Concise research-paper description |
+| `reproducibility_manifest.json` | Machine-readable experiment settings and metrics |
+| `artifact_hashes.csv` | SHA256 integrity manifest |
+| `environment_summary.txt` | Git, Python, and core-package information |
+| `environment_pip_freeze.txt` | Complete Python package snapshot |
+| `primary_v010_no_hint_historical_lats_v2/` | Canonical baseline artifacts and detailed record |
+| `secondary_direct_coordinate_reoptimized/` | Secondary ablation artifacts and record |
+| `shared_reproducibility_inputs/` | Frozen probabilities, label schema, configuration, and script snapshots |
+| `reproduced_outputs/primary_historical_lats_v2/` | Independently regenerated canonical outputs |
+
+### Exact reproduction command
+
+From the repository root:
+
+```powershell
+powershell -ExecutionPolicy Bypass `
+  -File "docs\tables\active_budget_anytime_exit_v0.1\full_depth_baselines\primary_v010_no_hint_historical_lats_v2\REPRODUCE_PRIMARY.ps1"
+```
+
+Expected metrics:
+
+```text
+Macro-F1        = 0.8623815322333925
+Micro-F1        = 0.9531311539976368
+Samples-F1      = 0.9588894381281925
+Exact Match     = 0.8765859284890427
+Hamming Loss    = 0.013725490196078431
+Avg pred labels = 1.4590542099192618
+Parent clips    = 867
 ```
 
 ---
 
-## v0.10 no-hint seed-stability check
+## Historical v0.10 findings retained
 
-| seed | macro_f1 | micro_f1 | samples_f1 | exact_match | hamming_loss | avg_pred_labels |
-| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 101 | 0.8624 | 0.9353 | 0.9467 | 0.8374 | 0.0189 | 1.4556 |
-| 202 | 0.8741 | 0.9471 | 0.9565 | 0.8674 | 0.0153 | 1.4314 |
-| 303 | 0.8607 | 0.9492 | 0.9560 | 0.8731 | 0.0149 | 1.4614 |
+The new branch does not invalidate the earlier v0.10 analysis.
 
-Mean result:
-
-```text
-Macro-F1   = 0.8657
-Micro-F1   = 0.9439
-Samples-F1 = 0.9531
-Exact      = 0.8593
-Hamming    = 0.0164
-```
-
-Compared with v0.9_4, the seed mean is slightly weaker in Macro-F1, Micro-F1, Exact Match, and Hamming Loss. Therefore v0.10 no-hint is promising but not stable enough to replace v0.9_4.
+| Finding | Decision |
+|---|---|
+| Frozen v0.9_4 LATS-v2 did not transfer reliably to new v0.10 probabilities | Retained |
+| v0.10-specific LATS re-optimisation recovered performance | Retained |
+| Standard hint-pass did not beat no-hint after recalibration | Retained as a negative result |
+| `pos_weight cap5` did not improve the final outcome | Retained as a negative result |
+| Label-specific parent-level inference was more useful than the tested architecture changes | Retained |
+| No-hint v0.10 produced the strongest branch-specific full-depth reference | Adopted for this branch |
 
 ---
 
-## Latest `pos_weight cap5` finding
+## Experiment roadmap
 
-The `pos_weight cap5` experiment was intended to test whether label-imbalance-aware BCE can improve rare labels more reliably than hint-pass. It did **not** help.
+### Stage 0 — Full-depth reference
 
-Important note:
+Status: **complete and frozen**
 
-```text
-The produced run is seed_101202303, so it is a single diagnostic run, not a true 3-seed stability run.
-```
+- Exit 3 segment probabilities;
+- frozen parent-level LATS-v2;
+- exact deterministic reproduction;
+- primary and secondary results preserved;
+- paper-ready documentation generated.
 
-Best `pos_weight cap5` after LATS-v2 macro-priority re-optimization:
+### Stage 1 — Standard Early-Exit
 
-```text
-Macro-F1   = 0.8511
-Micro-F1   = 0.9413
-Samples-F1 = 0.9481
-Exact      = 0.8478
-Hamming    = 0.0171
-```
+Status: **next**
 
-This is worse than v0.9_4 and worse than the previous no-hint seed mean.
+Evaluate sample-wise exit decisions at Exit 1, Exit 2, or Exit 3.
+
+Required outputs:
+
+- Macro-F1, Micro-F1, Samples-F1, Exact Match, and Hamming Loss;
+- exit distribution;
+- average exit depth;
+- full-depth agreement;
+- quality loss relative to the canonical baseline;
+- estimated computation saving.
+
+### Stage 2 — True staged inference
+
+Status: **planned**
+
+Replace post-hoc policy selection with execution that genuinely stops computation and skips deeper CNN blocks.
+
+Required outputs:
+
+- measured latency;
+- cumulative FLOPs or a validated compute proxy;
+- realised computation saving;
+- consistency between simulated and true staged decisions.
+
+### Stage 3 — Budget-aware Early-Exit
+
+Status: **planned**
+
+Introduce explicit cost constraints, such as:
+
+- maximum exit depth;
+- per-sample compute budget;
+- average dataset-level budget;
+- target quality-retention constraint;
+- dynamic allocation based on uncertainty.
+
+### Stage 4 — Anytime inference
+
+Status: **planned**
+
+Produce predictions and quality measurements at increasing computation budgets.
+
+Required outputs:
+
+- quality-versus-cost curves;
+- performance at each exit;
+- area under the anytime curve where appropriate;
+- per-label and global behaviour across budgets;
+- comparison with full-depth and standard Early-Exit.
 
 ---
 
-## Research questions and findings
+## Evaluation protocol
 
-| ID | Research question | Finding |
-|---|---|---|
-| RQ1 | Does frozen v0.9_4 LATS-v2 transfer directly to v0.10 probabilities? | No. Frozen transfer is weak for both no-hint and hint-pass. |
-| RQ2 | Does v0.10-specific LATS re-optimization recover performance? | Yes. Re-optimized LATS improves both no-hint and hint-pass outputs. |
-| RQ3 | Does hint-pass beat no-hint? | No. Current standard hint-pass is weaker than no-hint after recalibration. |
-| RQ4 | Is v0.10 no-hint better than v0.9_4? | Only in some single-run/global metrics, not stably across seeds. |
-| RQ5 | Does `pos_weight cap5` improve rare-label Macro-F1 enough to help? | No. It lowers overall performance and should be rejected. |
-| RQ6 | What is the strongest final contribution? | LATS-v2 metric-aware inference-policy optimization. |
+Every future result must be compared with the canonical full-depth baseline.
+
+Recommended comparison columns:
+
+| Category | Measures |
+|---|---|
+| Prediction quality | Macro-F1, Micro-F1, Samples-F1, Exact Match, Hamming Loss |
+| Exit behaviour | Exit-1/Exit-2/Exit-3 fractions, average exit depth |
+| Efficiency | Cumulative FLOPs, estimated saving, measured latency |
+| Reliability | Agreement with full-depth prediction, flip rate, per-label degradation |
+| Budget behaviour | Budget used, budget violations, quality at fixed budgets |
+| Anytime behaviour | Quality at each computation point and quality-versus-cost curve |
+
+For each quality metric \(M\), report both the absolute Early-Exit result and its change from the canonical reference:
+
+```text
+quality_change = early_exit_metric - full_depth_metric
+```
+
+For Hamming Loss and cost, lower values are better and the direction must be interpreted accordingly.
 
 ---
 
-## Updated documentation package
+## Branch research questions
 
-Detailed files are under:
+| ID | Research question |
+|---|---|
+| RQ1 | How much full-depth multi-label quality can standard Early-Exit retain? |
+| RQ2 | Which confidence or stability policy gives the best quality–depth trade-off? |
+| RQ3 | Do simulated Early-Exit savings remain valid under true staged execution? |
+| RQ4 | How should a limited compute budget be allocated across samples? |
+| RQ5 | How does prediction quality evolve as more computation becomes available? |
+| RQ6 | Which labels are safe to decide early, and which require deeper evidence? |
+| RQ7 | Can budget-aware or label-aware policies outperform one global exit rule? |
+
+---
+
+## Paper-ready baseline statement
+
+> The full-computation reference used the final exit of the three-exit no-hint model followed by the frozen historical LATS-v2 parent-level inference policy. Across 867 parent clips and 10 labels, it achieved a Macro-F1 of 0.8624, Micro-F1 of 0.9531, Samples-F1 of 0.9589, Exact Match of 0.8766, and Hamming Loss of 0.0137. This deterministic frozen result was used as the canonical quality reference for all subsequent standard Early-Exit, budget-aware Early-Exit, and anytime-inference evaluations.
+
+---
+
+## Reporting cautions
+
+- Call this a **frozen corrected-holdout evaluation**.
+- Do not describe it as an independent external test set.
+- Do not report average predicted labels as average exit depth.
+- Do not compare Early-Exit policies against whichever historical row is most favourable; use the canonical branch baseline consistently.
+- Distinguish simulated policy selection from true computation-saving staged inference.
+- Preserve the secondary result as an ablation rather than silently replacing the baseline.
+
+---
+
+## Current next action
 
 ```text
-docs/v0.10/
-docs/tables/agentic_data_preprocessing_v0.10/
+Implement and evaluate the standard Early-Exit baseline on
+active_budget_anytime_exit_v0.1, using the frozen v0.10 no-hint
+historical LATS-v2 result as the sole full-depth quality reference.
 ```
