@@ -1,0 +1,42 @@
+{
+  "Brene_Brown": {
+    "aggregation": "p75",
+    "threshold": 0.54
+  },
+  "Eckhart_Tolle": {
+    "aggregation": "mean",
+    "threshold": 0.34
+  },
+  "Eric_Thomas": {
+    "aggregation": "mean",
+    "threshold": 0.5
+  },
+  "Gary_Vee": {
+    "aggregation": "mean",
+    "threshold": 0.38
+  },
+  "Jay_Shetty": {
+    "aggregation": "p75",
+    "threshold": 0.91
+  },
+  "Nick_Vujicic": {
+    "aggregation": "p75",
+    "threshold": 0.31
+  },
+  "other_speaker_present": {
+    "aggregation": "mean",
+    "threshold": 0.36
+  },
+  "music_present": {
+    "aggregation": "mean",
+    "threshold": 0.37
+  },
+  "audience_reaction_present": {
+    "aggregation": "max",
+    "threshold": 0.72
+  },
+  "silence_present": {
+    "aggregation": "p75",
+    "threshold": 0.42
+  }
+}

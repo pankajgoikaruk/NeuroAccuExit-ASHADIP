@@ -1,0 +1,56 @@
+{
+  "labels": [
+    "Brene_Brown",
+    "Eckhart_Tolle",
+    "Eric_Thomas",
+    "Gary_Vee",
+    "Jay_Shetty",
+    "Nick_Vujicic",
+    "other_speaker_present",
+    "music_present",
+    "audience_reaction_present",
+    "silence_present"
+  ],
+  "config": {
+    "Brene_Brown": {
+      "aggregation": "p75",
+      "threshold": 0.54
+    },
+    "Eckhart_Tolle": {
+      "aggregation": "top3mean",
+      "threshold": 0.5
+    },
+    "Eric_Thomas": {
+      "aggregation": "top4mean",
+      "threshold": 0.62
+    },
+    "Gary_Vee": {
+      "aggregation": "mean",
+      "threshold": 0.5
+    },
+    "Jay_Shetty": {
+      "aggregation": "p75",
+      "threshold": 0.91
+    },
+    "Nick_Vujicic": {
+      "aggregation": "p75",
+      "threshold": 0.34
+    },
+    "other_speaker_present": {
+      "aggregation": "noisy_or",
+      "threshold": 0.94
+    },
+    "music_present": {
+      "aggregation": "mean",
+      "threshold": 0.37
+    },
+    "audience_reaction_present": {
+      "aggregation": "top3mean",
+      "threshold": 0.23
+    },
+    "silence_present": {
+      "aggregation": "p75",
+      "threshold": 0.42
+    }
+  }
+}

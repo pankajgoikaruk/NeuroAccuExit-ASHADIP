@@ -1,0 +1,4 @@
+﻿Captured: 2026-07-10 20:22:26 +01:00
+Git branch: active_budget_anytime_exit_v0.1
+Git commit: 903183d5d2b58f078976c5419d37ca269943d5da
+Python: Python 3.12.12

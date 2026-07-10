@@ -1,0 +1,11 @@
+label,aggregation,threshold
+Brene_Brown,p75,0.54
+Eckhart_Tolle,mean,0.34
+Eric_Thomas,mean,0.5
+Gary_Vee,mean,0.38
+Jay_Shetty,p75,0.91
+Nick_Vujicic,p75,0.31
+other_speaker_present,mean,0.36
+music_present,mean,0.37
+audience_reaction_present,max,0.72
+silence_present,p75,0.42
