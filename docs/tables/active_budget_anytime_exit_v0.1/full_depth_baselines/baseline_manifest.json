@@ -1,0 +1,29 @@
+﻿{
+    "branch":  "active_budget_anytime_exit_v0.1",
+    "canonical_baseline":  {
+                               "name":  "v0.10 no-hint + frozen historical LATS-v2",
+                               "role":  "primary_full_depth_baseline",
+                               "use_for_future_experiments":  true,
+                               "parent_clips":  867,
+                               "macro_f1":  0.86238153223339253,
+                               "micro_f1":  0.95313115399763682,
+                               "samples_f1":  0.9588894381281925,
+                               "exact_match":  0.87658592848904271,
+                               "hamming_loss":  0.013725490196078431,
+                               "avg_pred_labels":  1.4590542099192618,
+                               "frozen_directory":  "primary_v010_no_hint_historical_lats_v2"
+                           },
+    "secondary_result":  {
+                             "name":  "v0.10 no-hint direct coordinate re-optimisation",
+                             "role":  "secondary_posthoc_variant",
+                             "use_for_future_experiments":  false,
+                             "macro_f1":  0.8599,
+                             "micro_f1":  0.9547,
+                             "samples_f1":  0.962,
+                             "exact_match":  0.88,
+                             "hamming_loss":  0.0131,
+                             "avg_pred_labels":  1.4348,
+                             "frozen_directory":  "secondary_direct_coordinate_reoptimized"
+                         },
+    "reporting_note":  "Average predicted labels is not average exit depth."
+}
