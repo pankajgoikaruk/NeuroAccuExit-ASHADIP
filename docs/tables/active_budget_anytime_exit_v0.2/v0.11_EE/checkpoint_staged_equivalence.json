@@ -1,0 +1,46 @@
+{
+  "status": "PASS",
+  "run_dir": "C:\\Users\\wwwsa\\PycharmProjects\\NeuroAccuExit-ASHADIP\\human_talk_workspace\\tata_v0.10_hint_pass_lats_pipeline\\main_models\\runs\\main_v010_human_corrected_balanced_3exit_no_hint_20260703_201845",
+  "checkpoint": "C:\\Users\\wwwsa\\PycharmProjects\\NeuroAccuExit-ASHADIP\\human_talk_workspace\\tata_v0.10_hint_pass_lats_pipeline\\main_models\\runs\\main_v010_human_corrected_balanced_3exit_no_hint_20260703_201845\\ckpt\\best.pt",
+  "input_source": "real_holdout_features",
+  "input_shape": [8, 1, 64, 101],
+  "labels": [
+    "Brene_Brown",
+    "Eckhart_Tolle",
+    "Eric_Thomas",
+    "Gary_Vee",
+    "Jay_Shetty",
+    "Nick_Vujicic",
+    "other_speaker_present",
+    "music_present",
+    "audience_reaction_present",
+    "silence_present"
+  ],
+  "tap_blocks": [1, 3],
+  "num_exits": 3,
+  "rtol": 1e-06,
+  "atol": 1e-07,
+  "exit_results": [
+    {
+      "exit": 1,
+      "passed": true,
+      "max_abs_logit_diff": 0.0,
+      "mean_abs_logit_diff": 0.0,
+      "max_abs_probability_diff": 0.0
+    },
+    {
+      "exit": 2,
+      "passed": true,
+      "max_abs_logit_diff": 0.0,
+      "mean_abs_logit_diff": 0.0,
+      "max_abs_probability_diff": 0.0
+    },
+    {
+      "exit": 3,
+      "passed": true,
+      "max_abs_logit_diff": 0.0,
+      "mean_abs_logit_diff": 0.0,
+      "max_abs_probability_diff": 0.0
+    }
+  ]
+}
