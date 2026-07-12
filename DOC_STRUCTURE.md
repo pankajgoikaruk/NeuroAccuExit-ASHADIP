@@ -1,141 +1,152 @@
-# Documentation Structure — Active Budget and Anytime Exit v0.1
+# Documentation Structure — Active Budget and Anytime Exit v0.2
 
-This document indexes the branch-specific documentation for the next NeuroAccuExit research phase.
+This document indexes the repository artifacts for the NeuroAccuExit computation-adaptive inference phase.
 
 ---
 
-## Branch identity
+## Active branch
 
 | Item | Value |
 |---|---|
-| Git branch | `active_budget_anytime_exit_v0.1` |
-| Documentation name | **NeuroAccuExit — Active Budget and Anytime Exit v0.1** |
-| Source branch | `agentic_data_preprocessing_v0.10` |
-| Current milestone | Full-depth v0.10 no-hint LATS-v2 baseline frozen and reproduced |
-| Next milestone | Standard Early-Exit evaluation |
+| Git branch | `active_budget_anytime_exit_v0.2` |
+| Current completed milestone | `v0.11_EE` fixed-exit audit and genuine Dynamic Early-Exit |
+| Canonical full-depth comparator | v0.10 no-hint + frozen historical LATS-v2 |
+| Next main experiment | Budget-aware Early-Exit |
+| Later experiment | Anytime inference |
 
 ---
 
-## Top-level files
+## Top-level documentation
+
+| Path | Purpose |
+|---|---|
+| `README.md` | Authoritative branch summary, headline results, reproduction commands, conclusions, and roadmap |
+| `DOC_STRUCTURE.md` | This documentation and artifact index |
+| `docs/active_budget_anytime_exit_v0.2/README.md` | Detailed implementation and experiment overview |
+| `docs/tables/active_budget_anytime_exit_v0.1/full_depth_baselines/` | Frozen canonical and secondary full-depth baseline package |
+| `docs/tables/active_budget_anytime_exit_v0.2/` | Compact v0.2 result tables and paper-ready experiment records |
+| `docs/v0.10/` | Historical hint-pass, weighting, calibration, and negative-result documentation |
+| `docs/v0.10_1/` | Historical low-energy recovery ablation documentation |
+| `docs/archive/` | Archived repository documentation states |
+
+Historical records must remain available and must not be silently rewritten.
+
+---
+
+## v0.11 implementation structure
+
+```text
+models/
+└── anytime_exit_net.py
+
+tests/
+├── __init__.py
+└── test_anytime_exit_net.py
+
+scripts/v0.11_EE/
+├── fixed_policy/
+│   ├── verify_checkpoint_equivalence_v011.py
+│   ├── evaluate_fixed_exits_v011.py
+│   └── run_v011_EE.ps1
+└── dynamic_policy/
+    ├── tune_dynamic_policy_v011.py
+    ├── evaluate_dynamic_early_exit_v011.py
+    └── run_dynamic_v011_EE.ps1
+```
 
 | File | Purpose |
 |---|---|
-| `README.md` | Authoritative project summary for the active branch, canonical baseline, roadmap, evaluation protocol, and paper-ready statement |
-| `DOC_STRUCTURE.md` | This documentation and artifact index |
-| `docs/v0.10/` | Historical v0.10 experiment documentation |
-| `docs/v0.10_1/` | Historical low-energy recovery ablation plan and final results |
-| `docs/tables/agentic_data_preprocessing_v0.10/` | Historical v0.10 tables, configurations, and diagnostic outputs |
-| `docs/archive/` | Archived documentation from earlier project states |
-
-The root files now describe the active efficiency-research branch. Historical v0.10 files remain available and must not be overwritten because they preserve the development and negative-result record.
+| `models/anytime_exit_net.py` | Inference-only staged wrapper that executes only the blocks required to reach the next exit |
+| `tests/test_anytime_exit_net.py` | Three-exit, five-exit, hint-compatible, and state-progression equivalence tests |
+| `verify_checkpoint_equivalence_v011.py` | Verifies staged/full logits and probabilities on the real canonical checkpoint |
+| `evaluate_fixed_exits_v011.py` | Evaluates Always Exit 1/2/3 at segment and parent level |
+| `run_v011_EE.ps1` | One-command fixed-exit audit |
+| `tune_dynamic_policy_v011.py` | Validation-only grid search and frozen-policy generation |
+| `evaluate_dynamic_early_exit_v011.py` | Genuine active-batch staged evaluation with Blocks 4–5 skipped for Exit-2 samples |
+| `run_dynamic_v011_EE.ps1` | Prechecks, validation tuning, policy freezing, and corrected-holdout evaluation |
 
 ---
 
 ## Branch documentation root
 
 ```text
-docs/tables/active_budget_anytime_exit_v0.1/
+docs/tables/active_budget_anytime_exit_v0.2/
 ```
 
-Current structure:
+Expected structure after the v0.11 documentation freeze:
 
 ```text
-docs/tables/active_budget_anytime_exit_v0.1/
-└── full_depth_baselines/
+docs/tables/active_budget_anytime_exit_v0.2/
+├── README.md
+└── v0.11_EE/
     ├── README.md
-    ├── PAPER_READY_BASELINE_SUMMARY.md
-    ├── artifact_hashes.csv
-    ├── environment_pip_freeze.txt
-    ├── environment_summary.txt
-    ├── reproducibility_manifest.json
-    │
-    ├── primary_v010_no_hint_historical_lats_v2/
-    │   ├── EXPERIMENT_RECORD.md
-    │   ├── REPRODUCE_PRIMARY.ps1
-    │   └── frozen primary result artifacts
-    │
-    ├── secondary_direct_coordinate_reoptimized/
-    │   ├── EXPERIMENT_RECORD.md
-    │   ├── REPRODUCE_SECONDARY.ps1
-    │   └── frozen secondary result artifacts
-    │
-    ├── shared_reproducibility_inputs/
-    │   ├── no_hint_exit3_segment_probabilities.csv
-    │   ├── historical_no_hint_lats_v2_config.json
-    │   ├── human_talk_10label_schema.json
-    │   ├── evaluate_frozen_lats_config_v010_snapshot.py
-    │   └── run_v010_lats_v2_coordinate_reoptimize_snapshot.py
-    │
-    └── reproduced_outputs/
-        └── primary_historical_lats_v2/
-            ├── v010_frozen_lats_eval.csv
-            ├── v010_frozen_lats_eval.json
-            ├── v010_frozen_lats_per_label.csv
-            ├── v010_frozen_lats_config_used.json
-            ├── v010_parent_predictions.csv
-            ├── v010_parent_scores.csv
-            └── v010_parent_truth.csv
+    ├── EXPERIMENT_SETUP.md
+    ├── RESULTS_AND_ANALYSIS.md
+    ├── PAPER_READY_SUMMARY.md
+    ├── PS_COMMANDS.md
+    ├── REPRODUCE_V011_EE.ps1
+    ├── experiment_manifest.json
+    ├── checkpoint_staged_equivalence.json
+    ├── fixed_exit_segment_summary.csv
+    ├── fixed_exit_parent_summary.csv
+    ├── fixed_exit_parent_per_label.csv
+    ├── validation_policy_selection.csv
+    ├── dynamic_exit_summary.csv
+    └── cumulative_comparison.csv
 ```
 
 ---
 
-## Frozen package files
+## Artifact roles
 
-### Package-level documentation
-
-| File | Purpose |
-|---|---|
-| `full_depth_baselines/README.md` | Declares the canonical full-depth baseline and explains package contents |
-| `full_depth_baselines/PAPER_READY_BASELINE_SUMMARY.md` | Concise method and result wording for research-paper drafting |
-| `full_depth_baselines/reproducibility_manifest.json` | Machine-readable model, data, evaluation, metric, and baseline-selection metadata |
-| `full_depth_baselines/artifact_hashes.csv` | SHA256 integrity record for frozen files |
-| `full_depth_baselines/environment_summary.txt` | Git branch/commit, Python, and core-package versions |
-| `full_depth_baselines/environment_pip_freeze.txt` | Complete Python package snapshot |
-
-### Primary baseline
-
-| File/folder | Purpose |
-|---|---|
-| `primary_v010_no_hint_historical_lats_v2/EXPERIMENT_RECORD.md` | Detailed settings, model source, data, frozen rules, results, rationale, and limitations |
-| `primary_v010_no_hint_historical_lats_v2/REPRODUCE_PRIMARY.ps1` | Deterministically regenerates and validates the canonical result |
-| Primary result CSV/JSON files | Preserve the exact canonical output and per-label measurements |
-| Parent prediction/score/truth files | Support auditing, error analysis, and paper tables |
-
-### Secondary result
-
-| File/folder | Purpose |
-|---|---|
-| `secondary_direct_coordinate_reoptimized/EXPERIMENT_RECORD.md` | Documents the new direct coordinate-search settings and result |
-| `secondary_direct_coordinate_reoptimized/REPRODUCE_SECONDARY.ps1` | Regenerates the secondary post-hoc variant |
-| Secondary search outputs | Preserve the alternative global-consistency trade-off |
-
-### Shared reproducibility inputs
+### Human-readable records
 
 | File | Purpose |
 |---|---|
-| `no_hint_exit3_segment_probabilities.csv` | Exact final-exit probability input used for both frozen results |
-| `historical_no_hint_lats_v2_config.json` | Canonical label-specific aggregation and threshold configuration |
-| `human_talk_10label_schema.json` | Frozen label ordering and schema |
-| `evaluate_frozen_lats_config_v010_snapshot.py` | Evaluator snapshot used for deterministic replay |
-| `run_v010_lats_v2_coordinate_reoptimize_snapshot.py` | Search-script snapshot used for the secondary result |
+| `v0.11_EE/README.md` | Experiment status, headline conclusions, and package index |
+| `EXPERIMENT_SETUP.md` | Model, data, thresholds, policy, cost model, and evaluation protocol |
+| `RESULTS_AND_ANALYSIS.md` | Fixed-exit and dynamic results, quality–cost interpretation, per-label findings, and limitations |
+| `PAPER_READY_SUMMARY.md` | Reusable method, result, contribution, limitation, and caption wording |
+| `PS_COMMANDS.md` | Windows PowerShell commands for each experiment mode |
+| `REPRODUCE_V011_EE.ps1` | Runs the fixed and dynamic experiment runners from the repository root |
 
-### Reproduced outputs
+### Machine-readable records
 
 | File | Purpose |
 |---|---|
-| `v010_frozen_lats_eval.csv` | Canonical summary metrics |
-| `v010_frozen_lats_eval.json` | Canonical machine-readable evaluation |
-| `v010_frozen_lats_per_label.csv` | Label-level precision, recall, and F1 |
-| `v010_frozen_lats_config_used.json` | Configuration actually applied during replay |
-| `v010_parent_predictions.csv` | Parent-level binary predictions |
-| `v010_parent_scores.csv` | Parent-level aggregated probability scores |
-| `v010_parent_truth.csv` | Parent-level ground-truth labels |
+| `experiment_manifest.json` | Branch, model, policy, canonical baseline, result, and limitation metadata |
+| `checkpoint_staged_equivalence.json` | Exact staged/full checkpoint-equivalence report |
+| `fixed_exit_segment_summary.csv` | Segment quality at Always Exit 1/2/3 |
+| `fixed_exit_parent_summary.csv` | Parent quality under frozen LATS-v2 transfer |
+| `fixed_exit_parent_per_label.csv` | Label-level parent precision, recall, F1, and error counts at every exit |
+| `validation_policy_selection.csv` | Frozen validation-selected stopping policy and constraint outcome |
+| `dynamic_exit_summary.csv` | Exit distribution, depth, compute, latency, and holdout metrics |
+| `cumulative_comparison.csv` | Canonical, fixed-exit, and dynamic headline comparison |
 
 ---
 
-## Canonical result snapshot
+## Non-committed runtime outputs
 
-### Primary branch baseline
+Large data and prediction artifacts remain under:
+
+```text
+human_talk_workspace/active_budget_anytime_exit_v0.2/v0.11_EE/
+```
+
+Typical contents include:
+
+- full segment probability exports;
+- segment-level prediction CSVs;
+- parent-level truth, score, and prediction tables;
+- validation sweep tables;
+- frozen runtime policy JSON;
+- corrected-holdout dynamic predictions.
+
+These files can be regenerated locally and are intentionally not copied wholesale into Git. Compact summaries are committed under `docs/tables`.
+
+---
+
+## Canonical result
 
 ```text
 v0.10 no-hint + frozen historical LATS-v2
@@ -143,188 +154,83 @@ v0.10 no-hint + frozen historical LATS-v2
 
 | Metric | Value |
 |---|---:|
-| Macro-F1 | **0.8623815322** |
-| Micro-F1 | **0.9531311540** |
-| Samples-F1 | **0.9588894381** |
-| Exact Match | **0.8765859285** |
-| Hamming Loss ↓ | **0.0137254902** |
-| Average predicted labels | 1.4590542099 |
-| Parent clips | 867 |
+| Macro-F1 | 0.8623815322333925 |
+| Micro-F1 | 0.9531311539976368 |
+| Samples-F1 | 0.9588894381281924 |
+| Exact Match | 0.8765859284890427 |
+| Hamming Loss ↓ | 0.0137254901960784 |
+| Average exit depth | 3.0 |
+| Estimated compute saved | 0% |
 
-This is the sole full-depth quality reference for the active branch.
-
-### Secondary frozen ablation
-
-| Metric | Value |
-|---|---:|
-| Macro-F1 | 0.8598605 |
-| Micro-F1 | 0.9547260 |
-| Samples-F1 | 0.9619926 |
-| Exact Match | 0.8800461 |
-| Hamming Loss ↓ | 0.0131488 |
-| Average predicted labels | 1.4348328 |
-
-The secondary result is retained for trade-off analysis and must not replace the canonical baseline.
+This is the sole full-depth quality reference for v0.11 and all later budget/anytime experiments.
 
 ---
 
-## Historical documentation retained
+## v0.11 result snapshot
 
-### v0.10 files
+### Fixed exits, parent level
 
-| File | Purpose |
-|---|---|
-| `docs/v0.10/README.md` | Historical v0.10 branch summary |
-| `docs/v0.10/EXPERIMENT_SETUP.md` | Dataset, paths, model, LATS, hint-pass, and weighting settings |
-| `docs/v0.10/RESULTS_AND_ANALYSIS.md` | Full historical method comparison |
-| `docs/v0.10/SEED_STABILITY_ANALYSIS.md` | No-hint seed-stability analysis |
-| `docs/v0.10/POS_WEIGHT_EXPERIMENT_ANALYSIS.md` | `pos_weight cap5` diagnostic |
-| `docs/v0.10/RESEARCH_FINDINGS.md` | Historical research questions and outcomes |
-| `docs/v0.10/PS_COMMANDS.md` | Historical PowerShell commands |
+| Method | Macro-F1 | Micro-F1 | Samples-F1 | Exact | Hamming ↓ |
+|---|---:|---:|---:|---:|---:|
+| Always Exit 1 | 0.1626 | 0.3877 | 0.2902 | 0.0577 | 0.1355 |
+| Always Exit 2 | 0.6923 | 0.7760 | 0.7652 | 0.5156 | 0.0655 |
+| Always Exit 3 | 0.8624 | 0.9531 | 0.9589 | 0.8766 | 0.0137 |
 
+Exit 1 and Exit 2 use transferred historical LATS-v2 rules and are diagnostic.
 
-### v0.10_1 files
+### Genuine Dynamic Exit 2/3
 
-| File | Purpose |
-|---|---|
-| `docs/v0.10_1/LOW_ENERGY_RECOVERY_ABLATION_PLAN.md` | Non-destructive plan for the reviewed low-energy recovery experiment |
-| `docs/v0.10_1/LOW_ENERGY_RECOVERY_ABLATION_RESULTS.md` | Final metrics, comparison, interpretation, and rejection decision |
-
-The v0.10_1 result was:
-
-| Metric | Value |
+| Item | Value |
 |---|---:|
-| Macro-F1 | 0.8581 |
-| Micro-F1 | 0.9446 |
-| Samples-F1 | 0.9519 |
-| Exact Match | 0.8570 |
-| Hamming Loss ↓ | 0.0160 |
-
-It is retained as a valid negative/diagnostic ablation and is not the
-full-depth baseline for the active-budget branch.
-
-
-### Historical tables
-
-| Path | Purpose |
-|---|---|
-| `docs/tables/agentic_data_preprocessing_v0.10/` | v0.9_4/v0.10 comparisons, seed stability, hint-pass, weighting, and related diagnostic outputs |
-| `docs/archive/` | Snapshots of earlier README and structure documents |
-
-Historical records remain valid. Their previous overall decision is not silently rewritten. The active branch simply defines a new branch-specific comparator for Early-Exit and budget experiments.
+| Exit-2 samples | 508 / 4,335 |
+| Exit-2 fraction | 11.72% |
+| Average exit depth | 2.8828 |
+| Estimated FLOPs saved | 7.53% |
+| Parent Macro-F1 | 0.842248 |
+| Parent Micro-F1 | 0.935484 |
+| Parent Samples-F1 | 0.943577 |
+| Parent Exact Match | 0.838524 |
+| Parent Hamming Loss | 0.018916 |
 
 ---
 
-## Planned branch directories
+## Reproduction entry points
 
-Create these directories only when their corresponding experiments begin:
+Fixed-exit audit:
 
-```text
-docs/tables/active_budget_anytime_exit_v0.1/
-├── full_depth_baselines/          # complete
-├── standard_early_exit/           # next
-├── true_staged_inference/         # planned
-├── budget_aware_early_exit/       # planned
-└── anytime_inference/             # planned
+```powershell
+powershell -ExecutionPolicy Bypass `
+  -File ".\scripts\v0.11_EE\fixed_policy\run_v011_EE.ps1"
 ```
 
-Recommended purpose:
+Genuine Dynamic Early-Exit:
 
-| Planned folder | Intended contents |
-|---|---|
-| `standard_early_exit/` | Policy configurations, per-exit results, exit distributions, average depth, quality-retention tables |
-| `true_staged_inference/` | Runtime implementation records, FLOPs, latency, simulated-versus-realised savings |
-| `budget_aware_early_exit/` | Budget definitions, controller settings, quality–budget results, violation analysis |
-| `anytime_inference/` | Per-budget predictions, quality-versus-cost curves, anytime summaries |
-
-Recommended future script root:
-
-```text
-scripts/active_budget_anytime_exit_v0.1/
+```powershell
+powershell -ExecutionPolicy Bypass `
+  -File ".\scripts\v0.11_EE\dynamic_policy\run_dynamic_v011_EE.ps1"
 ```
 
-This keeps new efficiency work separate from historical v0.10 evaluator scripts.
+Combined documentation entry point:
 
----
-
-## Required files for each future experiment
-
-Every completed experiment folder should contain:
-
-| File | Purpose |
-|---|---|
-| `README.md` | Experiment objective, status, and principal conclusion |
-| `EXPERIMENT_SETUP.md` | Data, model, policy, thresholds, cost model, and environment |
-| `RESULTS_AND_ANALYSIS.md` | Main table, per-label analysis, quality–cost interpretation |
-| `REPRODUCE.ps1` | One-command deterministic or best-effort reproduction |
-| `results_summary.csv` | Machine-readable headline metrics |
-| `per_label_metrics.csv` | Label-level performance |
-| `policy_config.json` | Exact exit-policy settings |
-| `environment_summary.txt` | Git and software snapshot |
-| `artifact_hashes.csv` | Integrity hashes |
-
-For true staged or budget-aware inference, also include:
-
-| File | Purpose |
-|---|---|
-| `exit_assignments.csv` | Exit chosen for every sample or parent |
-| `exit_distribution.csv` | Fraction using each exit |
-| `compute_profile.csv` | Cost/FLOPs by exit |
-| `latency_profile.csv` | Measured runtime |
-| `quality_cost_curve.csv` | Quality at each budget or cost level |
+```powershell
+powershell -ExecutionPolicy Bypass `
+  -File ".\docs\tables\active_budget_anytime_exit_v0.2\v0.11_EE\REPRODUCE_V011_EE.ps1"
+```
 
 ---
 
 ## Documentation rules
 
-1. The canonical baseline must always be identified as:
-
-   ```text
-   v0.10 no-hint + frozen historical LATS-v2
-   ```
-
-2. Future comparison tables must use:
-
-   ```text
-   Macro-F1    = 0.8623815322333925
-   Micro-F1    = 0.9531311539976368
-   Samples-F1  = 0.9588894381281925
-   Exact Match = 0.8765859284890427
-   Hamming     = 0.013725490196078431
-   ```
-
-3. `1.4590542099` means average predicted labels, not average exit depth.
-
-4. The secondary direct coordinate result is an ablation, not the baseline.
-
-5. Simulated exit-policy evaluation and true staged inference must be reported separately.
-
-6. Full-depth, standard Early-Exit, budget-aware Early-Exit, and anytime inference must each have distinct result folders.
-
-7. Historical v0.10 negative results must remain available for research transparency.
-
----
-
-## Reproduction entry point
-
-From the repository root:
-
-```powershell
-powershell -ExecutionPolicy Bypass `
-  -File "docs\tables\active_budget_anytime_exit_v0.1\full_depth_baselines\primary_v010_no_hint_historical_lats_v2\REPRODUCE_PRIMARY.ps1"
-```
-
-Successful replay must return:
-
-```text
-Macro-F1        = 0.8623815322333925
-Micro-F1        = 0.9531311539976368
-Samples-F1      = 0.9588894381281925
-Exact Match     = 0.8765859284890427
-Hamming Loss    = 0.013725490196078431
-Avg pred labels = 1.4590542099192618
-Parent clips    = 867
-```
+1. Always identify the canonical baseline as `v0.10 no-hint + frozen historical LATS-v2`.
+2. Do not confuse average predicted labels with average exit depth.
+3. Report post-hoc policy simulations separately from genuine staged inference.
+4. State that Exit-1/Exit-2 parent results are frozen-policy transfer diagnostics.
+5. Record whether thresholds were selected on validation, calibration, or holdout data.
+6. Do not tune a policy after inspecting its corrected-holdout result.
+7. Distinguish architecture-estimated FLOP saving from measured latency saving.
+8. Do not claim measured speedup until a same-protocol Always Exit 3 timing baseline exists.
+9. Preserve per-label results because rare/context labels can be harmed despite strong Micro-F1.
+10. Keep standard, budget-aware, and anytime results in separate experiment folders.
 
 ---
 
@@ -332,35 +238,29 @@ Parent clips    = 867
 
 | Area | Status |
 |---|---|
-| Root branch README | Updated |
-| Root documentation index | Updated |
-| Primary baseline freeze | Complete |
-| Secondary result freeze | Complete |
-| Exact reproduction | Verified |
-| Environment capture | Complete |
-| Integrity manifest | Complete |
-| Paper-ready baseline summary | Complete |
-| Standard Early-Exit documentation | Not yet created |
+| Root v0.2 README | Updated for v0.11 |
+| Root documentation index | Updated for v0.11 |
+| Frozen full-depth baseline package | Complete |
+| Staged inference implementation record | Complete |
+| Checkpoint equivalence record | Complete |
+| Fixed-exit tables | Complete |
+| Dynamic-policy validation record | Complete |
+| Genuine staged holdout summary | Complete |
+| Paper-ready v0.11 wording | Complete |
 | Budget-aware documentation | Not yet created |
 | Anytime-inference documentation | Not yet created |
 
 ---
 
-## Next documentation action
+## Next documentation directories
 
-After the first standard Early-Exit experiment, create:
+Create only when their experiments begin:
 
 ```text
-docs/tables/active_budget_anytime_exit_v0.1/standard_early_exit/
+docs/tables/active_budget_anytime_exit_v0.2/
+├── v0.11_EE/                   # complete
+├── v0.12_budget_aware_EE/      # next
+└── v0.13_anytime_inference/    # planned
 ```
 
-and record:
-
-- policy definition;
-- threshold-selection procedure;
-- exit distribution;
-- average exit depth;
-- quality relative to the canonical full-depth baseline;
-- estimated and measured computation saving;
-- per-label degradation;
-- reproducibility commands and hashes.
+The v0.12 package should add explicit budget definitions, budget-forced exit reasons, cost constraints, same-protocol latency baselines, and quality-versus-budget tables.
