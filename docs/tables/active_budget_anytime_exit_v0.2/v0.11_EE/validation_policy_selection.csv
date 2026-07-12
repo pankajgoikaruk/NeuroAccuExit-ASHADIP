@@ -1,0 +1,2 @@
+selection_status,validation_samples,threshold_mode,confidence_threshold,margin_threshold,require_exit1_exit2_label_set_agreement,allow_empty_stop,exit2_fraction,selection_parent_macro_f1,absolute_macro_f1_drop,estimated_flops_saved_pct,max_allowed_macro_f1_drop,minimum_exit2_fraction
+quality_constraint_met,1883,fixed_0p5,0.55,0.0,True,False,0.233139,0.892317,0.0103,14.982049,0.02,0.05
