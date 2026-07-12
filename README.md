@@ -38,6 +38,7 @@ The branch does not reopen the completed hint-pass or `pos_weight cap5` investig
 | Secondary frozen result | Direct coordinate re-optimisation; ablation only |
 | Standard hint-pass | Not selected for the current multi-label dataset |
 | `pos_weight cap5` | Not selected |
+| v0.10_1 low-energy recovery | Rejected as final; retained as a valid negative/diagnostic ablation |
 | Next experiment | Standard Early-Exit evaluation against the frozen baseline |
 | Future experiments | Budget-aware Early-Exit and anytime inference |
 
@@ -216,8 +217,47 @@ The new branch does not invalidate the earlier v0.10 analysis.
 | v0.10-specific LATS re-optimisation recovered performance | Retained |
 | Standard hint-pass did not beat no-hint after recalibration | Retained as a negative result |
 | `pos_weight cap5` did not improve the final outcome | Retained as a negative result |
+| v0.10_1 low-energy recovery did not beat the selected v0.10 no-hint result | Retained as a valid negative/diagnostic ablation |
 | Label-specific parent-level inference was more useful than the tested architecture changes | Retained |
 | No-hint v0.10 produced the strongest branch-specific full-depth reference | Adopted for this branch |
+
+---
+
+## Historical v0.10_1 low-energy recovery ablation
+
+The `v0.10_1` experiment tested whether adding manually reviewed low-energy
+one-second TATA-LAWYER samples could improve difficult labels such as
+`silence_present` and `audience_reaction_present`.
+
+Build summary:
+
+```text
+base_rows = 29,363
+selected_low_energy_rows = 667
+final_rows = 30,030
+holdout_parent_overlap = 0
+feature_resolution_mode = feat_relpath
+```
+
+Final parent-level LATS-v2 result:
+
+| Metric | v0.10_1 result |
+|---|---:|
+| Macro-F1 | 0.8581 |
+| Micro-F1 | 0.9446 |
+| Samples-F1 | 0.9519 |
+| Exact Match | 0.8570 |
+| Hamming Loss ↓ | 0.0160 |
+| Average predicted labels | 1.4268 |
+
+The experiment was valid but did not beat the canonical v0.10 no-hint result.
+It remains part of the project record as a negative/diagnostic ablation.
+
+Detailed documentation is retained under:
+
+```text
+docs/v0.10_1/
+```
 
 ---
 

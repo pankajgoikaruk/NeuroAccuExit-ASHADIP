@@ -23,6 +23,7 @@ This document indexes the branch-specific documentation for the next NeuroAccuEx
 | `README.md` | Authoritative project summary for the active branch, canonical baseline, roadmap, evaluation protocol, and paper-ready statement |
 | `DOC_STRUCTURE.md` | This documentation and artifact index |
 | `docs/v0.10/` | Historical v0.10 experiment documentation |
+| `docs/v0.10_1/` | Historical low-energy recovery ablation plan and final results |
 | `docs/tables/agentic_data_preprocessing_v0.10/` | Historical v0.10 tables, configurations, and diagnostic outputs |
 | `docs/archive/` | Archived documentation from earlier project states |
 
@@ -181,11 +182,33 @@ The secondary result is retained for trade-off analysis and must not replace the
 | `docs/v0.10/RESEARCH_FINDINGS.md` | Historical research questions and outcomes |
 | `docs/v0.10/PS_COMMANDS.md` | Historical PowerShell commands |
 
+
+### v0.10_1 files
+
+| File | Purpose |
+|---|---|
+| `docs/v0.10_1/LOW_ENERGY_RECOVERY_ABLATION_PLAN.md` | Non-destructive plan for the reviewed low-energy recovery experiment |
+| `docs/v0.10_1/LOW_ENERGY_RECOVERY_ABLATION_RESULTS.md` | Final metrics, comparison, interpretation, and rejection decision |
+
+The v0.10_1 result was:
+
+| Metric | Value |
+|---|---:|
+| Macro-F1 | 0.8581 |
+| Micro-F1 | 0.9446 |
+| Samples-F1 | 0.9519 |
+| Exact Match | 0.8570 |
+| Hamming Loss ↓ | 0.0160 |
+
+It is retained as a valid negative/diagnostic ablation and is not the
+full-depth baseline for the active-budget branch.
+
+
 ### Historical tables
 
 | Path | Purpose |
 |---|---|
-| `docs/tables/agentic_data_preprocessing_v0.10/` | v0.9_4/v0.10 comparisons, seed stability, hint-pass, and weighting outputs |
+| `docs/tables/agentic_data_preprocessing_v0.10/` | v0.9_4/v0.10 comparisons, seed stability, hint-pass, weighting, and related diagnostic outputs |
 | `docs/archive/` | Snapshots of earlier README and structure documents |
 
 Historical records remain valid. Their previous overall decision is not silently rewritten. The active branch simply defines a new branch-specific comparator for Early-Exit and budget experiments.
