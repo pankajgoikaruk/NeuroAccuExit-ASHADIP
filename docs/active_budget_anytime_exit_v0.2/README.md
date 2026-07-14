@@ -1,190 +1,225 @@
 # Active Budget and Anytime Exit v0.2
 
-## Branch
+## Scope
+
+Branch:
 
 ```text
 active_budget_anytime_exit_v0.2
 ```
 
-Source branch:
+This branch studies real adaptive inference for the trained human-talk multi-label NeuroAccuExit model:
+
+1. fixed-exit quality across network depth;
+2. standard sample-wise Dynamic Early-Exit;
+3. budget-aware stopping;
+4. anytime quality-versus-cost evaluation.
+
+The v0.11 milestone is complete. No retraining was performed for this milestone.
+
+---
+
+## Canonical comparator
 
 ```text
-active_budget_anytime_exit_v0.1
+v0.10 no-hint + frozen historical LATS-v2 + Exit 3
 ```
-
-This branch is dedicated exclusively to:
-
-1. standard multi-label Early-Exit;
-2. budget-aware Early-Exit;
-3. anytime inference evaluation.
-
-The frozen v0.10 no-hint historical LATS-v2 result remains the sole canonical full-depth quality reference.
-
-## Canonical baseline
 
 | Metric | Value |
 |---|---:|
 | Macro-F1 | 0.8623815322333925 |
 | Micro-F1 | 0.9531311539976368 |
-| Samples-F1 | 0.9588894381281925 |
+| Samples-F1 | 0.9588894381281924 |
 | Exact Match | 0.8765859284890427 |
-| Hamming Loss | 0.013725490196078431 |
+| Hamming Loss ↓ | 0.0137254901960784 |
+| Average predicted labels | 1.4590542099192618 |
 | Average exit depth | 3.0 |
 | Compute saved | 0% |
 
-The historical value `1.4590542099192618` is average predicted labels per parent clip, not average exit depth.
+---
 
-## Repository audit
+## Architecture
 
-Most of the required foundation already exists and should be reused.
+The canonical model is one five-block TinyAudioCNN with taps after Blocks 1 and 3.
 
-| Existing component | Reuse decision |
+| Exit | Cumulative backbone |
 |---|---|
-| `adapters/audio_adapter.py` | Reuse the five ordered CNN blocks and configurable tap blocks. |
-| `models/exit_net.py` | Reuse trained early-exit heads, final head, and optional hint construction. Do not change the established training forward path. |
-| `utils/model_factory.py` | Reuse existing checkpoint-compatible model construction. Load the checkpoint before wrapping the model for staged inference. |
-| `scripts/multilabel_greedy_policy.py` | Reuse sigmoid probabilities, per-exit thresholds, multi-label metrics, fixed-exit metrics, label-set stability, exit distributions, and policy sweeps. Its current compute saving is a post-hoc depth proxy. |
-| `utils/profiling.py` | Reuse cumulative TinyAudioCNN FLOP estimates and latency timing utilities. Extend later for staged exit-specific latency. |
-| `policies/early_exit.py` | Legacy softmax/conformal policy; retain for historical compatibility but do not use directly as the main multi-label policy. |
-| `scripts/policy_test.py` | Legacy single-label greedy evaluator; useful as a structural reference, but it computes every exit before choosing one. |
-| Frozen v0.1 reproducibility package | Reuse unchanged as the full-depth baseline package. |
+| Exit 1 | Block 1 |
+| Exit 2 | Blocks 1–3 |
+| Exit 3 | Blocks 1–5 |
 
-## Confirmed implementation gap
+`models/anytime_exit_net.py` exposes staged execution while preserving the original `ExitNet.forward()` path.
 
-The existing backbone `forward()` executes all CNN blocks before returning the intermediate taps and final feature. Existing dynamic policy scripts therefore choose an exit after all exit outputs have already been computed.
+---
 
-That is valid for policy simulation but is not real computational Early-Exit.
+## Implemented components
 
-The first v0.2 implementation milestone is a staged path that can stop before deeper blocks execute.
+| Component | Status |
+|---|---|
+| Staged wrapper | Complete |
+| Three-exit no-hint equivalence tests | Complete |
+| Five-exit no-hint equivalence tests | Complete |
+| Hint-compatible equivalence tests | Complete |
+| Real checkpoint equivalence | PASS |
+| Always Exit 1/2/3 audit | Complete |
+| Validation-only policy tuning | Complete |
+| Genuine Exit-2/Exit-3 staged evaluation | Complete |
+| Budget-aware controller | Next |
+| Anytime evaluation | Planned |
 
-## Implemented in v0.2
+### Exact checkpoint equivalence
 
-### `models/anytime_exit_net.py`
-
-Adds an inference-only wrapper around the existing `ExitNet`.
-
-The wrapper:
-
-- adds no trainable parameters;
-- changes no trained weights;
-- preserves the original `ExitNet.forward()` for training and historical evaluation;
-- executes only the blocks needed to reach the next exit;
-- carries the feature map and optional hint between exits;
-- supports both the current three-exit model and configurable five-exit models;
-- exposes:
-
-```python
-logits1, state = anytime_model.start(x)
-logits2, state = anytime_model.continue_from(state)
-logits3, state = anytime_model.continue_from(state)
-```
-
-For the canonical `tap_blocks=(1, 3)` model:
+Across eight real corrected-holdout features:
 
 ```text
-Exit 1: block 1
-Exit 2: blocks 2-3
-Exit 3: blocks 4-5
+max logit difference at Exit 1 = 0.0
+max logit difference at Exit 2 = 0.0
+max logit difference at Exit 3 = 0.0
 ```
 
-A policy can now stop after Exit 1 or Exit 2 without invoking later blocks.
+---
 
-### `tests/test_anytime_exit_net.py`
+## Fixed-exit findings
 
-Adds numerical equivalence tests for:
+### Parent-level frozen LATS-v2 transfer
 
-- three-exit no-hint execution;
-- five-exit no-hint execution;
-- three-exit hint-compatible execution;
-- expected block and exit-state progression;
-- rejection of continuation after the final exit.
+| Exit | Macro-F1 | Micro-F1 | Samples-F1 | Exact | Hamming ↓ |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 0.1626 | 0.3877 | 0.2902 | 0.0577 | 0.1355 |
+| 2 | 0.6923 | 0.7760 | 0.7652 | 0.5156 | 0.0655 |
+| 3 | 0.8624 | 0.9531 | 0.9589 | 0.8766 | 0.0137 |
 
-Run from the repository root:
+Exit 1 is too weak for broad stopping. Exit 2 is the primary early-exit candidate.
+
+The Exit-1 and Exit-2 parent results transfer the historical Exit-3 LATS-v2 rules unchanged. They should not be described as exit-specific calibrated optima.
+
+---
+
+## First genuine Dynamic Early-Exit policy
+
+The first policy permits stopping only at Exit 2.
+
+```text
+Exit 1 → Exit 2
+             ├── reliable → stop
+             └── otherwise → Blocks 4–5 → Exit 3
+```
+
+Frozen validation rule:
+
+```text
+Exit 1 and Exit 2 label sets agree
+AND Exit 2 prediction is non-empty
+AND mean binary confidence >= 0.55
+AND minimum threshold margin >= 0.00
+```
+
+Segment thresholds use fixed 0.5 because the canonical run had no per-exit threshold-comparison artifact.
+
+### Validation selection
+
+| Item | Value |
+|---|---:|
+| Samples | 1,883 |
+| Exit-2 fraction | 23.31% |
+| Parent Macro-F1 | 0.892317 |
+| Macro-F1 drop | 0.0103 |
+| Estimated FLOPs saved | 14.98% |
+
+### Corrected holdout
+
+| Item | Value |
+|---|---:|
+| Segments | 4,335 |
+| Exit-2 samples | 508 |
+| Exit-3 samples | 3,827 |
+| Exit-2 fraction | 11.72% |
+| Average exit depth | 2.8828 |
+| Estimated FLOPs saved | 7.53% |
+| Dynamic model latency | 0.8552 ms/segment |
+| Parent Macro-F1 | 0.842248 |
+| Parent Micro-F1 | 0.935484 |
+| Parent Samples-F1 | 0.943577 |
+| Parent Exact Match | 0.838524 |
+| Parent Hamming Loss | 0.018916 |
+
+This is genuine compute skipping: Exit-2 samples never execute Blocks 4–5.
+
+---
+
+## Interpretation
+
+The first Dynamic Early-Exit policy demonstrates feasibility but is not the final operating point.
+
+Advantages:
+
+- real staged execution;
+- validation-only policy selection;
+- no holdout retuning;
+- measurable exit distribution;
+- reduced average depth;
+- estimated computation saving.
+
+Current limitations:
+
+- the policy is permissive (`confidence=0.55`, `margin=0.00`);
+- holdout Exit-2 coverage is lower than validation coverage;
+- parent Exit-2 decisions use thresholds designed for Exit 3;
+- same-protocol Always Exit 3 latency is still required;
+- Exit 1 is not used as a stopping point.
+
+---
+
+## Commands
+
+Fixed-exit audit:
 
 ```powershell
-conda activate ASHADIP_V0
-$env:PYTHONPATH = (Get-Location).Path
-python -m unittest tests.test_anytime_exit_net -v
+powershell -ExecutionPolicy Bypass `
+  -File ".\scripts\v0.11_EE\fixed_policy\run_v011_EE.ps1"
 ```
 
-Required result:
+Dynamic policy:
+
+```powershell
+powershell -ExecutionPolicy Bypass `
+  -File ".\scripts\v0.11_EE\dynamic_policy\run_dynamic_v011_EE.ps1"
+```
+
+Use a stricter validation quality constraint:
+
+```powershell
+powershell -ExecutionPolicy Bypass `
+  -File ".\scripts\v0.11_EE\dynamic_policy\run_dynamic_v011_EE.ps1" `
+  -MaxMacroF1Drop 0.01
+```
+
+Use an already frozen policy:
+
+```powershell
+powershell -ExecutionPolicy Bypass `
+  -File ".\scripts\v0.11_EE\dynamic_policy\run_dynamic_v011_EE.ps1" `
+  -SkipPrechecks `
+  -SkipTuning
+```
+
+---
+
+## Documentation package
 
 ```text
-OK
+docs/tables/active_budget_anytime_exit_v0.2/v0.11_EE/
 ```
 
-The tests compare staged logits with the unchanged full-forward logits using strict floating-point tolerances.
+This package contains experiment setup, paper-ready wording, exact compact result tables, checkpoint-equivalence evidence, PowerShell commands, and a machine-readable manifest.
 
-## Checkpoint usage
+---
 
-Build and load the existing model exactly as before, then wrap it:
+## Next milestone
 
-```python
-base_model = build_audio_exit_net(
-    num_classes=num_classes,
-    n_mels=n_mels,
-    tap_blocks=(1, 3),
-    model_cfg=run_model_cfg,
-)
-base_model.load_state_dict(checkpoint)
-base_model.eval()
+The next main experiment is budget-aware Early-Exit.
 
-anytime_model = AnytimeExitNet(base_model)
-anytime_model.eval()
-```
-
-Do not load the historical checkpoint directly into the wrapper, because the checkpoint belongs to the underlying `ExitNet` state dictionary.
-
-## Next implementation sequence
-
-### Milestone 1 — staged equivalence on the canonical checkpoint
-
-Run the staged/full equivalence test with the actual canonical no-hint checkpoint and representative holdout batches.
-
-Required checks:
-
-```text
-staged Exit 1 logits == full-forward Exit 1 logits
-staged Exit 2 logits == full-forward Exit 2 logits
-staged Exit 3 logits == full-forward Exit 3 logits
-```
-
-### Milestone 2 — fixed-exit quality audit
-
-Export and evaluate:
-
-```text
-Always Exit 1
-Always Exit 2
-Always Exit 3
-```
-
-At segment and parent level.
-
-Initially transfer the frozen historical LATS-v2 parent rules to all exits and label those results clearly as a frozen-policy transfer diagnostic. Do not claim that the historical Exit 3 thresholds are optimal for Exit 1 or Exit 2.
-
-### Milestone 3 — standard Early-Exit
-
-Reuse the existing multi-label policy utilities and add a staged stopping controller based on validation-selected combinations of:
-
-- label-set stability;
-- per-label threshold margin;
-- confidence summaries;
-- probability-vector change;
-- empty-label-set safeguards.
-
-### Milestone 4 — cost model
-
-Extend the existing profiling code to report:
-
-- cumulative FLOPs at each exit;
-- incremental FLOPs between exits;
-- batch-size-1 CPU latency by exit;
-- normalized cost relative to Exit 3.
-
-### Milestone 5 — budget-aware Early-Exit
-
-Add explicit stop reasons:
+Required controller decisions:
 
 ```text
 reliable_early_exit
@@ -192,18 +227,4 @@ budget_forced_exit
 final_exit
 ```
 
-The controller must compare the remaining budget with the incremental cost of reaching the next exit.
-
-### Milestone 6 — anytime evaluation
-
-Evaluate several normalized computation budgets and create quality-versus-cost Pareto curves.
-
-## Rules for this branch
-
-- Do not reopen hint-pass or low-energy recovery as primary experiments.
-- Do not alter the canonical frozen baseline.
-- Do not call post-hoc exit selection real compute saving.
-- Tune policy thresholds on validation/calibration data only.
-- Preserve per-label metrics, especially for rare/context labels.
-- Keep the existing training path backward-compatible.
-- Maintain Windows PowerShell commands and complete experiment records.
+The controller must compare the remaining budget with the incremental cost of the next stage. Anytime evaluation will then report quality at multiple normalized budgets.

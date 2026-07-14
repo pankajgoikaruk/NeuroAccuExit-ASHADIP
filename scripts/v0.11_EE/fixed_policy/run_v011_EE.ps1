@@ -42,6 +42,10 @@ if ([string]::IsNullOrWhiteSpace($RunDir)) {
     $RunDir = $RunMatches[0].FullName
 }
 
+$FixedPolicyScriptRoot = "scripts\v0.11_EE\fixed_policy"
+$VerifyScript = "$FixedPolicyScriptRoot\verify_checkpoint_equivalence_v011.py"
+$EvaluateFixedScript = "$FixedPolicyScriptRoot\evaluate_fixed_exits_v011.py"
+
 $HoldoutManifest = "human_talk_workspace\tata_v0.8_human_corrected_balanced_pipeline\corrected_holdout\multilabel_features_manifest_CORRECTED_LABELS.csv"
 $FeaturesRoot = "human_talk_workspace\tata_v0.6_raw_pipeline\final_holdout_feature_cache\features"
 $LabelsJson = "configs\human_talk_10label_schema.json"
@@ -57,8 +61,9 @@ $RequiredPaths = @(
     $LabelsJson,
     $LatsConfig,
     "models\anytime_exit_net.py",
-    "scripts\v0.11_EE\verify_checkpoint_equivalence_v011.py",
-    "scripts\v0.11_EE\evaluate_fixed_exits_v011.py",
+    "tests\test_anytime_exit_net.py",
+    $VerifyScript,
+    $EvaluateFixedScript,
     "scripts\v0.10\evaluate_frozen_lats_config_v010.py"
 )
 
@@ -71,8 +76,8 @@ foreach ($Path in $RequiredPaths) {
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 New-Item -ItemType Directory -Force -Path (Split-Path $EquivalenceJson -Parent) | Out-Null
 
-Write-Host "" 
-Write-Host "=== NeuroAccuExit v0.11_EE ===" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "=== NeuroAccuExit v0.11_EE Fixed-Exit Audit ===" -ForegroundColor Cyan
 Write-Host "Branch:            $CurrentBranch"
 Write-Host "Run directory:     $RunDir"
 Write-Host "Holdout manifest:  $HoldoutManifest"
@@ -94,7 +99,7 @@ else {
 
 Write-Host "[2/3] Verifying canonical checkpoint equivalence..." -ForegroundColor Yellow
 $VerifyArgs = @(
-    "scripts\v0.11_EE\verify_checkpoint_equivalence_v011.py",
+    $VerifyScript,
     "--run_dir", $RunDir,
     "--labels_json", $LabelsJson,
     "--holdout_manifest", $HoldoutManifest,
@@ -110,7 +115,7 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host "[3/3] Evaluating Always Exit 1 / Exit 2 / Exit 3..." -ForegroundColor Yellow
 $EvalArgs = @(
-    "scripts\v0.11_EE\evaluate_fixed_exits_v011.py",
+    $EvaluateFixedScript,
     "--run_dir", $RunDir,
     "--holdout_manifest", $HoldoutManifest,
     "--features_root", $FeaturesRoot,
@@ -131,7 +136,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host ""
-Write-Host "V0.11_EE completed successfully." -ForegroundColor Green
+Write-Host "V0.11_EE fixed-exit audit completed successfully." -ForegroundColor Green
 Write-Host "Equivalence report: $EquivalenceJson"
 Write-Host "Fixed-exit outputs: $OutDir"
 Write-Host ""
