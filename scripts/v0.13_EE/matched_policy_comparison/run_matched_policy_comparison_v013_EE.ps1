@@ -5,12 +5,7 @@ param(
     [double]$MaxMacroF1Drop = 0.01,
     [double]$MinExit2Fraction = 0.02,
     [double]$DerivationFraction = 0.70,
-    [ValidateSet(
-        "auto",
-        "tuned_per_exit",
-        "final_exit_tuned",
-        "fixed_0p5"
-    )]
+    [ValidateSet("auto", "tuned_per_exit", "final_exit_tuned", "fixed_0p5")]
     [string]$ThresholdMode = "auto",
     [switch]$SkipPrechecks,
     [switch]$SkipTuning,
@@ -52,32 +47,23 @@ if ([string]::IsNullOrWhiteSpace($RunDir)) {
     $RunDir = $Matches[0].FullName
 }
 
-$ThresholdComparison = Join-Path `
-    $RunDir `
-    "threshold_tuning\threshold_comparison.json"
-
+$ThresholdComparison = Join-Path $RunDir "threshold_tuning\threshold_comparison.json"
 if ($ThresholdMode -eq "auto") {
     if (Test-Path $ThresholdComparison) {
         $ResolvedThresholdMode = "tuned_per_exit"
     }
     else {
         $ResolvedThresholdMode = "fixed_0p5"
-        Write-Host "[INFO] Per-exit tuned thresholds were not found." `
-            -ForegroundColor DarkYellow
-        Write-Host "[INFO] Using fixed_0p5 for segment-level exit decisions." `
-            -ForegroundColor DarkYellow
-        Write-Host "[INFO] Strategy selection still uses frozen LATS-v2 parent metrics." `
-            -ForegroundColor DarkYellow
+        Write-Host "[INFO] Per-exit tuned thresholds were not found." -ForegroundColor DarkYellow
+        Write-Host "[INFO] Using fixed_0p5 for segment-level exit decisions." -ForegroundColor DarkYellow
+        Write-Host "[INFO] Strategy selection still uses frozen LATS-v2 parent metrics." -ForegroundColor DarkYellow
     }
 }
 else {
     $ResolvedThresholdMode = $ThresholdMode
 }
 
-if (
-    $ResolvedThresholdMode -eq "tuned_per_exit" `
-    -and -not (Test-Path $ThresholdComparison)
-) {
+if ($ResolvedThresholdMode -eq "tuned_per_exit" -and -not (Test-Path $ThresholdComparison)) {
     throw "ThresholdMode=tuned_per_exit requires: $ThresholdComparison"
 }
 
@@ -121,15 +107,10 @@ foreach ($Path in $RequiredPaths) {
     }
 }
 
-New-Item `
-    -ItemType Directory `
-    -Force `
-    -Path $TuningOut, $HoldoutOut |
-Out-Null
+New-Item -ItemType Directory -Force -Path $TuningOut, $HoldoutOut | Out-Null
 
 Write-Host ""
-Write-Host "=== NeuroAccuExit v0.13 Matched Early-Exit Strategy Comparison ===" `
-    -ForegroundColor Cyan
+Write-Host "=== NeuroAccuExit v0.13 Matched Early-Exit Strategy Comparison ===" -ForegroundColor Cyan
 Write-Host "Branch:               $CurrentBranch"
 Write-Host "Canonical run:        $RunDir"
 Write-Host "Device:               $Device"
@@ -142,8 +123,7 @@ Write-Host "Holdout output:       $HoldoutOut"
 Write-Host ""
 
 if (-not $SkipPrechecks) {
-    Write-Host "[1/4] Running staged and policy-comparison tests..." `
-        -ForegroundColor Yellow
+    Write-Host "[1/4] Running staged and policy-comparison tests..." -ForegroundColor Yellow
     python -m unittest `
         tests.test_anytime_exit_net `
         tests.test_label_aware_early_exit_policy `
@@ -153,8 +133,7 @@ if (-not $SkipPrechecks) {
         throw "Unit tests failed."
     }
 
-    Write-Host "[2/4] Rechecking checkpoint staged equivalence..." `
-        -ForegroundColor Yellow
+    Write-Host "[2/4] Rechecking checkpoint staged equivalence..." -ForegroundColor Yellow
     $VerifyArgs = @(
         $VerifyScript,
         "--run_dir", $RunDir,
@@ -171,16 +150,12 @@ if (-not $SkipPrechecks) {
     }
 }
 else {
-    Write-Host "[1/4] Unit tests skipped." `
-        -ForegroundColor DarkYellow
-    Write-Host "[2/4] Checkpoint equivalence skipped." `
-        -ForegroundColor DarkYellow
+    Write-Host "[1/4] Unit tests skipped." -ForegroundColor DarkYellow
+    Write-Host "[2/4] Checkpoint equivalence skipped." -ForegroundColor DarkYellow
 }
 
 if (-not $SkipTuning) {
-    Write-Host "[3/4] Training derivation-only gate and selecting all strategies on matched validation subset..." `
-        -ForegroundColor Yellow
-
+    Write-Host "[3/4] Training derivation-only gate and selecting all strategies on matched validation subset..." -ForegroundColor Yellow
     $TuneArgs = @(
         $TuneScript,
         "--run_dir", $RunDir,
@@ -213,8 +188,7 @@ if (-not $SkipTuning) {
     }
 }
 else {
-    Write-Host "[3/4] Validation tuning skipped; reusing frozen comparison." `
-        -ForegroundColor DarkYellow
+    Write-Host "[3/4] Validation tuning skipped; reusing frozen comparison." -ForegroundColor DarkYellow
     if (-not (Test-Path $FrozenComparison)) {
         throw "SkipTuning was used, but frozen comparison does not exist: $FrozenComparison"
     }
@@ -223,8 +197,7 @@ else {
     }
 }
 
-Write-Host "[4/4] Running six matched staged holdout evaluations..." `
-    -ForegroundColor Yellow
+Write-Host "[4/4] Running six matched staged holdout evaluations..." -ForegroundColor Yellow
 $EvaluateArgs = @(
     $EvaluateScript,
     "--run_dir", $RunDir,
@@ -247,12 +220,10 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host ""
-Write-Host "V0.13 matched strategy comparison completed." `
-    -ForegroundColor Green
+Write-Host "V0.13 matched strategy comparison completed." -ForegroundColor Green
 Write-Host "Frozen comparison: $FrozenComparison"
 Write-Host "Logistic gate:     $GateModel"
 Write-Host "Validation:        $TuningOut"
 Write-Host "Holdout:           $HoldoutOut"
 Write-Host ""
-Write-Host "All five policies used identical selection constraints; the corrected holdout was never retuned." `
-    -ForegroundColor DarkYellow
+Write-Host "All five policies used identical selection constraints; the corrected holdout was never retuned." -ForegroundColor DarkYellow
