@@ -27,6 +27,7 @@ Historical records remain authoritative for their own versions and must not be s
 | `DOC_STRUCTURE.md` | This documentation and artifact index |
 | `docs/active_budget_anytime_exit_v0.4/README.md` | Detailed branch-level experiment overview |
 | `docs/active_budget_anytime_exit_v0.4/VERSION_HISTORY.md` | Version-to-implementation and research-question traceability from v0.11 to v0.16 |
+| `docs/active_budget_anytime_exit_v0.4/DOCUMENTATION_UPDATE_SUMMARY.md` | Documentation audit, result provenance, confirmed-versus-interpretive separation, and file-by-file update summary |
 | `docs/tables/active_budget_anytime_exit_v0.4/README.md` | v0.4 compact-results package index |
 | `docs/tables/active_budget_anytime_exit_v0.4/v0.16_EE/` | Complete committed v0.16 experiment record |
 | `docs/tables/active_budget_anytime_exit_v0.1/full_depth_baselines/` | Frozen full-depth baseline reproducibility package |
@@ -113,6 +114,18 @@ This includes full segment predictions, parent probability tables, and complete 
 
 ---
 
+## Confirmed-result and interpretation convention
+
+Every v0.16 document should keep the following categories separate:
+
+- **Confirmed measurements:** values directly produced by the frozen validation and corrected-holdout runs.
+- **Interpretation:** explanations for validation-to-holdout transfer, difficult-label behaviour, or controller aggressiveness.
+- **Future work:** safety-buffered Pareto-knee selection, new calibration/evaluation splits, explicit budget sweeps, and label-wise asynchronous exit.
+
+Future-work proposals must not be described as completed v0.16 contributions.
+
+---
+
 ## Documentation rules
 
 1. Always identify the canonical comparator as v0.10 no-hint + frozen historical LATS-v2 + Always Exit 3.
@@ -127,6 +140,8 @@ This includes full segment predictions, parent probability tables, and complete 
 10. Label learned gate/controller training separately from backbone training.
 11. Do not call v0.16 a full anytime controller; it selects one frozen operating point.
 12. Do not call v0.16 the deployment winner; v0.13 remains the quality-constrained adaptive baseline.
+13. Keep confirmed results, interpretation, and future work explicitly separated.
+14. Record that no v0.16 backbone-training command exists because the canonical checkpoint is frozen.
 
 ---
 
@@ -137,6 +152,7 @@ This includes full segment predictions, parent probability tables, and complete 
 | Root branch README | Updated through v0.16 |
 | Root documentation index | Updated through v0.16 |
 | v0.4 branch overview | Complete |
+| Documentation audit/changelog | Complete |
 | v0.11–v0.16 version traceability | Complete |
 | v0.16 theory and setup | Complete |
 | v0.16 validation/Pareto records | Complete |
