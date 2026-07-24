@@ -1,12 +1,8 @@
-# NeuroAccuExit-ASHADIP — Active Budget and Anytime Exit v0.2
+# NeuroAccuExit-ASHADIP — Active Budget and Anytime Exit v0.4
 
-This branch develops computationally adaptive inference for the human-talk multi-label NeuroAccuExit model. The work is organized into three stages:
+This branch studies **genuine computation-adaptive inference** for the frozen human-talk multi-label NeuroAccuExit model. It inherits the staged-inference work from v0.2/v0.3 and completes the v0.16 multi-objective optimisation milestone.
 
-1. standard sample-wise Early-Exit;
-2. budget-aware Early-Exit;
-3. anytime inference across explicit computation budgets.
-
-The **v0.11_EE milestone is complete**. It establishes numerically equivalent staged inference, audits the quality available at each fixed exit, and demonstrates genuine runtime compute skipping with a validation-frozen Exit-2/Exit-3 policy.
+The branch does not retrain the TinyAudioCNN backbone or exit heads. It reuses the canonical three-exit checkpoint and changes only inference-time stopping policies, validation-time controller fitting, and policy optimisation.
 
 ---
 
@@ -14,41 +10,38 @@ The **v0.11_EE milestone is complete**. It establishes numerically equivalent st
 
 | Item | Value |
 |---|---|
-| Git branch | `active_budget_anytime_exit_v0.2` |
-| Documentation name | **NeuroAccuExit — Active Budget and Anytime Exit v0.2** |
-| Source branch | `active_budget_anytime_exit_v0.1` |
-| Task | Human-talk multi-label speaker/context detection |
-| Current milestone | v0.11 fixed-exit audit and genuine Dynamic Early-Exit complete |
-| Next milestone | Budget-aware Early-Exit |
-| Later milestone | Anytime inference and quality-versus-cost curves |
-
-This branch does not retrain the canonical model for v0.11. It reuses the trained three-exit network and changes only the inference path and stopping policy.
+| Git branch | `active_budget_anytime_exit_v0.4` |
+| Source branch | `active_budget_anytime_exit_v0.3` |
+| Task | 10-label human-talk speaker/context classification |
+| Canonical checkpoint | `main_v010_human_corrected_balanced_3exit_no_hint_20260703_201845` |
+| Current completed milestone | `v0.16_EE` multi-objective per-label margin optimisation |
+| Current adaptive baseline | `v0.13_EE` per-label margin policy |
+| Full-quality reference | Always Exit 3 + frozen historical LATS-v2 |
+| Full integration status | Complete on the real checkpoint, validation data, corrected holdout, and 30-repeat CPU timing |
 
 ---
 
 ## Canonical full-depth reference
 
-All Early-Exit experiments are compared against:
+All adaptive experiments are compared with:
 
 ```text
 v0.10 no-hint + frozen historical LATS-v2 + Exit 3 probabilities
 ```
 
-| Metric | Exact value | Paper value |
-|---|---:|---:|
-| Macro-F1 | 0.8623815322333925 | **0.8624** |
-| Micro-F1 | 0.9531311539976368 | **0.9531** |
-| Samples-F1 | 0.9588894381281924 | **0.9589** |
-| Exact Match | 0.8765859284890427 | **0.8766** |
-| Hamming Loss ↓ | 0.0137254901960784 | **0.0137** |
-| Average predicted labels per parent | 1.4590542099192618 | 1.4591 |
-| Average exit depth | 3.0 | 3.0 |
-| Compute saved | 0% | 0% |
-| Parent clips | 867 | 867 |
+| Metric | Value |
+|---|---:|
+| Parent Macro-F1 | 0.862382 |
+| Parent Micro-F1 | 0.953131 |
+| Parent Samples-F1 | 0.958889 |
+| Parent Exact Match | 0.876586 |
+| Parent Hamming Loss ↓ | 0.013725 |
+| Average exit depth | 3.000000 |
+| Estimated FLOPs saved | 0% |
+| 30-repeat CPU latency | 1.522200 ms/segment |
+| Parent clips | 867 |
 
-`1.4591` is the average number of predicted positive labels per parent clip. It is not average exit depth.
-
-The complete frozen baseline package remains at:
+The frozen reproducibility package remains under:
 
 ```text
 docs/tables/active_budget_anytime_exit_v0.1/full_depth_baselines/
@@ -56,286 +49,249 @@ docs/tables/active_budget_anytime_exit_v0.1/full_depth_baselines/
 
 ---
 
-## Model architecture used by v0.11
+## Architecture and genuine staged inference
 
-The canonical checkpoint uses one five-block TinyAudioCNN backbone with two intermediate taps:
+The canonical model is one five-block TinyAudioCNN with intermediate heads after Blocks 1 and 3:
 
-```text
-tap_blocks = (1, 3)
-```
-
-This produces three cumulative exits:
-
-| Exit | Backbone computation reached | Additional blocks from previous exit |
+| Exit | Cumulative backbone | Increment from previous exit |
 |---|---|---|
 | Exit 1 | Block 1 | Block 1 |
 | Exit 2 | Blocks 1–3 | Blocks 2–3 |
 | Exit 3 | Blocks 1–5 | Blocks 4–5 |
 
-The model is not three independent CNNs. It is one shared backbone with intermediate heads.
+`models/anytime_exit_net.py` executes the network incrementally. A sample accepted at Exit 2 does not execute Blocks 4–5. Checkpoint equivalence passed at all exits with maximum absolute logit and probability differences equal to `0.0`.
+
+Recorded cumulative FLOPs:
+
+| Exit | Cumulative FLOPs | Normalized cost |
+|---|---:|---:|
+| Exit 1 | 1,861,952 | 0.0361 |
+| Exit 2 | 18,451,072 | 0.3574 |
+| Exit 3 | 51,629,312 | 1.0000 |
+
+For an Exit-2 stopping fraction `q`, the architecture-based saving is:
+
+```text
+saving(q) = q × (1 − FLOPs_exit2 / FLOPs_exit3)
+          = q × 64.2624%
+```
 
 ---
 
-## Genuine staged inference
+## Version traceability
 
-`models/anytime_exit_net.py` wraps the existing trained `ExitNet` without adding parameters or changing weights.
+| Version | Implementation | Research question | Main outcome |
+|---|---|---|---|
+| `v0.11_EE` | Staged wrapper, fixed exits, global Exit-2/3 rule | Can the trained model genuinely skip deeper blocks without changing exit outputs? | Yes; 7.53% estimated FLOPs saved, but substantial quality loss. |
+| `v0.12_EE` | Validation-derived label-risk continuation rule | Do labels that benefit more from Exit 3 require stronger continuation protection? | Slightly improved v0.11 quality; matched-policy advantage not established. |
+| `v0.13_EE` | Matched global, delta, label-risk, per-label-margin, and logistic policies | Which lightweight or learned policy gives the best matched quality-compute trade-off? | Per-label margin became the strongest quality-constrained adaptive baseline. |
+| `v0.14_EE` | Parent-aware counterfactual gates; Exit-1 ablation | Can parent-aware harm targets improve stopping safety, and is Exit 1 useful? | No robust Exit-2 gate; Exit 1 preserved quality but stopped too rarely and slowed inference. |
+| `v0.15_EE` | Whole-parent nonparametric and shared-logistic risk control | Does one joint parent decision remove multi-segment interaction errors? | Quality was preserved, but coverage and compute saving were negligible; controllers were slower. |
+| `v0.16_EE` | Constraint-aware NSGA-II-style optimisation of per-label margins | Can multi-objective search improve the lightweight policy and produce real speedup while preserving quality? | Meaningful compute and 1.015× CPU speedup achieved, but holdout quality constraints failed. |
 
-```python
-logits1, state = anytime_model.start(x)
-logits2, state = anytime_model.continue_from(state)
-logits3, state = anytime_model.continue_from(state)
-```
-
-A stopped sample does not execute later blocks. For example, a sample accepted at Exit 2 never executes Blocks 4–5.
-
-The historical full-forward training and evaluation path remains unchanged.
-
-### Numerical equivalence
-
-The real canonical checkpoint was tested on eight corrected-holdout features with shape:
-
-```text
-[8, 1, 64, 101]
-```
-
-For all three exits:
-
-```text
-maximum absolute logit difference       = 0.0
-mean absolute logit difference          = 0.0
-maximum absolute probability difference = 0.0
-```
-
-All staged-wrapper unit tests also passed.
+Detailed version history: `docs/active_budget_anytime_exit_v0.4/VERSION_HISTORY.md`.
 
 ---
 
-## v0.11 fixed-exit quality audit
+## v0.16 method
 
-The same 4,335 corrected-holdout segments were evaluated under three separate scenarios:
+The chromosome contains 12 parameters:
 
 ```text
-Always Exit 1
-Always Exit 2
-Always Exit 3
+θ = [confidence threshold,
+     maximum Exit-1→Exit-2 probability delta,
+     ten label-specific Exit-2 decision margins]
 ```
 
-### Segment-level results at threshold 0.5
+For Exit `e` and label `l`:
 
-| Exit | Macro-F1 | Micro-F1 | Samples-F1 | Exact Match | Hamming ↓ | Avg predicted labels |
-|---:|---:|---:|---:|---:|---:|---:|
-| 1 | 0.1208 | 0.2941 | 0.1915 | 0.0323 | 0.1334 | 0.4210 |
-| 2 | 0.5978 | 0.7035 | 0.6328 | 0.4422 | 0.0782 | 1.1663 |
-| 3 | 0.7377 | 0.8793 | 0.8713 | 0.7384 | 0.0341 | 1.3596 |
+```text
+binary confidence = max(p_e,l, 1 − p_e,l)
+margin_e,l        = |p_e,l − threshold_e,l|
+delta_l           = |p_2,l − p_1,l|
+```
 
-### Parent-level frozen LATS-v2 transfer
+A segment stops at Exit 2 only when:
 
-The historical Exit-3 LATS-v2 aggregation methods and thresholds were transferred unchanged to Exit 1 and Exit 2 for diagnostic comparison.
+1. Exit 1 and Exit 2 thresholded label sets agree;
+2. the Exit-2 prediction is non-empty;
+3. mean binary confidence exceeds the optimised threshold;
+4. maximum Exit-1→Exit-2 probability change is below the optimised limit;
+5. every label-specific margin exceeds its own optimised value.
 
-| Method | Macro-F1 | Micro-F1 | Samples-F1 | Exact Match | Hamming ↓ | Avg predicted labels |
-|---|---:|---:|---:|---:|---:|---:|
-| Always Exit 1 | 0.1626 | 0.3877 | 0.2902 | 0.0577 | 0.1355 | 0.7439 |
-| Always Exit 2 | 0.6923 | 0.7760 | 0.7652 | 0.5156 | 0.0655 | 1.4556 |
-| Always Exit 3 | **0.8624** | **0.9531** | **0.9589** | **0.8766** | **0.0137** | 1.4591 |
+Otherwise Blocks 4–5 run and Exit 3 is used.
 
-These Exit-1 and Exit-2 parent results are **policy-transfer diagnostics**, not exit-specific calibrated optima.
-
-Main finding:
-
-> Exit 1 is too weak for routine stopping. Exit 2 contains useful early decisions but still requires selective escalation to Exit 3.
+The optimiser simultaneously maximises estimated FLOP saving and minimises robust degradation in Parent Macro-F1, Micro-F1, Exact Match, and Hamming Loss. Candidate quality is evaluated with five parent-grouped folds and one-sided upper confidence bounds (`z=1.645`).
 
 ---
 
-## v0.11 genuine Dynamic Early-Exit
+## v0.16 settings
 
-The first staged policy intentionally permits stopping only at Exit 2:
-
-```text
-Exit 1
-  ↓
-Exit 2
-  ↓
-reliable? ── yes → stop at Exit 2
-         └─ no  → execute Blocks 4–5 and use Exit 3
-```
-
-Exit 2 is accepted when:
-
-1. Exit 1 and Exit 2 produce the same thresholded label set;
-2. the Exit 2 label set is non-empty;
-3. Exit 2 mean binary confidence satisfies the frozen threshold;
-4. the Exit 2 decision-margin condition is satisfied.
-
-### Validation-selected policy
-
-| Setting | Frozen value |
+| Setting | Value |
 |---|---:|
+| Population size | 80 |
+| Generations | 50 |
+| Random seed | 42 |
+| Unique candidates evaluated | 4,078 |
+| Pareto candidates | 20 |
+| Parent-grouped validation folds | 5 |
+| Validation segments / parents | 1,883 / 304 |
+| Holdout segments / parents | 4,335 / 867 |
 | Segment threshold mode | `fixed_0p5` |
-| Confidence threshold | 0.55 |
-| Minimum decision margin | 0.00 |
-| Exit 1–Exit 2 label-set agreement | required |
-| Empty prediction allowed to stop | no |
-| Maximum validation Macro-F1 drop | 0.02 |
-| Minimum validation Exit-2 fraction | 0.05 |
+| Batch size | 128 |
+| Device | CPU |
+| Torch/BLAS threads | 1 |
+| Publication timing repetitions | 30 |
+| Maximum validation Macro-F1 drop | 0.010 |
+| Maximum validation Micro-F1 drop | 0.005 |
+| Maximum validation Exact-Match drop | 0.010 |
+| Maximum validation Hamming increase | 0.002 |
+| Minimum validation Exit-2 fraction | 0.020 |
 
-The canonical run did not contain `threshold_tuning/threshold_comparison.json`; therefore the v0.11 runner automatically used fixed 0.5 segment thresholds. Policy selection still used frozen LATS-v2 parent-level validation performance.
+No new model training was performed. The optimiser searched policy parameters over frozen Exit-1/2/3 predictions and then evaluated the frozen selected policy using genuine staged inference.
 
-Validation selection result:
+---
 
-| Metric | Value |
+## Selected v0.16 policy
+
+| Parameter | Value |
 |---|---:|
-| Validation samples | 1,883 |
-| Exit-2 fraction | 23.31% |
-| Parent Macro-F1 | 0.892317 |
-| Absolute Macro-F1 drop | 0.0103 |
-| Estimated FLOPs saved | 14.98% |
-| Selection status | `quality_constraint_met` |
+| Mean confidence threshold | 0.678603 |
+| Maximum probability delta | 0.937178 |
+| Label-set agreement | required |
+| Empty Exit-2 prediction | cannot stop |
 
-### Corrected-holdout result
-
-| Metric | Dynamic v0.11 |
+| Label | Minimum Exit-2 margin |
 |---|---:|
-| Segments | 4,335 |
-| Parent clips | 867 |
-| Exit-2 samples | 508 |
-| Exit-3 samples | 3,827 |
-| Exit-2 fraction | 11.72% |
-| Average exit depth | 2.8828 |
-| Estimated FLOPs saved | 7.53% |
-| Model latency per segment | 0.8552 ms |
-| Segment Macro-F1 | 0.721297 |
-| Parent Macro-F1 | 0.842248 |
-| Parent Micro-F1 | 0.935484 |
-| Parent Samples-F1 | 0.943577 |
-| Parent Exact Match | 0.838524 |
-| Parent Hamming Loss ↓ | 0.018916 |
-| Parent average predicted labels | 1.462514 |
+| `Brene_Brown` | 0.004844 |
+| `Eckhart_Tolle` | 0.003097 |
+| `Eric_Thomas` | 0.024152 |
+| `Gary_Vee` | 0.240167 |
+| `Jay_Shetty` | 0.025998 |
+| `Nick_Vujicic` | 0.181231 |
+| `other_speaker_present` | 0.115068 |
+| `music_present` | 0.005948 |
+| `audience_reaction_present` | 0.122540 |
+| `silence_present` | 0.009552 |
 
-Only the 3,827 samples assigned to Exit 3 executed Blocks 4–5.
+Validation selected this point because it was the feasible Pareto candidate with maximum estimated compute saving.
 
-### Change from the canonical full-depth reference
+| Validation result | Value |
+|---|---:|
+| Exit-2 fraction | 19.6495% |
+| Average exit depth | 2.803505 |
+| Estimated FLOPs saved | 12.6272% |
+| Parent Macro-F1 drop | 0.000389 |
+| Parent Micro-F1 drop | 0.000940 |
+| Parent Exact-Match drop | 0.000000 |
+| Parent Hamming increase | 0.000329 |
+| Validation status | `quality_constraints_met=true` |
 
-| Metric | Dynamic | Full depth | Change |
-|---|---:|---:|---:|
-| Macro-F1 | 0.842248 | 0.862382 | −0.020134 |
-| Micro-F1 | 0.935484 | 0.953131 | −0.017647 |
-| Samples-F1 | 0.943577 | 0.958889 | −0.015312 |
-| Exact Match | 0.838524 | 0.876586 | −0.038062 |
-| Hamming Loss ↓ | 0.018916 | 0.013725 | +0.005191 |
+---
 
-This is a valid proof of real adaptive computation. It is not yet the final quality–efficiency operating point.
+## Corrected-holdout comparison
+
+| Method | Exit-2 fraction | FLOPs saved | Speedup | Macro-F1 | Micro-F1 | Samples-F1 | Exact | Hamming ↓ |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Always Exit 3 | 0.00% | 0.00% | 1.000× | 0.862382 | 0.953131 | 0.958889 | 0.876586 | 0.013725 |
+| v0.13 per-label margin | 2.24% | 1.44% | 0.997× | 0.858748 | 0.951556 | 0.957198 | 0.874279 | 0.014187 |
+| v0.16 multi-objective margin | 7.87% | 5.06% | 1.015× | 0.849203 | 0.942474 | 0.950266 | 0.854671 | 0.016840 |
+
+### Holdout constraint audit
+
+| Constraint | Limit | Observed | Met? |
+|---|---:|---:|---|
+| Macro-F1 drop | ≤ 0.010 | 0.013178 | **No** |
+| Micro-F1 drop | ≤ 0.005 | 0.010657 | **No** |
+| Exact-Match drop | ≤ 0.010 | 0.021915 | **No** |
+| Hamming increase | ≤ 0.002 | 0.003114 | **No** |
+
+The `deployment_eligible=true` field in the runtime comparison records **validation eligibility**, not post-hoc holdout approval. The correct status is:
+
+```text
+validation_eligible = true
+holdout_constraints_met = false
+```
+
+---
+
+## Confirmed findings
+
+1. Genuine staged inference remains numerically equivalent to conventional full-forward inference at every exit.
+2. The dependency-light NSGA-II-style search successfully explored 4,078 unique policies and retained a 20-point validation Pareto front.
+3. v0.16 increased holdout Exit-2 coverage to 7.87%, saved 5.06% estimated FLOPs, and achieved a stable 1.015× median CPU speedup over 30 repetitions.
+4. v0.16 expanded the observed compute-saving region beyond v0.13, but did not satisfy the predefined holdout quality constraints.
+5. `audience_reaction_present` and `other_speaker_present` accounted for important holdout degradation; per-label results must accompany aggregate metrics.
+6. v0.13 per-label margin remains the recommended quality-constrained adaptive baseline.
+7. Always Exit 3 remains the deployment-quality reference.
 
 ---
 
 ## Reproduction commands
 
-### Fixed-exit audit
+Complete v0.16 run:
 
 ```powershell
 conda activate ASHADIP_V0
 
 powershell -ExecutionPolicy Bypass `
-  -File ".\scripts\v0.11_EE\fixed_policy\run_v011_EE.ps1"
+  -File ".\scripts\v0.16_EE\multiobjective_per_label_margin\run_multiobjective_per_label_margin_v016_EE.ps1"
 ```
 
-### Genuine Dynamic Early-Exit
-
-```powershell
-conda activate ASHADIP_V0
-
-powershell -ExecutionPolicy Bypass `
-  -File ".\scripts\v0.11_EE\dynamic_policy\run_dynamic_v011_EE.ps1"
-```
-
-Reuse an existing frozen policy and skip completed prechecks:
+Publication timing:
 
 ```powershell
 powershell -ExecutionPolicy Bypass `
-  -File ".\scripts\v0.11_EE\dynamic_policy\run_dynamic_v011_EE.ps1" `
+  -File ".\scripts\v0.16_EE\multiobjective_per_label_margin\run_multiobjective_per_label_margin_v016_EE.ps1" `
+  -TimingRepeats 30
+```
+
+Reuse the frozen policy without repeating optimisation:
+
+```powershell
+powershell -ExecutionPolicy Bypass `
+  -File ".\scripts\v0.16_EE\multiobjective_per_label_margin\run_multiobjective_per_label_margin_v016_EE.ps1" `
   -SkipPrechecks `
-  -SkipTuning
+  -SkipTuning `
+  -TimingRepeats 30
 ```
 
-Detailed commands and expected outputs are documented under:
+No v0.16 training command exists because the backbone and exit heads are frozen.
+
+---
+
+## Documentation and result package
 
 ```text
-docs/tables/active_budget_anytime_exit_v0.2/v0.11_EE/
+docs/active_budget_anytime_exit_v0.4/
+docs/tables/active_budget_anytime_exit_v0.4/v0.16_EE/
 ```
 
----
-
-## Repository organization
-
-```text
-models/
-└── anytime_exit_net.py
-
-tests/
-├── __init__.py
-└── test_anytime_exit_net.py
-
-scripts/v0.11_EE/
-├── fixed_policy/
-│   ├── verify_checkpoint_equivalence_v011.py
-│   ├── evaluate_fixed_exits_v011.py
-│   └── run_v011_EE.ps1
-└── dynamic_policy/
-    ├── tune_dynamic_policy_v011.py
-    ├── evaluate_dynamic_early_exit_v011.py
-    └── run_dynamic_v011_EE.ps1
-
-docs/
-├── active_budget_anytime_exit_v0.2/
-│   └── README.md
-└── tables/active_budget_anytime_exit_v0.2/
-    └── v0.11_EE/
-```
-
-Large per-segment probability and prediction files remain under `human_talk_workspace` and are not committed. Compact result tables and paper-ready summaries are committed under `docs/tables`.
+The compact package includes exact setup, validation/holdout analysis, paper-ready language, commands, selected policy, Pareto/history tables, per-label comparisons, cumulative ablations, and SVG figures.
 
 ---
 
-## Current scientific conclusions
+## Limitations and cautions
 
-1. Staged inference exactly reproduces the trained model’s full-forward logits.
-2. Exit 1 is not sufficiently reliable for general sample-wise stopping.
-3. Exit 2 is the principal early-stop candidate.
-4. Genuine staged inference can skip Blocks 4–5 for selected samples.
-5. The first frozen policy saved 7.53% estimated FLOPs while retaining 97.67% of parent Macro-F1 and 98.15% of parent Micro-F1.
-6. Validation selected substantially more Exit-2 samples than the corrected holdout, indicating a reliability-distribution shift.
-7. Exit-specific calibration may improve Exit-2 performance because the current parent diagnostic transfers Exit-3 LATS rules unchanged.
-8. Dynamic latency must still be compared with Always Exit 3 under the identical timing protocol before reporting measured speedup.
+- v0.16 is a validation-selected quality-constrained policy, but it failed the same thresholds on the corrected holdout.
+- The holdout must not be used to retune v0.16 and then be reported as an untouched test result.
+- The frozen historical LATS-v2 configuration was derived using calibration material related to the corrected-holdout dataset; this is a frozen corrected-holdout evaluation, not an independent external test.
+- Segment thresholds were fixed at 0.5 because no per-exit tuned threshold artifact existed.
+- The 1.015× speedup is CPU-, hardware-, batch-, and implementation-specific and should not be generalized to other devices without remeasurement.
+- Estimated FLOP saving and measured latency are related but not interchangeable.
+- v0.16 is not yet an explicit budget-conditioned anytime controller and does not produce a budget-quality curve.
+- v0.16 is sample-wise; it is not label-wise asynchronous inference where different labels terminate at different depths.
+- Do not claim that multi-objective optimisation guarantees holdout-optimal or globally Pareto-optimal behavior.
+- Do not claim v0.16 as the deployment winner; the selected adaptive baseline remains v0.13 per-label margin.
 
 ---
 
-## Roadmap
+## Current research decision
 
-| Stage | Status |
+| Role | Method |
 |---|---|
-| Frozen full-depth reference | Complete |
-| Staged inference implementation | Complete |
-| Staged/full numerical equivalence | Complete |
-| Always Exit 1/2/3 audit | Complete |
-| Genuine standard Dynamic Early-Exit | Complete — first operating point |
-| Stricter quality-constrained dynamic policies | Next ablation |
-| Exit-specific calibration | Planned |
-| Same-protocol fixed-exit latency profiling | Planned |
-| Budget-aware Early-Exit | Next main milestone |
-| Anytime inference and Pareto curves | Planned |
-
----
-
-## Paper-ready v0.11 statement
-
-> We implemented an inference-only staged wrapper for a trained three-exit TinyAudioCNN, enabling samples to terminate before executing deeper backbone blocks. Staged and conventional full-forward logits were numerically identical at all exits. A validation-frozen Exit-2/Exit-3 policy stopped 11.72% of corrected-holdout segments at Exit 2, reducing estimated computation by 7.53% and average exit depth from 3.0 to 2.8828. Parent-level Macro-F1 decreased from 0.8624 to 0.8422, while Micro-F1 decreased from 0.9531 to 0.9355. These results establish genuine compute-adaptive inference and define the baseline trade-off for subsequent budget-aware and anytime policies.
-
----
-
-## Important limitations
-
-- Exit 1 and Exit 2 parent metrics currently use transferred Exit-3 LATS-v2 rules.
-- The first dynamic policy uses fixed 0.5 segment thresholds because no per-exit tuned threshold artifact existed.
-- The corrected holdout was not used to select the policy.
-- The reported 0.8552 ms dynamic latency lacks an identical-protocol Always Exit 3 comparator.
-- Estimated FLOP saving is architecture-based and should be supplemented by repeated latency and memory profiling.
-- The first policy is a standard sample-wise policy, not yet a budget-aware or label-wise asynchronous controller.
+| Deployment-quality reference | Always Exit 3 + frozen LATS-v2 |
+| Recommended adaptive baseline | v0.13 per-label margin |
+| Compute-forward Pareto ablation | v0.16 multi-objective per-label margin |
+| Negative/diagnostic gate studies | v0.14 and v0.15 |
+| Next methodological direction | safety-buffered Pareto-knee selection or a genuinely budget-conditioned anytime evaluation using a newly reserved calibration/evaluation protocol |

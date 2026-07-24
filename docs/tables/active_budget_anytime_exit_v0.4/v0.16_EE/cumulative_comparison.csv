@@ -1,0 +1,12 @@
+version,method,decision_unit,exit2_fraction,avg_exit_depth,flops_saved_pct,speedup_30x,macro_f1,micro_f1,samples_f1,exact_match,hamming_loss,status
+baseline,Always Exit 3 + frozen LATS-v2,full depth,0.0,3.0,0.0,1.0,0.8623815322,0.953131154,0.9588894381,0.8765859285,0.0137254902,canonical quality reference
+v0.11,global dynamic Exit 2/3,segment,0.1172,2.8828,7.53,,0.842248,0.935484,0.943577,0.838524,0.018916,genuine skipping; permissive baseline
+v0.12,validation-derived label-risk rule,segment,0.1119,2.8881,7.19,,0.843703,0.936689,0.944692,0.84083,0.01857,small quality gain over v0.11; risk rule not yet matched
+v0.13,global confidence + margin,segment,0.011765,2.988235,0.756028,,0.861433,0.952719,0.958505,0.875433,0.013841,most conservative rule
+v0.13,per-label margin,segment,0.022376,2.977624,1.437936,0.996929,0.858748,0.951556,0.957198,0.874279,0.014187,current quality-constrained adaptive baseline
+v0.13,logistic gate,segment,0.175779,2.824221,11.295953,,0.833034,0.943529,0.94975,0.855825,0.016609,aggressive; holdout quality unsafe
+v0.14,parent-aware Exit 2 gate,segment with parent-aware target,0.202999,2.797001,13.045195,0.985837,0.840798,0.933966,0.942473,0.835063,0.019262,failed robust validation and holdout quality
+v0.14,Exit 1 to Exit 3 ablation,segment,0.007151,2.985698,0.68932,0.958221,0.861442,0.952756,0.958697,0.876586,0.013841,quality preserved; too little coverage and slower
+v0.15,nonparametric whole-parent risk,parent,0.00692,2.99308,0.444723,0.93376,0.863129,0.952681,0.958505,0.875433,0.013841,quality preserved; insufficient compute and slower
+v0.15,shared logistic whole-parent gate,parent,0.0,3.0,0.0,0.923478,0.862382,0.953131,0.958889,0.876586,0.013725,zero coverage; controller overhead only
+v0.16,multi-objective per-label margin,segment,0.0786620530565167,2.9213379469434835,5.055013080944882,1.01527905289575,0.8492034437044081,0.9424743892829,0.9502663810622288,0.8546712802768166,0.0168396770472895,measurable speedup; failed holdout quality constraints
