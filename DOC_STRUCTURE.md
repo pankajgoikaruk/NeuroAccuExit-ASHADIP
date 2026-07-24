@@ -1,6 +1,6 @@
-# Documentation Structure — Active Budget and Anytime Exit v0.2
+# Documentation Structure — Active Budget and Anytime Exit v0.3
 
-This document indexes the repository artifacts for the NeuroAccuExit computation-adaptive inference phase.
+This file indexes the completed `active_budget_anytime_exit_v0.3` research and repository artifacts. Historical v0.1 and v0.2 records remain preserved.
 
 ---
 
@@ -8,11 +8,13 @@ This document indexes the repository artifacts for the NeuroAccuExit computation
 
 | Item | Value |
 |---|---|
-| Git branch | `active_budget_anytime_exit_v0.2` |
-| Current completed milestone | `v0.11_EE` fixed-exit audit and genuine Dynamic Early-Exit |
-| Canonical full-depth comparator | v0.10 no-hint + frozen historical LATS-v2 |
-| Next main experiment | Budget-aware Early-Exit |
-| Later experiment | Anytime inference |
+| Git branch | `active_budget_anytime_exit_v0.3` |
+| Completed experiment range | `v0.12_EE`–`v0.15_EE` |
+| Canonical comparator | v0.10 no-hint + frozen historical LATS-v2 + Exit 3 |
+| Current adaptive recommendation | v0.13 per-label margin |
+| Full-quality reference | Always Exit 3 |
+| Explicit budget/anytime status | Not implemented in v0.3 |
+| Next branch | `active_budget_anytime_exit_v0.4` — intentionally not started here |
 
 ---
 
@@ -20,247 +22,204 @@ This document indexes the repository artifacts for the NeuroAccuExit computation
 
 | Path | Purpose |
 |---|---|
-| `README.md` | Authoritative branch summary, headline results, reproduction commands, conclusions, and roadmap |
+| `README.md` | Authoritative branch overview, cumulative results, commands and current decision |
 | `DOC_STRUCTURE.md` | This documentation and artifact index |
-| `docs/active_budget_anytime_exit_v0.2/README.md` | Detailed implementation and experiment overview |
-| `docs/tables/active_budget_anytime_exit_v0.1/full_depth_baselines/` | Frozen canonical and secondary full-depth baseline package |
-| `docs/tables/active_budget_anytime_exit_v0.2/` | Compact v0.2 result tables and paper-ready experiment records |
-| `docs/v0.10/` | Historical hint-pass, weighting, calibration, and negative-result documentation |
-| `docs/v0.10_1/` | Historical low-energy recovery ablation documentation |
-| `docs/archive/` | Archived repository documentation states |
+| `docs/active_budget_anytime_exit_v0.3/README.md` | Detailed research narrative, theoretical explanation, questions and findings |
+| `docs/tables/active_budget_anytime_exit_v0.3/README.md` | Compact result-package index |
+| `docs/tables/active_budget_anytime_exit_v0.3/CUMULATIVE_RESULTS.md` | Cross-version tables, figures, ablations and selection rationale |
+| `docs/tables/active_budget_anytime_exit_v0.3/PS_COMMANDS.md` | Reproduction, retiming and diagnostic PowerShell commands |
+| `docs/tables/active_budget_anytime_exit_v0.3/cumulative_results_v012_v015.csv` | Machine-readable headline comparison |
+| `docs/tables/active_budget_anytime_exit_v0.1/full_depth_baselines/` | Frozen full-depth reproducibility package |
+| `docs/active_budget_anytime_exit_v0.2/` | Preserved v0.11 staged-inference documentation |
+| `docs/tables/active_budget_anytime_exit_v0.2/v0.11_EE/` | Preserved v0.11 compact result package |
 
-Historical records must remain available and must not be silently rewritten.
-
----
-
-## v0.11 implementation structure
-
-```text
-models/
-└── anytime_exit_net.py
-
-tests/
-├── __init__.py
-└── test_anytime_exit_net.py
-
-scripts/v0.11_EE/
-├── fixed_policy/
-│   ├── verify_checkpoint_equivalence_v011.py
-│   ├── evaluate_fixed_exits_v011.py
-│   └── run_v011_EE.ps1
-└── dynamic_policy/
-    ├── tune_dynamic_policy_v011.py
-    ├── evaluate_dynamic_early_exit_v011.py
-    └── run_dynamic_v011_EE.ps1
-```
-
-| File | Purpose |
-|---|---|
-| `models/anytime_exit_net.py` | Inference-only staged wrapper that executes only the blocks required to reach the next exit |
-| `tests/test_anytime_exit_net.py` | Three-exit, five-exit, hint-compatible, and state-progression equivalence tests |
-| `verify_checkpoint_equivalence_v011.py` | Verifies staged/full logits and probabilities on the real canonical checkpoint |
-| `evaluate_fixed_exits_v011.py` | Evaluates Always Exit 1/2/3 at segment and parent level |
-| `run_v011_EE.ps1` | One-command fixed-exit audit |
-| `tune_dynamic_policy_v011.py` | Validation-only grid search and frozen-policy generation |
-| `evaluate_dynamic_early_exit_v011.py` | Genuine active-batch staged evaluation with Blocks 4–5 skipped for Exit-2 samples |
-| `run_dynamic_v011_EE.ps1` | Prechecks, validation tuning, policy freezing, and corrected-holdout evaluation |
+Historical documents must not be silently rewritten or removed.
 
 ---
 
-## Branch documentation root
+## Implementation traceability
+
+### Shared staged inference
 
 ```text
-docs/tables/active_budget_anytime_exit_v0.2/
+models/anytime_exit_net.py
+tests/test_anytime_exit_net.py
+scripts/v0.11_EE/fixed_policy/
 ```
 
-Expected structure after the v0.11 documentation freeze:
+The shared wrapper is reused by all later policies and was numerically equivalent to the original full forward path.
+
+### v0.12_EE — validation-derived label risk
 
 ```text
-docs/tables/active_budget_anytime_exit_v0.2/
+policies/label_aware_early_exit_policy.py
+tests/test_label_aware_early_exit_policy.py
+scripts/v0.12_EE/label_aware_policy/
+├── common_v012.py
+├── tune_label_aware_policy_v012.py
+├── evaluate_label_aware_early_exit_v012.py
+└── run_label_aware_v012_EE.ps1
+```
+
+Documentation:
+
+```text
+docs/tables/active_budget_anytime_exit_v0.3/v0.12_EE/README.md
+```
+
+### v0.13_EE — matched strategy comparison
+
+```text
+policies/early_exit_strategy_comparison.py
+tests/test_early_exit_strategy_comparison.py
+scripts/v0.13_EE/matched_policy_comparison/
 ├── README.md
-└── v0.11_EE/
-    ├── README.md
-    ├── EXPERIMENT_SETUP.md
-    ├── RESULTS_AND_ANALYSIS.md
-    ├── PAPER_READY_SUMMARY.md
-    ├── PS_COMMANDS.md
-    ├── REPRODUCE_V011_EE.ps1
-    ├── experiment_manifest.json
-    ├── checkpoint_staged_equivalence.json
-    ├── fixed_exit_segment_summary.csv
-    ├── fixed_exit_parent_summary.csv
-    ├── fixed_exit_parent_per_label.csv
-    ├── validation_policy_selection.csv
-    ├── dynamic_exit_summary.csv
-    └── cumulative_comparison.csv
+├── common_v013.py
+├── tune_matched_policy_comparison_v013.py
+├── evaluate_matched_policy_comparison_v013.py
+└── run_matched_policy_comparison_v013_EE.ps1
 ```
 
----
-
-## Artifact roles
-
-### Human-readable records
-
-| File | Purpose |
-|---|---|
-| `v0.11_EE/README.md` | Experiment status, headline conclusions, and package index |
-| `EXPERIMENT_SETUP.md` | Model, data, thresholds, policy, cost model, and evaluation protocol |
-| `RESULTS_AND_ANALYSIS.md` | Fixed-exit and dynamic results, quality–cost interpretation, per-label findings, and limitations |
-| `PAPER_READY_SUMMARY.md` | Reusable method, result, contribution, limitation, and caption wording |
-| `PS_COMMANDS.md` | Windows PowerShell commands for each experiment mode |
-| `REPRODUCE_V011_EE.ps1` | Runs the fixed and dynamic experiment runners from the repository root |
-
-### Machine-readable records
-
-| File | Purpose |
-|---|---|
-| `experiment_manifest.json` | Branch, model, policy, canonical baseline, result, and limitation metadata |
-| `checkpoint_staged_equivalence.json` | Exact staged/full checkpoint-equivalence report |
-| `fixed_exit_segment_summary.csv` | Segment quality at Always Exit 1/2/3 |
-| `fixed_exit_parent_summary.csv` | Parent quality under frozen LATS-v2 transfer |
-| `fixed_exit_parent_per_label.csv` | Label-level parent precision, recall, F1, and error counts at every exit |
-| `validation_policy_selection.csv` | Frozen validation-selected stopping policy and constraint outcome |
-| `dynamic_exit_summary.csv` | Exit distribution, depth, compute, latency, and holdout metrics |
-| `cumulative_comparison.csv` | Canonical, fixed-exit, and dynamic headline comparison |
-
----
-
-## Non-committed runtime outputs
-
-Large data and prediction artifacts remain under:
+Documentation:
 
 ```text
-human_talk_workspace/active_budget_anytime_exit_v0.2/v0.11_EE/
+docs/tables/active_budget_anytime_exit_v0.3/v0.13_EE/README.md
 ```
 
-Typical contents include:
-
-- full segment probability exports;
-- segment-level prediction CSVs;
-- parent-level truth, score, and prediction tables;
-- validation sweep tables;
-- frozen runtime policy JSON;
-- corrected-holdout dynamic predictions.
-
-These files can be regenerated locally and are intentionally not copied wholesale into Git. Compact summaries are committed under `docs/tables`.
-
----
-
-## Canonical result
+### v0.14_EE — parent-aware adaptive gates
 
 ```text
-v0.10 no-hint + frozen historical LATS-v2
+policies/parent_aware_adaptive_gate.py
+tests/test_parent_aware_adaptive_gate.py
+scripts/v0.14_EE/parent_aware_gate/
+├── README.md
+├── common_v014.py
+├── tune_parent_aware_gate_v014.py
+├── evaluate_parent_aware_gate_v014.py
+└── run_parent_aware_gate_v014_EE.ps1
 ```
 
-| Metric | Value |
-|---|---:|
-| Macro-F1 | 0.8623815322333925 |
-| Micro-F1 | 0.9531311539976368 |
-| Samples-F1 | 0.9588894381281924 |
-| Exact Match | 0.8765859284890427 |
-| Hamming Loss ↓ | 0.0137254901960784 |
-| Average exit depth | 3.0 |
-| Estimated compute saved | 0% |
+Documentation:
 
-This is the sole full-depth quality reference for v0.11 and all later budget/anytime experiments.
+```text
+docs/tables/active_budget_anytime_exit_v0.3/v0.14_EE/README.md
+```
+
+### v0.15_EE — whole-parent selective risk control
+
+```text
+policies/whole_parent_selective_exit.py
+tests/test_whole_parent_selective_exit.py
+scripts/v0.15_EE/whole_parent_risk_control/
+├── README.md
+├── common_v015.py
+├── tune_whole_parent_risk_control_v015.py
+├── evaluate_whole_parent_risk_control_v015.py
+└── run_whole_parent_risk_control_v015_EE.ps1
+```
+
+Documentation:
+
+```text
+docs/tables/active_budget_anytime_exit_v0.3/v0.15_EE/README.md
+```
 
 ---
 
-## v0.11 result snapshot
+## Runtime output structure
 
-### Fixed exits, parent level
+Large experiment outputs remain local under:
 
-| Method | Macro-F1 | Micro-F1 | Samples-F1 | Exact | Hamming ↓ |
-|---|---:|---:|---:|---:|---:|
-| Always Exit 1 | 0.1626 | 0.3877 | 0.2902 | 0.0577 | 0.1355 |
-| Always Exit 2 | 0.6923 | 0.7760 | 0.7652 | 0.5156 | 0.0655 |
-| Always Exit 3 | 0.8624 | 0.9531 | 0.9589 | 0.8766 | 0.0137 |
+```text
+human_talk_workspace/active_budget_anytime_exit_v0.3/
+├── v0.12_EE/label_aware_policy/
+├── v0.13_EE/matched_policy_comparison/
+├── v0.14_EE/parent_aware_gate/
+└── v0.15_EE/whole_parent_risk_control/
+```
 
-Exit 1 and Exit 2 use transferred historical LATS-v2 rules and are diagnostic.
+Typical versioned contents:
 
-### Genuine Dynamic Exit 2/3
+- checkpoint staged-equivalence JSON;
+- validation sweep CSV;
+- frozen policy JSON;
+- fitted gate model (`.joblib`) where applicable;
+- OOF predictions and fold assignments;
+- per-segment or per-parent decisions;
+- parent truth, scores and predictions;
+- per-label metrics;
+- holdout comparison CSV/JSON;
+- runtime summary JSON.
 
-| Item | Value |
-|---|---:|
-| Exit-2 samples | 508 / 4,335 |
-| Exit-2 fraction | 11.72% |
-| Average exit depth | 2.8828 |
-| Estimated FLOPs saved | 7.53% |
-| Parent Macro-F1 | 0.842248 |
-| Parent Micro-F1 | 0.935484 |
-| Parent Samples-F1 | 0.943577 |
-| Parent Exact Match | 0.838524 |
-| Parent Hamming Loss | 0.018916 |
+These large artifacts are not duplicated wholesale in Git. The committed documentation records their paths, selected settings and confirmed summary values.
 
 ---
 
-## Reproduction entry points
+## Experiment and result mapping
 
-Fixed-exit audit:
+| Version | Primary implementation | Validation protocol | Holdout output | Scientific status |
+|---|---|---|---|---|
+| v0.12 | Label-risk rule | Full validation, max Macro-F1 drop 0.01 | Genuine segment stopping | Feasibility result; quality loss too large |
+| v0.13 | Five matched policies | 70% parent derivation / 30% selection | Six same-checkpoint comparisons | Per-label margin selected as current adaptive winner |
+| v0.14 | Per-label parent-harm gates | Five parent-grouped OOF folds + quality UCB | Exit-2 primary + Exit-1 ablation | No robust candidate; negative/diagnostic result |
+| v0.15 | Whole-parent risk control | Five parent-grouped OOF folds + harm/quality confidence bounds | Nonparametric + shared logistic | Quality preserved but coverage and speed insufficient |
 
-```powershell
-powershell -ExecutionPolicy Bypass `
-  -File ".\scripts\v0.11_EE\fixed_policy\run_v011_EE.ps1"
-```
+---
 
-Genuine Dynamic Early-Exit:
+## Compact documentation package
 
-```powershell
-powershell -ExecutionPolicy Bypass `
-  -File ".\scripts\v0.11_EE\dynamic_policy\run_dynamic_v011_EE.ps1"
-```
-
-Combined documentation entry point:
-
-```powershell
-powershell -ExecutionPolicy Bypass `
-  -File ".\docs\tables\active_budget_anytime_exit_v0.2\v0.11_EE\REPRODUCE_V011_EE.ps1"
+```text
+docs/tables/active_budget_anytime_exit_v0.3/
+├── README.md
+├── CUMULATIVE_RESULTS.md
+├── PS_COMMANDS.md
+├── cumulative_results_v012_v015.csv
+├── v0.12_EE/
+│   └── README.md
+├── v0.13_EE/
+│   └── README.md
+├── v0.14_EE/
+│   └── README.md
+└── v0.15_EE/
+    └── README.md
 ```
 
 ---
 
 ## Documentation rules
 
-1. Always identify the canonical baseline as `v0.10 no-hint + frozen historical LATS-v2`.
-2. Do not confuse average predicted labels with average exit depth.
-3. Report post-hoc policy simulations separately from genuine staged inference.
-4. State that Exit-1/Exit-2 parent results are frozen-policy transfer diagnostics.
-5. Record whether thresholds were selected on validation, calibration, or holdout data.
-6. Do not tune a policy after inspecting its corrected-holdout result.
-7. Distinguish architecture-estimated FLOP saving from measured latency saving.
-8. Do not claim measured speedup until a same-protocol Always Exit 3 timing baseline exists.
-9. Preserve per-label results because rare/context labels can be harmed despite strong Micro-F1.
-10. Keep standard, budget-aware, and anytime results in separate experiment folders.
+1. Always identify the canonical reference as v0.10 no-hint + frozen historical LATS-v2 + Exit 3.
+2. Distinguish predicted-label count, exit depth, stop rate, estimated FLOPs and measured latency.
+3. State whether the decision unit is a segment or a complete parent.
+4. State whether a result met its predefined validation/deployment constraint.
+5. Never promote a fallback candidate to a successful policy.
+6. Never select or retune an operating point after inspecting corrected-holdout performance.
+7. Treat fixed 0.5 segment thresholds and frozen LATS-v2 parent thresholds as different mechanisms.
+8. Report Parent Macro-F1 and Parent Micro-F1 together.
+9. Preserve Exact Match and Hamming Loss because global consistency can degrade while one F1 metric improves.
+10. Distinguish architecture-estimated FLOPs from repeated measured latency.
+11. Do not claim measured acceleration when the adaptive controller is slower.
+12. Preserve negative results: v0.14 and v0.15 are part of the research trajectory.
+13. Do not claim that v0.3 implemented explicit budget-aware or anytime inference.
+14. Do not describe the corrected holdout as an independent external test set.
+15. Keep confirmed measurements separate from interpretation and proposed future work.
 
 ---
 
-## Current documentation status
+## Documentation status
 
 | Area | Status |
 |---|---|
-| Root v0.2 README | Updated for v0.11 |
-| Root documentation index | Updated for v0.11 |
-| Frozen full-depth baseline package | Complete |
-| Staged inference implementation record | Complete |
-| Checkpoint equivalence record | Complete |
-| Fixed-exit tables | Complete |
-| Dynamic-policy validation record | Complete |
-| Genuine staged holdout summary | Complete |
-| Paper-ready v0.11 wording | Complete |
-| Budget-aware documentation | Not yet created |
-| Anytime-inference documentation | Not yet created |
-
----
-
-## Next documentation directories
-
-Create only when their experiments begin:
-
-```text
-docs/tables/active_budget_anytime_exit_v0.2/
-├── v0.11_EE/                   # complete
-├── v0.12_budget_aware_EE/      # next
-└── v0.13_anytime_inference/    # planned
-```
-
-The v0.12 package should add explicit budget definitions, budget-forced exit reasons, cost constraints, same-protocol latency baselines, and quality-versus-budget tables.
+| Root branch README | Updated through v0.15 |
+| Root documentation index | Updated through v0.15 |
+| Detailed v0.3 narrative | Complete |
+| v0.12 traceability | Complete |
+| v0.13 traceability | Complete |
+| v0.14 traceability | Complete |
+| v0.15 traceability | Complete |
+| Cumulative result table | Complete |
+| PowerShell command record | Complete |
+| Confirmed vs interpretation separation | Complete |
+| Explicit budget-aware controller | Not part of v0.3 |
+| Anytime budget sweep | Not part of v0.3 |
+| v0.4 implementation | Not started |
