@@ -23,7 +23,7 @@ v0.11 staged global rule
 → v0.16 multi-objective per-label margin optimisation
 ```
 
-See `VERSION_HISTORY.md` for detailed traceability.
+See `VERSION_HISTORY.md` for detailed traceability and `DOCUMENTATION_UPDATE_SUMMARY.md` for the documentation audit, result provenance, confirmed/interpretive separation, and file-by-file update record.
 
 ## v0.16 headline
 
@@ -44,6 +44,20 @@ On the corrected holdout:
 
 The result demonstrates meaningful genuine skipping and a small measured speedup. It does not satisfy the predefined holdout quality limits.
 
+## Confirmed result versus interpretation
+
+### Confirmed
+
+- staged/full equivalence passed at all exits;
+- the policy was selected using validation only and frozen before holdout evaluation;
+- v0.16 increased compute saving and measured speed relative to v0.13;
+- every predefined holdout quality constraint failed;
+- v0.13 remains the quality-constrained adaptive baseline.
+
+### Interpretation and future work
+
+The maximum-saving feasible validation point appears too aggressive for holdout transfer. Safety-buffered Pareto-knee selection and a newly reserved calibration/evaluation protocol are possible next steps, but they are not completed v0.16 results.
+
 ## Current decision
 
 | Role | Selected method |
@@ -60,6 +74,14 @@ The complete v0.16 package is stored at:
 docs/tables/active_budget_anytime_exit_v0.4/v0.16_EE/
 ```
 
+Documentation entry points:
+
+```text
+docs/active_budget_anytime_exit_v0.4/README.md
+docs/active_budget_anytime_exit_v0.4/VERSION_HISTORY.md
+docs/active_budget_anytime_exit_v0.4/DOCUMENTATION_UPDATE_SUMMARY.md
+```
+
 ## Main command
 
 ```powershell
@@ -70,4 +92,4 @@ powershell -ExecutionPolicy Bypass `
   -TimingRepeats 30
 ```
 
-No model-training command is required for v0.16 because the canonical checkpoint is frozen.
+No model-training command is required for v0.16 because the canonical checkpoint is frozen. The package `PS_COMMANDS.md` separately records the full runner, direct tuning/evaluation entry points, frozen-policy reuse, and reporting commands.
