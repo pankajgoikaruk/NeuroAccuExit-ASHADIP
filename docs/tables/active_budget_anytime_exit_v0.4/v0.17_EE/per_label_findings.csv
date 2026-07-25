@@ -1,0 +1,11 @@
+architecture,label,direction,approx_f1_change,interpretation
+5-exit,silence_present,improved,0.072,Intermediate exits improved rare silence decisions
+5-exit,music_present,improved,0.016,Context label benefited
+5-exit,Eckhart_Tolle,improved,0.006,Speaker label stable
+5-exit,Jay_Shetty,improved,0.005,Small improvement
+5-exit,Nick_Vujicic,degraded,-0.095,Primary remaining speaker risk
+5-exit,audience_reaction_present,degraded,-0.085,Bursty context label remains difficult
+5-exit,Eric_Thomas,degraded,-0.011,Early termination risk
+3-exit,audience_reaction_present,degraded,,Recurring risk label
+3-exit,Eric_Thomas,degraded,,Recurring risk label
+3-exit,other_speaker_present,degraded,,Open-set/context risk
