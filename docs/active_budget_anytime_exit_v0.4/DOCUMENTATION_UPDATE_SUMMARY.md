@@ -1,69 +1,120 @@
-# Documentation Update Summary — v0.17_EE
+# Active Budget and Anytime Exit v0.4 — Documentation Update Summary
 
 ## Scope
 
-This update extends `active_budget_anytime_exit_v0.4` documentation from v0.16 through the completed v0.17 sequential study. Existing v0.11–v0.16 records were preserved and expanded only where needed for traceability.
+This record summarises the v0.17 documentation freeze for:
 
-## Source-of-truth hierarchy
+```text
+active_budget_anytime_exit_v0.4
+```
 
-1. Frozen runtime outputs under `human_talk_workspace/active_budget_anytime_exit_v0.4/v0.17_EE/`.
-2. Console logs and archived v0.17 result package.
-3. Existing committed v0.11–v0.16 documentation.
-4. Interpretation recorded separately from confirmed measurements.
+The previous v0.16 package remains unchanged and authoritative. The new documentation adds full traceability for `v0.17_EE`, which implements fully sequential active-budget inference for both 3-exit and 5-exit checkpoints.
 
-## Confirmed v0.17 additions
+## Sources checked
 
-- genuine staged equivalence passed at every exit for both checkpoints;
-- validation-only tuning used 96 individuals, 60 generations, and a safety-buffered Pareto knee;
-- three-exit and five-exit routes evaluated every non-final exit;
-- six ablations were executed under frozen policies;
-- 30-repeat CPU timing was completed;
-- five-exit full sequential met all within-model holdout limits;
-- three-exit full sequential did not meet holdout limits;
-- fairness audit rejected direct architecture comparison because training manifests differ.
+The documentation was audited against:
 
-## Updated files
+```text
+human_talk_workspace/active_budget_anytime_exit_v0.4/v0.17_EE/
+sequential_anytime_exit/
+├── 3exit/
+│   ├── validation_tuning/
+│   └── corrected_holdout_evaluation/
+├── 5exit/
+│   ├── validation_tuning/
+│   └── corrected_holdout_evaluation/
+└── architecture_comparison/
+```
 
-| File | Update |
-|---|---|
-| `README.md` | Added cumulative v0.11–v0.17 traceability, v0.17 theory, settings, results, commands, findings, limitations, and verdict. |
-| `DOC_STRUCTURE.md` | Added v0.17 code paths, compact package tree, artifact descriptions, documentation rules, and status table. |
-| `docs/active_budget_anytime_exit_v0.4/README.md` | Added v0.17 progression, headline results, decisions, and commands. |
-| `docs/active_budget_anytime_exit_v0.4/VERSION_HISTORY.md` | Added complete v0.17 implementation/settings/RQ/result/ablation/fairness record while preserving v0.11–v0.16. |
-| `docs/active_budget_anytime_exit_v0.4/DOCUMENTATION_UPDATE_SUMMARY.md` | Added this audit and file-by-file summary. |
-| `docs/tables/active_budget_anytime_exit_v0.4/README.md` | Added v0.17 package link and headline status. |
-| `docs/tables/active_budget_anytime_exit_v0.4/v0.17_EE/` | Added setup, results, paper wording, commands, compact tables, manifest, and figures. |
+The uploaded v0.17 archive contained:
 
-## Confirmed versus interpretive wording
+- both staged-equivalence reports;
+- both frozen sequential policies;
+- 5,847 and 5,856 evaluated candidate records;
+- 19 and 86 Pareto candidates;
+- optimisation histories;
+- 3-exit and 5-exit holdout comparisons;
+- six ablations per architecture;
+- per-method segment and parent predictions;
+- per-label LATS-v2 reports;
+- 30-repeat runtime summaries;
+- exit-distribution tables;
+- the cross-architecture fairness audit.
+
+## Confirmed v0.17 results
+
+### Three exits
+
+| Item | Confirmed value |
+|---|---:|
+| Exit-1 / Exit-2 / Exit-3 fractions | 6.07% / 4.34% / 89.60% |
+| Estimated FLOPs saved | 8.6350% |
+| 30-repeat speedup | 1.0373× |
+| Parent Macro-F1 | 0.840128 |
+| Parent Micro-F1 | 0.937549 |
+| Parent Samples-F1 | 0.945653 |
+| Parent Exact Match | 0.840830 |
+| Parent Hamming Loss | 0.018224 |
+| Holdout constraints | Failed |
+
+### Five exits
+
+| Item | Confirmed value |
+|---|---:|
+| Exit fractions | 6.83% / 1.22% / 18.59% / 26.30% / 47.06% |
+| Estimated FLOPs saved | 30.7130% |
+| 30-repeat speedup | 1.1138× |
+| Parent Macro-F1 | 0.801356 |
+| Parent Micro-F1 | 0.868859 |
+| Parent Samples-F1 | 0.886945 |
+| Parent Exact Match | 0.688581 |
+| Parent Hamming Loss | 0.039100 |
+| Holdout constraints | Passed |
+
+## Confirmed findings versus interpretation
 
 ### Confirmed
 
-- The five-exit sequential policy met all predefined holdout quality limits relative to its own Always Exit 5 baseline.
-- The three-exit full sequential policy did not meet the limits.
-- Label margins and stability were strongly supported by ablations.
-- The current risk term was not materially active.
-- The fairness audit did not validate a direct architecture comparison.
+- Both checkpoints passed staged/full equivalence with zero probability difference.
+- Every non-final exit participates in the primary policy.
+- The three-exit route creates real speedup but fails all holdout-quality thresholds.
+- The tested five-exit route meets all within-checkpoint holdout thresholds.
+- Exit 1 increases saving but causes the strongest quality pressure.
+- Label margins and stability materially protect quality.
+- Confidence-only stopping is unsafe.
+- The selected risk thresholds are non-binding.
+- The fairness audit fails `same_validation_manifest`.
 
 ### Interpretation
 
-- More exits appear to offer richer routing opportunities within the historical five-exit checkpoint.
-- Exit 1 appears to be the highest-risk compute-saving stage.
-- Intermediate exits can occasionally improve the full label set, as reflected in improved five-exit Exact Match.
+- More sequential exit opportunities may allow finer compute allocation.
+- The five-exit policy's improved Exact Match suggests some intermediate exits correct complete label sets that the final exit misses.
+- The three-exit validation-to-holdout failure indicates that safety-buffered selection alone does not eliminate distribution shift.
+- Difficult labels require stage-specific safeguards.
 
-These interpretations are not equivalent to a causal architectural comparison.
+These interpretations are hypotheses supported by observed patterns; they are not controlled causal conclusions.
 
-## What must not be overclaimed
+## Documentation files updated
 
-- Do not claim that five exits are generally superior to three exits.
-- Do not claim an independent external-test result.
-- Do not claim the risk component is validated.
-- Do not claim global Pareto optimality.
-- Do not omit the unsuccessful three-exit result or negative ablations.
-- Do not describe the method as label-wise asynchronous exit.
+| File or directory | What was added |
+|---|---|
+| `README.md` | v0.17 branch identity, theory, settings, 3-/5-exit results, ablations, fairness, commands, limitations, and current decision |
+| `DOC_STRUCTURE.md` | v0.17 code traceability, package inventory, storage policy, documentation rules, and status |
+| `docs/active_budget_anytime_exit_v0.4/README.md` | Branch-level v0.17 overview and result decision |
+| `docs/active_budget_anytime_exit_v0.4/VERSION_HISTORY.md` | New v0.17 implementation, research questions, settings, results, and findings |
+| `docs/active_budget_anytime_exit_v0.4/DOCUMENTATION_UPDATE_SUMMARY.md` | This provenance and file-by-file audit |
+| `docs/tables/active_budget_anytime_exit_v0.4/README.md` | Added the v0.17 compact package |
+| `docs/tables/active_budget_anytime_exit_v0.4/v0.17_EE/` | New complete human- and machine-readable package |
 
-## Remaining documentation-linked work
+## Non-claims
 
-- Train a canonical five-exit model on the same training manifest and protocol as the three-exit checkpoint.
-- Repeat the v0.17 comparison with a passing fairness audit.
-- Reserve an independent calibration/evaluation split for future policy selection.
-- Consider a redesigned label-risk model and safer Exit-1 constraints.
+- The five-exit result is not a fair architecture winner over the three-exit model.
+- The 5-exit success is relative to its own Always Exit 5 baseline.
+- The 3-exit validation eligibility does not imply holdout safety.
+- Estimated FLOPs are not measured latency.
+- CPU timing is hardware- and protocol-specific.
+- The corrected holdout is not an independent external test.
+- The risk mechanism should not be claimed as effective in v0.17.
+- v0.17 is sample-wise, not label-wise asynchronous.
+- Evidence accumulation and distilled knowledge are not part of the primary v0.17 method.
+- No v0.17 backbone training was performed.

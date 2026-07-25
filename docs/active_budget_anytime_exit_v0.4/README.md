@@ -8,96 +8,107 @@ Branch:
 active_budget_anytime_exit_v0.4
 ```
 
-This branch extends genuine staged inference from v0.11 through v0.17. v0.16 optimised a lightweight Exit-2/Exit-3 policy. v0.17 moves to a fully sequential controller that evaluates every available exit in three-exit and five-exit checkpoints.
+This branch extends the genuine staged-inference programme from v0.11 through v0.17. It contains two completed v0.4 milestones:
 
-The CNN checkpoints are frozen during policy tuning and evaluation. Different versions tune rules, train small controllers, optimise stopping thresholds, or compare staged routes.
+```text
+v0.16_EE — multi-objective optimisation of an Exit-2/Exit-3 per-label margin rule
+v0.17_EE — fully sequential active-budget anytime exit across 3 and 5 exits
+```
+
+The CNN backbone and all exit heads remain frozen. Versions tune rules, fit small controllers, optimise stopping parameters, or evaluate sequential staged execution.
 
 ## Research progression
 
 ```text
 v0.11 staged global rule
 → v0.12 validation-derived label risk
-→ v0.13 matched rules and learned gate
+→ v0.13 matched rule and gate comparison
 → v0.14 parent-aware segment gate
 → v0.15 whole-parent risk control
-→ v0.16 multi-objective Exit-2/Exit-3 margins
-→ v0.17 fully sequential 3-exit and 5-exit anytime inference
+→ v0.16 multi-objective Exit-2 margin optimisation
+→ v0.17 fully sequential 3-exit and 5-exit anytime policy
 ```
-
-See `VERSION_HISTORY.md` for version-by-version traceability and `DOCUMENTATION_UPDATE_SUMMARY.md` for the documentation audit.
 
 ## v0.17 research questions
 
-1. Can very easy samples exit at Exit 1 while harder samples progress sequentially?
-2. Does full sequential routing improve the quality–computation trade-off over an Exit-2-only policy?
-3. Does a five-exit route provide more useful operating points than a three-exit route?
-4. Which safety components are essential: label margins, stability, risk, or confidence?
-5. Which labels remain unsafe under early termination?
-6. Is the available three-exit/five-exit comparison experimentally fair?
+1. Can the controller make a decision at every non-final exit?
+2. Can very easy samples exit at Exit 1 while harder samples continue?
+3. Can the same optimisation formulation support both 3-exit and 5-exit models?
+4. Which multi-label safeguards are necessary?
+5. Does a safety-buffered Pareto knee transfer better than v0.16's maximum-compute selection?
+6. Does a deeper multi-exit checkpoint provide a better within-model quality–compute trade-off?
 
 ## v0.17 headline
 
-### Three exits
-
-The full sequential three-exit policy used Exit 1 for 6.07% of segments and Exit 2 for 4.34%, saving 8.64% estimated FLOPs and achieving 1.037× measured CPU speedup. However, all four predefined holdout quality limits failed.
-
-### Five exits
-
-The full sequential five-exit policy routed 6.83% / 1.22% / 18.59% / 26.30% / 47.06% of segments to Exits 1–5. It saved 30.71% estimated FLOPs, achieved 1.114× CPU speedup, and met every predefined within-model holdout quality limit.
-
-| Metric | Always Exit 5 | Full sequential | Change |
-|---|---:|---:|---:|
-| Parent Macro-F1 | 0.810761 | 0.801356 | −0.009406 |
-| Parent Micro-F1 | 0.869498 | 0.868859 | −0.000639 |
-| Parent Exact Match | 0.673587 | 0.688581 | **+0.014994** |
-| Parent Hamming Loss | 0.038985 | 0.039100 | +0.000115 |
+| Item | 3-exit full sequential | 5-exit full sequential |
+|---|---:|---:|
+| Total early-exit fraction | 10.40% | **52.94%** |
+| Estimated FLOPs saved | 8.64% | **30.71%** |
+| 30-repeat CPU speedup | 1.037× | **1.114×** |
+| Parent Macro-F1 | 0.840128 | 0.801356 |
+| Parent Micro-F1 | 0.937549 | 0.868859 |
+| Parent Exact Match | 0.840830 | 0.688581 |
+| Parent Hamming Loss | 0.018224 | 0.039100 |
+| Own-baseline quality limits | **Failed** | **Passed** |
 
 ## Confirmed findings
 
-- The five-exit policy is the major success of v0.17.
-- The three-exit policy is computationally successful but not quality-safe.
-- Exit 1 adds meaningful compute saving but is currently the riskiest stage.
-- Label-specific margins and inter-exit stability are essential.
-- The current risk term is weakly active and needs redesign.
-- Per-label failures concentrate on `Nick_Vujicic`, `audience_reaction_present`, `Eric_Thomas`, and `other_speaker_present`.
-- The architecture comparison is not yet fair because training manifests differ.
+- Both 3-exit and 5-exit checkpoints passed exact staged/full equivalence.
+- Every non-final exit participates in the primary v0.17 policy.
+- The 3-exit route produced real compute saving and speedup but failed all holdout-quality limits.
+- The tested 5-exit route saved 30.71% estimated FLOPs, achieved 1.114× speedup, and met all within-checkpoint quality limits.
+- Exit 1 contributed additional saving but was the riskiest stage.
+- Label-specific margins and previous-exit stability were strongly supported by ablations.
+- Confidence-only early exit was unsafe.
+- The current risk component was non-binding.
+- Difficult labels remain `audience_reaction_present`, `Nick_Vujicic`, `Eric_Thomas`, and `other_speaker_present`.
+
+## Fairness limitation
+
+The architecture-comparison audit reports:
+
+```text
+fair_comparison_valid = false
+same_validation_manifest = false
+```
+
+The 3-exit model uses the human-corrected balanced v0.8/v0.10 manifest, while the 5-exit model uses the earlier v0.6 expanded manifest.
+
+Safe wording:
+
+> The tested five-exit checkpoint demonstrates a strong within-model sequential quality–efficiency trade-off. The present experiment does not establish that a five-exit architecture is superior to the canonical three-exit architecture.
 
 ## Current decision
 
 | Role | Selected method |
 |---|---|
-| Three-exit full-quality reference | Always Exit 3 + frozen LATS-v2 |
-| Fair three-exit adaptive baseline | v0.13 per-label margin |
-| Successful within-model anytime result | v0.17 five-exit full sequential |
-| Compute-successful but quality-unsafe result | v0.17 three-exit full sequential |
-| Required next experiment | Train a canonical five-exit model using the same data/protocol as the three-exit model |
+| Canonical full-quality reference | Always Exit 3 + frozen LATS-v2 |
+| 3-exit quality-constrained adaptive baseline | v0.13 per-label margin |
+| v0.16 role | Compute-forward multi-objective ablation |
+| v0.17 successful result | Tested 5-exit full sequential policy |
+| v0.17 unsuccessful result | 3-exit full sequential holdout transfer |
+| Required next confirmation | Fair 5-exit retraining on the canonical manifest |
 
-## Documentation
+## Documentation entry points
 
 ```text
-docs/active_budget_anytime_exit_v0.4/
+docs/active_budget_anytime_exit_v0.4/README.md
+docs/active_budget_anytime_exit_v0.4/VERSION_HISTORY.md
+docs/active_budget_anytime_exit_v0.4/DOCUMENTATION_UPDATE_SUMMARY.md
+
 docs/tables/active_budget_anytime_exit_v0.4/v0.16_EE/
 docs/tables/active_budget_anytime_exit_v0.4/v0.17_EE/
 ```
 
-## Main commands
-
-Three-exit only:
+## Main command
 
 ```powershell
 conda activate ASHADIP_V0
-powershell -ExecutionPolicy Bypass `
-  -File ".\scripts\v0.17_EE\sequential_anytime_exit\run_sequential_anytime_exit_v017_EE.ps1" `
-  -Run3Only
-```
 
-Combined 3-/5-exit publication timing:
-
-```powershell
 powershell -ExecutionPolicy Bypass `
   -File ".\scripts\v0.17_EE\sequential_anytime_exit\run_sequential_anytime_exit_v017_EE.ps1" `
   -RunDir5 ".\human_talk_workspace\tata_v0.6_raw_pipeline\main_models\runs\main_v06_expanded_5exit_20260603_210324" `
   -TimingRepeats 30
 ```
 
-No v0.17 backbone-training command exists for the completed run because both checkpoints were reused. A fair architecture claim requires a newly trained canonical five-exit checkpoint.
+No new model training was performed in v0.17. The package `PS_COMMANDS.md` records execution, tuning, evaluation, frozen-policy reuse, and reporting commands.
