@@ -1,0 +1,12 @@
+version,method,architecture,estimated_flops_saved_pct,measured_speedup,parent_macro_f1,parent_micro_f1,parent_exact_match,parent_hamming_loss,status
+v0.11,global_dynamic,3-exit,7.53,,0.842248,0.935484,0.838524,0.018916,quality loss
+v0.12,label_aware_risk,3-exit,7.19,,0.843703,0.936689,0.840830,0.018570,quality loss
+v0.13,per_label_margin,3-exit,1.44,0.997,0.858748,0.951556,0.874279,0.014187,current fair adaptive baseline
+v0.13,logistic_gate,3-exit,11.30,,0.833034,0.943529,0.855825,0.016609,aggressive quality loss
+v0.14,parent_gate_exit2,3-exit,13.05,0.986,0.840798,0.933966,0.835063,0.019262,failed
+v0.14,exit1_ablation,3-exit,0.69,0.958,0.861442,0.952756,0.876586,0.013841,quality preserved but no efficiency
+v0.15,nonparametric_parent,3-exit,0.445,0.934,0.863129,0.952681,0.875433,0.013841,quality preserved but no efficiency
+v0.15,shared_logistic_parent,3-exit,0,0.923,0.862382,0.953131,0.876586,0.013725,no stops
+v0.16,multiobjective_margin,3-exit,5.06,1.015,0.849203,0.942474,0.854671,0.016840,speedup but holdout limits failed
+v0.17,full_sequential,3-exit,8.64,1.037,0.840128,0.937549,0.840830,0.018224,speedup but holdout limits failed
+v0.17,full_sequential,5-exit,30.71,1.114,0.801356,0.868859,0.688581,0.039100,within-model success
