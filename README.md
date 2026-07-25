@@ -232,6 +232,69 @@ The selected candidate is a safety-buffered Pareto knee rather than v0.16's maxi
 
 ---
 
+## Cross-version corrected-holdout ablation
+
+The main cross-version comparison remains restricted to the **canonical 3-exit family**, because every row below is evaluated against the same Always-Exit-3 corrected-holdout reference.
+
+| Method | FLOPs saved | Macro-F1 | Micro-F1 | Samples-F1 | Exact | Hamming ↓ |
+|---|---:|---:|---:|---:|---:|---:|
+| Always Exit 3 | 0.00% | 0.862382 | 0.953131 | 0.958889 | 0.876586 | 0.013725 |
+| v0.13 per-label margin | 1.44% | 0.858748 | 0.951556 | 0.957198 | 0.874279 | 0.014187 |
+| v0.13 logistic gate | 11.30% | 0.833034 | 0.943529 | 0.949750 | 0.855825 | 0.016609 |
+| v0.14 Exit 1–3 ablation | 0.69% | 0.861442 | 0.952756 | 0.958697 | 0.876586 | 0.013841 |
+| v0.14 Exit 2–3 gate | 13.05% | 0.840798 | 0.933966 | 0.942473 | 0.835063 | 0.019262 |
+| v0.15 nonparametric parent risk | 0.44% | 0.863129 | 0.952681 | 0.958505 | 0.875433 | 0.013841 |
+| v0.15 shared logistic parent gate | 0.00% | 0.862382 | 0.953131 | 0.958889 | 0.876586 | 0.013725 |
+| v0.16 multi-objective margin | 5.06% | 0.849203 | 0.942474 | 0.950266 | 0.854671 | 0.016840 |
+| **v0.17 sequential anytime (3-exit)** | **8.64%** | 0.840128 | 0.937549 | 0.945653 | 0.840830 | 0.018224 |
+
+### Policy-structure traceability
+
+| Method | Stop unit | Decision route | Interpretation |
+|---|---|---|---|
+| v0.13 per-label margin | Segment | Exit 2 → Exit 3 | Current quality-constrained 3-exit adaptive baseline |
+| v0.14 Exit-1 ablation | Segment | Exit 1 → Exit 3 | Quality-preserving but insufficient coverage |
+| v0.15 parent-risk policies | Parent | Exit 2 → Exit 3 | Parent-consistent but computationally negligible |
+| v0.16 multi-objective margin | Segment | Exit 2 → Exit 3 | Compute-forward but holdout-unsafe |
+| v0.17 sequential anytime | Segment, sequential | Exit 1 → Exit 2 → Exit 3 | Uses both early exits; larger saving but holdout-unsafe |
+
+The 3-exit table shows that v0.17 increases compute saving over v0.16 (`8.64%` versus `5.06%`) but does not preserve quality as safely as the lighter v0.13 and v0.14 operating points.
+
+Machine-readable table:
+
+```text
+docs/tables/active_budget_anytime_exit_v0.4/v0.17_EE/cross_version_3exit_table.csv
+```
+
+### v0.17 five-exit architecture extension — reported separately
+
+The 5-exit result is scientifically important, but it uses a different full-depth reference and a different training/validation manifest. It is therefore a **within-checkpoint architecture-extension result**, not a directly comparable row in the canonical 3-exit ranking.
+
+| Method | FLOPs saved | Speedup | Macro-F1 | Micro-F1 | Samples-F1 | Exact | Hamming ↓ |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Always Exit 5 | 0.00% | 1.000× | 0.810761 | 0.869498 | 0.887906 | 0.673587 | 0.038985 |
+| **v0.17 sequential anytime (5-exit)** | **30.71%** | **1.114×** | 0.801356 | 0.868859 | 0.886945 | **0.688581** | 0.039100 |
+
+Machine-readable table:
+
+```text
+docs/tables/active_budget_anytime_exit_v0.4/v0.17_EE/v017_architecture_table.csv
+```
+
+### Cross-version figures
+
+![Cross-version corrected-holdout compute saving for the canonical 3-exit family](docs/tables/active_budget_anytime_exit_v0.4/v0.17_EE/cross_version_3exit_flops.svg)
+
+![Cross-version corrected-holdout quality metrics for the canonical 3-exit family](docs/tables/active_budget_anytime_exit_v0.4/v0.17_EE/cross_version_3exit_quality.svg)
+
+![Cross-version corrected-holdout Hamming loss for the canonical 3-exit family](docs/tables/active_budget_anytime_exit_v0.4/v0.17_EE/cross_version_3exit_hamming.svg)
+
+![v0.17 architecture extension: estimated FLOPs saved](docs/tables/active_budget_anytime_exit_v0.4/v0.17_EE/v017_architecture_flops.svg)
+
+The line plots are descriptive summaries of the tabulated operating points. They should not be interpreted as continuous training curves or as a fair direct comparison between the 3-exit and 5-exit architectures.
+
+---
+
 ## Ablation findings
 
 ### Exit 1
@@ -377,7 +440,7 @@ docs/tables/active_budget_anytime_exit_v0.4/v0.16_EE/
 docs/tables/active_budget_anytime_exit_v0.4/v0.17_EE/
 ```
 
-The v0.17 package contains method theory, setup, results, ablations, paper-ready wording, PowerShell commands, frozen policies, Pareto fronts, optimisation histories, holdout tables, per-label deltas, fairness records, and SVG figures.
+The v0.17 package contains method theory, setup, results, ablations, paper-ready wording, PowerShell commands, frozen policies, Pareto fronts, optimisation histories, holdout tables, per-label deltas, fairness records, machine-readable cross-version tables, and figures.
 
 ---
 
@@ -392,6 +455,7 @@ The v0.17 package contains method theory, setup, results, ablations, paper-ready
 - The current risk mechanism is implemented but was non-binding in the ablations.
 - CPU speedups are hardware-, threading-, batch-, and implementation-specific.
 - Estimated FLOPs and measured latency are not interchangeable.
+- The cross-version line plots connect discrete operating points; they are not optimisation trajectories.
 - v0.17 freezes one operating point per architecture; it is not a runtime user-budget sweep.
 - v0.17 stops the entire sample; it is not label-wise asynchronous inference.
 - Evidence accumulation and distilled knowledge were not part of the primary v0.17 method.
