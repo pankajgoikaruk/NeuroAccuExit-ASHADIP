@@ -8,7 +8,7 @@ This record summarises the v0.17 documentation freeze for:
 active_budget_anytime_exit_v0.4
 ```
 
-The previous v0.16 package remains unchanged and authoritative. The new documentation adds full traceability for `v0.17_EE`, which implements fully sequential active-budget inference for both 3-exit and 5-exit checkpoints.
+The previous v0.16 package remains unchanged and authoritative. The documentation adds full traceability for `v0.17_EE`, which implements fully sequential active-budget inference for both 3-exit and 5-exit checkpoints.
 
 ## Sources checked
 
@@ -94,17 +94,33 @@ The uploaded v0.17 archive contained:
 
 These interpretations are hypotheses supported by observed patterns; they are not controlled causal conclusions.
 
+## Cross-version table and figure extension
+
+After the v0.17 documentation freeze, the repository was extended with a canonical corrected-holdout comparison through v0.17:
+
+- the main table contains only the comparable 3-exit family and adds the v0.17 sequential row;
+- the 5-exit result is reported in a separate within-checkpoint companion table;
+- policy stop units and decision routes are preserved for method traceability;
+- three line plots show 3-exit FLOP saving, quality metrics, and Hamming Loss;
+- one companion plot shows v0.17 3-exit and 5-exit FLOP savings relative to their own full-depth baselines.
+
+The plots connect discrete frozen-policy operating points. They are not learning curves or continuous optimisation trajectories.
+
 ## Documentation files updated
 
 | File or directory | What was added |
 |---|---|
-| `README.md` | v0.17 branch identity, theory, settings, 3-/5-exit results, ablations, fairness, commands, limitations, and current decision |
-| `DOC_STRUCTURE.md` | v0.17 code traceability, package inventory, storage policy, documentation rules, and status |
+| `README.md` | v0.17 branch identity, theory, settings, 3-/5-exit results, cross-version tables, policy routes, figures, ablations, fairness, commands, limitations, and current decision |
+| `DOC_STRUCTURE.md` | v0.17 code traceability, expanded package inventory, cross-version artifacts, storage policy, documentation rules, and status |
 | `docs/active_budget_anytime_exit_v0.4/README.md` | Branch-level v0.17 overview and result decision |
 | `docs/active_budget_anytime_exit_v0.4/VERSION_HISTORY.md` | New v0.17 implementation, research questions, settings, results, and findings |
-| `docs/active_budget_anytime_exit_v0.4/DOCUMENTATION_UPDATE_SUMMARY.md` | This provenance and file-by-file audit |
-| `docs/tables/active_budget_anytime_exit_v0.4/README.md` | Added the v0.17 compact package |
-| `docs/tables/active_budget_anytime_exit_v0.4/v0.17_EE/` | New complete human- and machine-readable package |
+| `docs/active_budget_anytime_exit_v0.4/DOCUMENTATION_UPDATE_SUMMARY.md` | This provenance, cross-version extension, and file-by-file audit |
+| `docs/tables/active_budget_anytime_exit_v0.4/README.md` | Added the v0.17 compact package and cross-version artifacts |
+| `docs/tables/active_budget_anytime_exit_v0.4/v0.17_EE/README.md` | Indexed the new comparison tables and figures |
+| `docs/tables/active_budget_anytime_exit_v0.4/v0.17_EE/FIGURES.md` | Added figure links, interpretation, and fairness caution |
+| `docs/tables/active_budget_anytime_exit_v0.4/v0.17_EE/cross_version_3exit_table.csv` | Machine-readable canonical 3-exit table through v0.17 |
+| `docs/tables/active_budget_anytime_exit_v0.4/v0.17_EE/v017_architecture_table.csv` | Separate architecture-specific v0.17 comparison |
+| `docs/tables/active_budget_anytime_exit_v0.4/v0.17_EE/*.svg` | Four repository-rendered cross-version and architecture-extension plots |
 
 ## Non-claims
 
@@ -115,6 +131,7 @@ These interpretations are hypotheses supported by observed patterns; they are no
 - CPU timing is hardware- and protocol-specific.
 - The corrected holdout is not an independent external test.
 - The risk mechanism should not be claimed as effective in v0.17.
+- The cross-version connecting lines are not training trajectories.
 - v0.17 is sample-wise, not label-wise asynchronous.
 - Evidence accumulation and distilled knowledge are not part of the primary v0.17 method.
 - No v0.17 backbone training was performed.
