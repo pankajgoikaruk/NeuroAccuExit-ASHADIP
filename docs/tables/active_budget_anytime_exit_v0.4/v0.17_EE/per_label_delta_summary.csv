@@ -1,0 +1,11 @@
+architecture,label,always_final_f1,full_sequential_f1,f1_delta,interpretation
+3-exit,audience_reaction_present,0.535714,0.417910,-0.117804,largest_loss
+3-exit,Eric_Thomas,0.942029,0.883721,-0.058308,large_loss
+3-exit,other_speaker_present,0.958696,0.944018,-0.014678,moderate_loss
+5-exit,silence_present,0.186047,0.258065,0.072018,largest_gain
+5-exit,music_present,0.824324,0.840000,0.015676,gain
+5-exit,Eckhart_Tolle,0.994012,1.000000,0.005988,gain
+5-exit,Jay_Shetty,0.972376,0.977778,0.005402,gain
+5-exit,Nick_Vujicic,0.968421,0.873563,-0.094858,largest_loss
+5-exit,audience_reaction_present,0.461538,0.376471,-0.085068,large_loss
+5-exit,Eric_Thomas,0.872180,0.861538,-0.010642,moderate_loss

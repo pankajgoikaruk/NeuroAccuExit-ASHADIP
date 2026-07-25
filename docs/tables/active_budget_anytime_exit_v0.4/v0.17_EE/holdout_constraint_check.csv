@@ -1,0 +1,9 @@
+architecture,metric,limit,observed_degradation,met
+3-exit,parent_macro_f1_drop,0.010,0.022254,false
+3-exit,parent_micro_f1_drop,0.005,0.015582,false
+3-exit,parent_exact_match_drop,0.010,0.035755,false
+3-exit,parent_hamming_increase,0.002,0.004498,false
+5-exit,parent_macro_f1_drop,0.010,0.009406,true
+5-exit,parent_micro_f1_drop,0.005,0.000639,true
+5-exit,parent_exact_match_drop,0.010,-0.014994,true
+5-exit,parent_hamming_increase,0.002,0.000115,true
