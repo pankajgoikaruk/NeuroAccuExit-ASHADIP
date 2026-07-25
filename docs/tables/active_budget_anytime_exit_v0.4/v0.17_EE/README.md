@@ -1,51 +1,74 @@
-# v0.17_EE — Sequential Active-Budget Anytime Exit
+# NeuroAccuExit v0.17_EE — Sequential Active-Budget Anytime Exit
 
 ## Status
 
-v0.17 is fully integrated and evaluated for:
+**Complete implementation and full integration for both tested checkpoints.**
 
-```text
-3 exits: Exit 1 → Exit 2 → Exit 3
-5 exits: Exit 1 → Exit 2 → Exit 3 → Exit 4 → Exit 5
-```
+The v0.17 package records:
 
-The policies were tuned on validation data, frozen, and evaluated through genuine staged inference on the corrected holdout. Thirty-repeat CPU timing and six ablations were completed.
+- genuine sequential staged inference for `Exit 1 → Exit 2 → Exit 3`;
+- genuine sequential staged inference for `Exit 1 → Exit 2 → Exit 3 → Exit 4 → Exit 5`;
+- exact staged/full checkpoint-equivalence checks for both architectures;
+- validation-only, constraint-aware NSGA-II-style policy optimisation;
+- safety-buffered Pareto-knee selection;
+- corrected-holdout evaluation with frozen policies and no holdout retuning;
+- six policy ablations per architecture;
+- 30-repeat controlled CPU timing;
+- per-label and parent-change analysis;
+- an explicit cross-architecture fairness audit.
 
 ## Headline decision
 
-| Architecture | Outcome |
+| Finding | Status |
 |---|---|
-| Three exits | Real speedup and FLOP saving, but holdout quality constraints failed. |
-| Five exits | 30.71% estimated FLOPs saved, 1.114× measured speedup, and all within-model holdout quality constraints met. |
-| Direct 3-vs-5 claim | Not valid because the checkpoints used different training manifests. |
+| 5-exit full sequential policy | **Confirmed within-checkpoint success** |
+| 3-exit full sequential policy | Compute-successful but **not holdout quality-safe** |
+| Direct claim that 5 exits outperform 3 exits | **Not supported yet** because the training/validation manifests differ |
+| Exit 1 | Useful for additional savings, but the riskiest stopping stage |
+| Label-specific margins | Strongly supported by ablations |
+| Previous-exit stability | Supported as a safety mechanism |
+| Current risk term | Practically non-binding in the selected policies |
 
-## Package contents
+## Holdout headline
+
+| Architecture | Route | Early-exit fraction | FLOPs saved | Speedup | Parent Macro-F1 | Parent Micro-F1 | Exact Match | Hamming ↓ | Holdout limits |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---|
+| 3-exit | `1→2→3` | 10.40% | 8.64% | 1.037× | 0.840128 | 0.937549 | 0.840830 | 0.018224 | **Failed** |
+| 5-exit | `1→2→3→4→5` | 52.94% | 30.71% | 1.114× | 0.801356 | 0.868859 | 0.688581 | 0.039100 | **Passed** |
+
+The 5-exit policy met every predefined holdout-quality threshold relative to its own Always Exit 5 baseline while saving `30.71%` estimated FLOPs and producing a `1.114×` median CPU speedup. Exact Match increased from `0.673587` to `0.688581`.
+
+## Main records
 
 | File | Purpose |
 |---|---|
-| `EXPERIMENT_SETUP.md` | Architecture, theory, optimiser, settings, RQs, and fairness protocol |
-| `RESULTS_AND_ANALYSIS.md` | Validation, holdout, timing, ablations, per-label findings, and verdict |
-| `PAPER_READY_SUMMARY.md` | Reusable academic wording, tables, captions, limitations, and non-overclaim guidance |
-| `PS_COMMANDS.md` | PowerShell commands for tuning, evaluation, timing, and reporting |
-| `experiment_manifest.json` | Machine-readable experiment metadata |
-| `headline_results.csv` | Main three-exit/five-exit results |
-| `ablation_summary.csv` | Full and reduced-policy comparison |
-| `cumulative_version_comparison.csv` | v0.11–v0.17 progression |
-| `per_label_findings.csv` | Main per-label effects |
-| `exit_distribution.svg` | Full sequential routing distribution |
-| `quality_compute_comparison.svg` | Compute saving versus Macro-F1 change |
+| `EXPERIMENT_SETUP.md` | Checkpoints, data, architectures, optimiser settings, constraints, and protocol |
+| `THEORY_AND_METHOD.md` | Sequential multi-label stopping theory and Pareto selection |
+| `RESULTS_AND_ANALYSIS.md` | Validation, holdout, timing, parent-change, per-label, and fairness analysis |
+| `ABLATIONS_AND_FINDINGS.md` | Exit-1, stability, risk, label-margin, and confidence-only ablations |
+| `PAPER_READY_SUMMARY.md` | Paper/thesis-safe claims and non-claims |
+| `PS_COMMANDS.md` | Full, frozen-reuse, direct tuning/evaluation, and reporting commands |
+| `REPRODUCE_V017_EE.ps1` | Documentation entry point |
+| `experiment_manifest.json` | Compact machine-readable experiment record |
+| `holdout_constraint_check.csv` | Explicit holdout quality audit |
+| `cross_architecture_headline.csv` | 3-exit and 5-exit headline summary |
+| `ablation_3exit.csv`, `ablation_5exit.csv` | Architecture-specific ablations |
+| `per_label_holdout_delta_*.csv` | Label-level changes |
+| `fairness_audit.json` | Direct-comparison validity |
 
-## Confirmed five-exit result
+## Main command
 
-| Metric | Always Exit 5 | Full sequential | Change |
-|---|---:|---:|---:|
-| Parent Macro-F1 | 0.810761 | 0.801356 | −0.009406 |
-| Parent Micro-F1 | 0.869498 | 0.868859 | −0.000639 |
-| Parent Exact Match | 0.673587 | 0.688581 | +0.014994 |
-| Parent Hamming Loss | 0.038985 | 0.039100 | +0.000115 |
-| Estimated FLOPs saved | 0.00% | 30.71% | +30.71 pp |
-| Measured CPU speedup | 1.000× | 1.114× | +11.4% |
+```powershell
+conda activate ASHADIP_V0
 
-## Scientific conclusion
+powershell -ExecutionPolicy Bypass `
+  -File ".\scripts\v0.17_EE\sequential_anytime_exit\run_sequential_anytime_exit_v017_EE.ps1" `
+  -RunDir5 ".\human_talk_workspace\tata_v0.6_raw_pipeline\main_models\runs\main_v06_expanded_5exit_20260603_210324" `
+  -TimingRepeats 30
+```
 
-The five-exit checkpoint demonstrates that fully sequential routing can create a strong within-model quality–computation trade-off. The result does not prove that a five-exit architecture is inherently better than the canonical three-exit architecture. A fair claim requires retraining the five-exit model on the same training manifest and protocol.
+## Research decision
+
+The 5-exit result is the major successful outcome of v0.17, but it must be reported as a **within-architecture quality–efficiency result**. The fairness audit failed only `same_validation_manifest`; therefore, the current evidence does not establish that five exits are intrinsically superior to three exits.
+
+The next fair architectural study must train a 5-exit checkpoint using the exact canonical v0.8/v0.10 training manifest and preprocessing used by the 3-exit checkpoint.

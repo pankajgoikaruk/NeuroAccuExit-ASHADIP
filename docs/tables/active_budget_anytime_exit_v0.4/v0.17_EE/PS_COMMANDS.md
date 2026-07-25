@@ -1,6 +1,6 @@
 # v0.17_EE PowerShell Commands
 
-Run all commands from:
+Run all commands from the repository root:
 
 ```text
 C:\Users\wwwsa\PycharmProjects\NeuroAccuExit-ASHADIP
@@ -11,17 +11,18 @@ C:\Users\wwwsa\PycharmProjects\NeuroAccuExit-ASHADIP
 ```powershell
 conda activate ASHADIP_V0
 
-$env:PYTHONPATH = (Get-Location).Path
-$env:KMP_DUPLICATE_LIB_OK = "TRUE"
-
-git fetch origin
 git switch active_budget_anytime_exit_v0.4
 git pull --ff-only origin active_budget_anytime_exit_v0.4
+
+$env:PYTHONPATH = (Get-Location).Path
+$env:KMP_DUPLICATE_LIB_OK = "TRUE"
 ```
 
-## Complete three-exit experiment
+## Training status
 
-This command runs tests, staged equivalence, validation tuning, frozen-policy corrected-holdout evaluation, ablations, and timing.
+v0.17 does **not** train the CNN or exit heads. It reuses the canonical 3-exit run and the tested v0.6 5-exit run. No v0.17 backbone-training command exists. A future fair architecture comparison requires a new 5-exit checkpoint trained with the canonical 3-exit manifest and settings; that future training must be documented separately.
+
+## Complete 3-exit run
 
 ```powershell
 powershell -ExecutionPolicy Bypass `
@@ -29,7 +30,7 @@ powershell -ExecutionPolicy Bypass `
   -Run3Only
 ```
 
-## Complete combined three-exit and five-exit experiment
+## Complete tested 3-exit and 5-exit run
 
 ```powershell
 powershell -ExecutionPolicy Bypass `
@@ -37,7 +38,7 @@ powershell -ExecutionPolicy Bypass `
   -RunDir5 ".\human_talk_workspace\tata_v0.6_raw_pipeline\main_models\runs\main_v06_expanded_5exit_20260603_210324"
 ```
 
-## Publication-quality timing
+## Publication timing
 
 ```powershell
 powershell -ExecutionPolicy Bypass `
@@ -46,19 +47,7 @@ powershell -ExecutionPolicy Bypass `
   -TimingRepeats 30
 ```
 
-## Re-evaluate frozen policies without retuning
-
-Use this after validation tuning has already produced both frozen policy JSON files.
-
-```powershell
-powershell -ExecutionPolicy Bypass `
-  -File ".\scripts\v0.17_EE\sequential_anytime_exit\run_sequential_anytime_exit_v017_EE.ps1" `
-  -RunDir5 ".\human_talk_workspace\tata_v0.6_raw_pipeline\main_models\runs\main_v06_expanded_5exit_20260603_210324" `
-  -SkipTuning `
-  -TimingRepeats 30
-```
-
-To reuse both the frozen policies and previous precheck evidence:
+## Reuse frozen policies
 
 ```powershell
 powershell -ExecutionPolicy Bypass `
@@ -69,9 +58,7 @@ powershell -ExecutionPolicy Bypass `
   -TimingRepeats 30
 ```
 
-Do not use `-SkipTuning` unless the matching frozen policy files already exist under the corresponding `validation_tuning` directories.
-
-## Re-run with explicit experimental settings
+## Custom optimiser settings
 
 ```powershell
 powershell -ExecutionPolicy Bypass `
@@ -87,24 +74,11 @@ powershell -ExecutionPolicy Bypass `
   -MinTotalEarlyFraction 0.02 `
   -MinExit1Fraction 0.005 `
   -SafetyFraction 0.75 `
-  -BatchSize 128 `
-  -TorchThreads 1 `
-  -ThresholdMode fixed_0p5 `
-  -TimingRepeats 30
+  -TimingRepeats 30 `
+  -TorchThreads 1
 ```
 
-## Find five-exit checkpoints
-
-```powershell
-Get-ChildItem ".\human_talk_workspace" `
-  -File `
-  -Recurse `
-  -Filter "best.pt" |
-Where-Object { $_.FullName -match "5exit" } |
-Select-Object -ExpandProperty DirectoryName
-```
-
-## Tests only
+## Policy and staged-wrapper tests
 
 ```powershell
 python -m unittest `
@@ -113,53 +87,66 @@ python -m unittest `
   -v
 ```
 
-## Direct tuning, evaluation, and reporting entrypoints
+## Direct tuner
 
-Inspect the accepted arguments before direct use:
-
-```powershell
-python ".\scripts\v0.17_EE\sequential_anytime_exit\tune_sequential_anytime_exit_v017.py" --help
-python ".\scripts\v0.17_EE\sequential_anytime_exit\evaluate_sequential_anytime_exit_v017.py" --help
-python ".\scripts\v0.17_EE\sequential_anytime_exit\compare_sequential_architectures_v017.py" --help
-```
-
-The runner is the authoritative command because it supplies the canonical manifests, features, label schema, LATS-v2 configuration, output paths, constraints, and architecture-specific policy paths.
-
-## Output and reporting locations
+The branch runner is recommended because it supplies the exact manifests and constraints. The direct entry point is:
 
 ```powershell
-$V017Root = ".\human_talk_workspace\active_budget_anytime_exit_v0.4\v0.17_EE\sequential_anytime_exit"
-
-Get-ChildItem "$V017Root\3exit\validation_tuning" -File
-Get-ChildItem "$V017Root\3exit\corrected_holdout_evaluation" -File -Recurse
-Get-ChildItem "$V017Root\5exit\validation_tuning" -File
-Get-ChildItem "$V017Root\5exit\corrected_holdout_evaluation" -File -Recurse
-Get-ChildItem "$V017Root\architecture_comparison" -File
+python ".\scripts\v0.17_EE\sequential_anytime_exit\tune_sequential_anytime_exit_v017.py" `
+  --run_dir "<RUN_DIRECTORY>" `
+  --labels_json ".\configs\human_talk_10label_schema.json" `
+  --lats_config_json ".\docs\tables\agentic_data_preprocessing_v0.10\no_hint_lats_v2_coordinate_reoptimized_config.json" `
+  --parent_id_col "parent_clip_id" `
+  --threshold_mode "fixed_0p5" `
+  --population_size 96 `
+  --generations 60 `
+  --cv_folds 5 `
+  --max_macro_f1_drop 0.01 `
+  --max_micro_f1_drop 0.005 `
+  --max_exact_match_drop 0.01 `
+  --max_hamming_increase 0.002 `
+  --min_total_early_fraction 0.02 `
+  --min_exit1_fraction 0.005 `
+  --safety_fraction 0.75 `
+  --batch_size 128 `
+  --device cpu `
+  --out_dir "<VALIDATION_OUTPUT_DIRECTORY>"
 ```
 
-Important reports:
+## Direct holdout evaluator
+
+```powershell
+python ".\scripts\v0.17_EE\sequential_anytime_exit\evaluate_sequential_anytime_exit_v017.py" `
+  --run_dir "<RUN_DIRECTORY>" `
+  --policy_json "<FROZEN_POLICY_JSON>" `
+  --holdout_manifest ".\human_talk_workspace\tata_v0.8_human_corrected_balanced_pipeline\corrected_holdout\multilabel_features_manifest_CORRECTED_LABELS.csv" `
+  --features_root ".\human_talk_workspace\tata_v0.6_raw_pipeline\final_holdout_feature_cache\features" `
+  --labels_json ".\configs\human_talk_10label_schema.json" `
+  --lats_config_json ".\docs\tables\agentic_data_preprocessing_v0.10\no_hint_lats_v2_coordinate_reoptimized_config.json" `
+  --parent_id_col "parent_clip_id" `
+  --batch_size 128 `
+  --timing_repeats 30 `
+  --torch_threads 1 `
+  --device cpu `
+  --out_dir "<HOLDOUT_OUTPUT_DIRECTORY>"
+```
+
+## Architecture reporting
+
+```powershell
+python ".\scripts\v0.17_EE\sequential_anytime_exit\compare_sequential_architectures_v017.py" `
+  --policy_3 ".\human_talk_workspace\active_budget_anytime_exit_v0.4\v0.17_EE\sequential_anytime_exit\3exit\validation_tuning\frozen_sequential_policy_3exit_v017.json" `
+  --comparison_3 ".\human_talk_workspace\active_budget_anytime_exit_v0.4\v0.17_EE\sequential_anytime_exit\3exit\corrected_holdout_evaluation\v017_3exit_holdout_comparison.csv" `
+  --policy_5 ".\human_talk_workspace\active_budget_anytime_exit_v0.4\v0.17_EE\sequential_anytime_exit\5exit\validation_tuning\frozen_sequential_policy_5exit_v017.json" `
+  --comparison_5 ".\human_talk_workspace\active_budget_anytime_exit_v0.4\v0.17_EE\sequential_anytime_exit\5exit\corrected_holdout_evaluation\v017_5exit_holdout_comparison.csv" `
+  --out_dir ".\human_talk_workspace\active_budget_anytime_exit_v0.4\v0.17_EE\sequential_anytime_exit\architecture_comparison"
+```
+
+## Output roots
 
 ```text
-3exit/corrected_holdout_evaluation/v017_3exit_holdout_comparison.csv
-3exit/corrected_holdout_evaluation/v017_3exit_ablation_table.csv
-5exit/corrected_holdout_evaluation/v017_5exit_holdout_comparison.csv
-5exit/corrected_holdout_evaluation/v017_5exit_ablation_table.csv
-architecture_comparison/v017_3exit_vs_5exit_headline.csv
-architecture_comparison/v017_combined_ablation_table.csv
-architecture_comparison/v017_exit_distribution_comparison.csv
-architecture_comparison/v017_fairness_audit.json
+human_talk_workspace\active_budget_anytime_exit_v0.4\v0.17_EE\sequential_anytime_exit\
+├── 3exit\
+├── 5exit\
+└── architecture_comparison\
 ```
-
-## Training status
-
-No new backbone or exit-head training was performed for the completed v0.17 experiment. Both checkpoints were frozen and reused; v0.17 trained/optimised only the stopping-policy parameters.
-
-A future fair comparison must train a new five-exit checkpoint using the same canonical manifest, preprocessing, labels, seed policy, loss, and evaluation protocol as the three-exit model. A speculative training command is intentionally not recorded as a completed v0.17 command. Document that command only after the matching five-exit manifest and run configuration are finalised.
-
-## Reproducibility caution
-
-- Do not retune the policy on the corrected holdout.
-- Keep validation eligibility separate from holdout constraint satisfaction.
-- Use the frozen policy generated under the corresponding architecture's `validation_tuning` directory.
-- Report estimated FLOPs and measured timing separately.
-- The historical five-exit checkpoint is valid for a within-model result, not a fair architecture-superiority claim.
