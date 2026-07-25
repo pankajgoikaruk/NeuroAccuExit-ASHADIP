@@ -1,0 +1,10 @@
+version,method,decision_unit,flops_saved_pct,speedup,macro_f1,micro_f1,exact_match,hamming_loss,status
+baseline,Always Exit 3 + frozen LATS-v2,full depth,0.00,1.000,0.862382,0.953131,0.876586,0.013725,canonical 3-exit quality reference
+v0.11,global dynamic Exit 2/3,segment,7.53,,0.842248,0.935484,0.838524,0.018916,genuine skipping but permissive
+v0.12,validation-derived label-risk rule,segment,7.19,,0.843703,0.936689,0.840830,0.018570,small quality gain over v0.11
+v0.13,per-label margin,segment,1.44,0.997,0.858748,0.951556,0.874279,0.014187,quality-constrained 3-exit adaptive baseline
+v0.14,parent-aware Exit-2 gate,segment,13.05,0.986,0.840798,0.933966,0.835063,0.019262,unsafe and slower
+v0.15,nonparametric whole-parent risk,parent,0.45,0.934,0.863129,0.952681,0.875433,0.013841,quality preserved but insufficient efficiency
+v0.16,multi-objective Exit-2 margin,segment,5.06,1.015,0.849203,0.942474,0.854671,0.016840,real speedup but holdout limits failed
+v0.17,3-exit full sequential,segment,8.64,1.037,0.840128,0.937549,0.840830,0.018224,compute-successful but holdout unsafe
+v0.17,5-exit full sequential,segment,30.71,1.114,0.801356,0.868859,0.688581,0.039100,within-checkpoint holdout success; not fair architecture comparison
