@@ -46,7 +46,7 @@ This record maps every Early-Exit experiment to its implementation, settings, re
 
 ## v0.14_EE — parent-aware counterfactual gates
 
-**Implementation:** `policies/parent_aware_adaptive_gate.py` and `scripts/v0.14_EE/parent__aware_gate/`.
+**Implementation:** `policies/parent_aware_adaptive_gate.py` and `scripts/v0.14_EE/parent_aware_gate/`.
 
 **Research questions:** Can parent-aware counterfactual targets predict whether Exit 3 improves a segment? Can Exit 1 safely terminate some samples?
 
@@ -128,7 +128,7 @@ This record maps every Early-Exit experiment to its implementation, settings, re
 ### Five-exit confirmed holdout
 
 | Method | Exit 1 | Exit 2 | Exit 3 | Exit 4 | Exit 5 | FLOPs saved | Speedup | Macro-F1 | Micro-F1 | Exact | Hamming ↓ |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | Always Exit 5 | 0.00% | 0.00% | 0.00% | 0.00% | 100.00% | 0.00% | 1.000× | 0.810761 | 0.869498 | 0.673587 | 0.038985 |
 | Full sequential | 6.83% | 1.22% | 18.59% | 26.30% | 47.06% | 30.71% | 1.114× | 0.801356 | 0.868859 | 0.688581 | 0.039100 |
 | No Exit 1 | 0.00% | — | — | — | — | 26.80% | 1.096× | 0.809541 | 0.870906 | 0.687428 | approximately preserved |
