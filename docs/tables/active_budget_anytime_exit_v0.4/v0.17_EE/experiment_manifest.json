@@ -1,0 +1,57 @@
+{
+  "branch": "active_budget_anytime_exit_v0.4",
+  "experiment": "v0.17_EE",
+  "method": "sequential_active_budget_anytime_exit",
+  "routes": {"3exit": [1,2,3], "5exit": [1,2,3,4,5]},
+  "checkpoints": {
+    "3exit": "main_v010_human_corrected_balanced_3exit_no_hint_20260703_201845",
+    "5exit": "main_v06_expanded_5exit_20260603_210324"
+  },
+  "settings": {
+    "population_size": 96,
+    "generations": 60,
+    "seed": 42,
+    "safety_buffer_ratio": 0.75,
+    "minimum_total_early_fraction": 0.02,
+    "minimum_exit1_fraction": 0.005,
+    "threshold_mode": "fixed_0p5",
+    "validation_segments": 1883,
+    "validation_parents": 304,
+    "holdout_segments": 4335,
+    "holdout_parents": 867,
+    "timing_repeats": 30,
+    "device": "cpu",
+    "threads": 1
+  },
+  "constraints": {
+    "max_macro_f1_drop": 0.01,
+    "max_micro_f1_drop": 0.005,
+    "max_exact_match_drop": 0.01,
+    "max_hamming_increase": 0.002
+  },
+  "results": {
+    "3exit_full_sequential": {
+      "estimated_flops_saved_pct": 8.63503,
+      "speedup": 1.037,
+      "macro_f1": 0.840128,
+      "micro_f1": 0.937549,
+      "exact_match": 0.84083,
+      "hamming_loss": 0.018224,
+      "holdout_constraints_met": false
+    },
+    "5exit_full_sequential": {
+      "estimated_flops_saved_pct": 30.71,
+      "speedup": 1.114,
+      "macro_f1": 0.801356,
+      "micro_f1": 0.868859,
+      "exact_match": 0.688581,
+      "hamming_loss": 0.0391,
+      "holdout_constraints_met": true
+    }
+  },
+  "fairness": {
+    "direct_architecture_comparison_valid": false,
+    "reason": "training manifests and training-set sizes differ"
+  },
+  "confirmed_verdict": "Five-exit is a successful within-model anytime result; three-exit is compute-successful but quality-unsafe; architectural superiority is unresolved."
+}
