@@ -1,6 +1,6 @@
 # v0.17_EE Figures
 
-These repository-rendered Mermaid figures summarise the confirmed v0.17 results. Exact values remain in the CSV and JSON records.
+These repository-rendered figures summarise the confirmed v0.17 results. Exact values remain in the CSV and JSON records.
 
 ## Sequential routes
 
@@ -44,6 +44,29 @@ xychart-beta
 |---|---:|---:|---|
 | 3-exit | 8.64% | 1.037× | Failed |
 | 5-exit | 30.71% | 1.114× | Passed |
+
+## Cross-version corrected-holdout plots
+
+The following figures summarise the discrete corrected-holdout operating points in the canonical 3-exit experiment family:
+
+![Cross-version corrected-holdout compute saving](cross_version_3exit_flops.svg)
+
+![Cross-version corrected-holdout quality metrics](cross_version_3exit_quality.svg)
+
+![Cross-version corrected-holdout Hamming loss](cross_version_3exit_hamming.svg)
+
+The architecture-extension figure reports the two v0.17 policies against their own full-depth references:
+
+![v0.17 3-exit and 5-exit architecture extension](v017_architecture_flops.svg)
+
+Supporting tables:
+
+```text
+cross_version_3exit_table.csv
+v017_architecture_table.csv
+```
+
+These are line plots over discrete policy versions, not continuous training or optimisation curves. The 5-exit point must remain separate from the canonical 3-exit ranking because the fairness audit failed `same_validation_manifest`.
 
 ## Ablation interpretation map
 
