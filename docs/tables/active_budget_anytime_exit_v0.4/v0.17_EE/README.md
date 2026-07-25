@@ -15,7 +15,8 @@ The v0.17 package records:
 - six policy ablations per architecture;
 - 30-repeat controlled CPU timing;
 - per-label and parent-change analysis;
-- an explicit cross-architecture fairness audit.
+- an explicit cross-architecture fairness audit;
+- cross-version corrected-holdout tables and plots through `v0.17_EE`.
 
 ## Headline decision
 
@@ -37,6 +38,18 @@ The v0.17 package records:
 | 5-exit | `1→2→3→4→5` | 52.94% | 30.71% | 1.114× | 0.801356 | 0.868859 | 0.688581 | 0.039100 | **Passed** |
 
 The 5-exit policy met every predefined holdout-quality threshold relative to its own Always Exit 5 baseline while saving `30.71%` estimated FLOPs and producing a `1.114×` median CPU speedup. Exact Match increased from `0.673587` to `0.688581`.
+
+## Cross-version records
+
+| File | Purpose |
+|---|---|
+| `cross_version_3exit_table.csv` | Fair canonical 3-exit corrected-holdout comparison through v0.17 |
+| `v017_architecture_table.csv` | v0.17 3-exit/5-exit policies against their own full-depth references |
+| `cross_version_3exit_flops.svg` | Cross-version compute-saving plot |
+| `cross_version_3exit_quality.svg` | Cross-version Macro/Micro/Samples/Exact plot |
+| `cross_version_3exit_hamming.svg` | Cross-version Hamming-loss plot |
+| `v017_architecture_flops.svg` | Separate v0.17 architecture-extension FLOPs plot |
+| `FIGURES.md` | Figure interpretation and fairness cautions |
 
 ## Main records
 
