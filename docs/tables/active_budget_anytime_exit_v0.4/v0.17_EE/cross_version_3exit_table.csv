@@ -1,0 +1,10 @@
+version,method,stop_unit,decision_route,flops_saved_pct,macro_f1,micro_f1,samples_f1,exact_match,hamming_loss,interpretation
+baseline,Always Exit 3,None,Exit 3 only,0.00,0.862382,0.953131,0.958889,0.876586,0.013725,Canonical full-depth reference
+v0.13,per-label margin,Segment,Exit 2 -> Exit 3,1.44,0.858748,0.951556,0.957198,0.874279,0.014187,Quality-constrained adaptive baseline
+v0.13,logistic gate,Segment,Exit 2 -> Exit 3,11.30,0.833034,0.943529,0.949750,0.855825,0.016609,Compute-forward but quality degradation
+v0.14,Exit 1-3 ablation,Segment,Exit 1 -> Exit 3,0.69,0.861442,0.952756,0.958697,0.876586,0.013841,Quality preserved but insufficient coverage
+v0.14,Exit 2-3 gate,Segment,Exit 2 -> Exit 3,13.05,0.840798,0.933966,0.942473,0.835063,0.019262,Aggressive and unsafe
+v0.15,nonparametric parent risk,Parent,Exit 2 -> Exit 3,0.44,0.863129,0.952681,0.958505,0.875433,0.013841,Quality preserved but negligible efficiency
+v0.15,shared logistic parent gate,Parent,Exit 2 -> Exit 3,0.00,0.862382,0.953131,0.958889,0.876586,0.013725,Frozen fallback selected no stops
+v0.16,multi-objective margin,Segment,Exit 2 -> Exit 3,5.06,0.849203,0.942474,0.950266,0.854671,0.016840,Real speedup but holdout constraints failed
+v0.17,sequential anytime 3-exit,"Segment, sequential",Exit 1 -> Exit 2 -> Exit 3,8.64,0.840128,0.937549,0.945653,0.840830,0.018224,Uses both early exits but holdout constraints failed

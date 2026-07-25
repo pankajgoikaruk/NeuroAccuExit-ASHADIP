@@ -2,113 +2,136 @@
 
 ## Scope
 
-This record summarises the documentation freeze for branch:
+This record summarises the v0.17 documentation freeze for:
 
 ```text
 active_budget_anytime_exit_v0.4
 ```
 
-The documented implementation milestone is `v0.16_EE`, which applies constraint-aware, NSGA-II-style multi-objective optimisation to the lightweight per-label Exit-2 margin policy. The neural checkpoint, TinyAudioCNN backbone, and exit heads remain frozen.
+The previous v0.16 package remains unchanged and authoritative. The documentation adds full traceability for `v0.17_EE`, which implements fully sequential active-budget inference for both 3-exit and 5-exit checkpoints.
 
 ## Sources checked
 
-The documentation values were checked against the completed v0.16 runtime package and the frozen repository artifacts:
+The documentation was audited against:
 
 ```text
-human_talk_workspace/active_budget_anytime_exit_v0.4/v0.16_EE/multiobjective_per_label_margin/
-├── validation_tuning/
-└── corrected_holdout_evaluation/
+human_talk_workspace/active_budget_anytime_exit_v0.4/v0.17_EE/
+sequential_anytime_exit/
+├── 3exit/
+│   ├── validation_tuning/
+│   └── corrected_holdout_evaluation/
+├── 5exit/
+│   ├── validation_tuning/
+│   └── corrected_holdout_evaluation/
+└── architecture_comparison/
 ```
 
-The documentation audit covered:
+The uploaded v0.17 archive contained:
 
-- staged/full checkpoint-equivalence output;
-- selected frozen policy;
-- validation candidate and Pareto tables;
-- optimisation history;
-- corrected-holdout method comparison;
-- per-label holdout metrics;
-- 30-repeat CPU timing;
-- cumulative v0.11–v0.16 ablations.
+- both staged-equivalence reports;
+- both frozen sequential policies;
+- 5,847 and 5,856 evaluated candidate records;
+- 19 and 86 Pareto candidates;
+- optimisation histories;
+- 3-exit and 5-exit holdout comparisons;
+- six ablations per architecture;
+- per-method segment and parent predictions;
+- per-label LATS-v2 reports;
+- 30-repeat runtime summaries;
+- exit-distribution tables;
+- the cross-architecture fairness audit.
 
-## Confirmed v0.16 result
+## Confirmed v0.17 results
+
+### Three exits
 
 | Item | Confirmed value |
 |---|---:|
-| Validation segments / parents | 1,883 / 304 |
-| Holdout segments / parents | 4,335 / 867 |
-| Population / generations | 80 / 50 |
-| Unique candidates evaluated | 4,078 |
-| Validation Pareto candidates | 20 |
-| Selected validation Exit-2 fraction | 19.6495% |
-| Selected validation FLOPs saved | 12.6272% |
-| Holdout Exit-2 fraction | 7.8662% |
-| Holdout estimated FLOPs saved | 5.0550% |
-| 30-repeat CPU speedup | 1.0153× |
-| Holdout Parent Macro-F1 | 0.849203 |
-| Holdout Parent Micro-F1 | 0.942474 |
-| Holdout Parent Samples-F1 | 0.950266 |
-| Holdout Parent Exact Match | 0.854671 |
-| Holdout Parent Hamming Loss | 0.016840 |
+| Exit-1 / Exit-2 / Exit-3 fractions | 6.07% / 4.34% / 89.60% |
+| Estimated FLOPs saved | 8.6350% |
+| 30-repeat speedup | 1.0373× |
+| Parent Macro-F1 | 0.840128 |
+| Parent Micro-F1 | 0.937549 |
+| Parent Samples-F1 | 0.945653 |
+| Parent Exact Match | 0.840830 |
+| Parent Hamming Loss | 0.018224 |
+| Holdout constraints | Failed |
 
-## Requirement outcome
+### Five exits
 
-The selected policy was feasible on validation but failed all predefined holdout quality limits:
-
-| Constraint | Limit | Observed | Outcome |
-|---|---:|---:|---|
-| Parent Macro-F1 drop | ≤ 0.010 | 0.013178 | Failed |
-| Parent Micro-F1 drop | ≤ 0.005 | 0.010657 | Failed |
-| Parent Exact-Match drop | ≤ 0.010 | 0.021915 | Failed |
-| Parent Hamming increase | ≤ 0.002 | 0.003114 | Failed |
-
-Repository wording must therefore distinguish:
-
-```text
-validation_eligible = true
-holdout_constraints_met = false
-```
+| Item | Confirmed value |
+|---|---:|
+| Exit fractions | 6.83% / 1.22% / 18.59% / 26.30% / 47.06% |
+| Estimated FLOPs saved | 30.7130% |
+| 30-repeat speedup | 1.1138× |
+| Parent Macro-F1 | 0.801356 |
+| Parent Micro-F1 | 0.868859 |
+| Parent Samples-F1 | 0.886945 |
+| Parent Exact Match | 0.688581 |
+| Parent Hamming Loss | 0.039100 |
+| Holdout constraints | Passed |
 
 ## Confirmed findings versus interpretation
 
 ### Confirmed
 
-- Genuine staged inference remained numerically equivalent to full-forward inference at all exits.
-- v0.16 increased holdout Exit-2 coverage and estimated saving relative to v0.13.
-- v0.16 produced a small same-protocol measured CPU speedup.
-- v0.16 did not satisfy the predefined corrected-holdout quality limits.
-- `audience_reaction_present` and `other_speaker_present` were important sources of quality degradation.
-- v0.13 per-label margin remains the recommended quality-constrained adaptive baseline.
+- Both checkpoints passed staged/full equivalence with zero probability difference.
+- Every non-final exit participates in the primary policy.
+- The three-exit route creates real speedup but fails all holdout-quality thresholds.
+- The tested five-exit route meets all within-checkpoint holdout thresholds.
+- Exit 1 increases saving but causes the strongest quality pressure.
+- Label margins and stability materially protect quality.
+- Confidence-only stopping is unsafe.
+- The selected risk thresholds are non-binding.
+- The fairness audit fails `same_validation_manifest`.
 
 ### Interpretation
 
-- Selecting the maximum-compute feasible validation point was too aggressive for holdout transfer.
-- The weak maximum-delta constraint and near-zero margins for several labels contributed to permissive stopping.
-- A safety-buffered Pareto-knee rule or a new calibration/evaluation split may improve robustness, but this is future work rather than a confirmed v0.16 result.
+- More sequential exit opportunities may allow finer compute allocation.
+- The five-exit policy's improved Exact Match suggests some intermediate exits correct complete label sets that the final exit misses.
+- The three-exit validation-to-holdout failure indicates that safety-buffered selection alone does not eliminate distribution shift.
+- Difficult labels require stage-specific safeguards.
 
-## Documentation files covered
+These interpretations are hypotheses supported by observed patterns; they are not controlled causal conclusions.
 
-| File or directory | Documentation role |
+## Cross-version table and figure extension
+
+After the v0.17 documentation freeze, the repository was extended with a canonical corrected-holdout comparison through v0.17:
+
+- the main table contains only the comparable 3-exit family and adds the v0.17 sequential row;
+- the 5-exit result is reported in a separate within-checkpoint companion table;
+- policy stop units and decision routes are preserved for method traceability;
+- three line plots show 3-exit FLOP saving, quality metrics, and Hamming Loss;
+- one companion plot shows v0.17 3-exit and 5-exit FLOP savings relative to their own full-depth baselines.
+
+The plots connect discrete frozen-policy operating points. They are not learning curves or continuous optimisation trajectories.
+
+## Documentation files updated
+
+| File or directory | What was added |
 |---|---|
-| `README.md` | Authoritative branch identity, theory, v0.16 settings, selected policy, headline results, commands, limitations, and current decision |
-| `DOC_STRUCTURE.md` | Repository path index, experiment-to-code mapping, package inventory, and documentation rules |
-| `docs/active_budget_anytime_exit_v0.4/README.md` | Concise branch-level research overview |
-| `docs/active_budget_anytime_exit_v0.4/VERSION_HISTORY.md` | Version-by-version implementation, settings, research questions, results, and findings from v0.11 to v0.16 |
-| `docs/tables/active_budget_anytime_exit_v0.4/README.md` | Compact result-package index |
-| `docs/tables/active_budget_anytime_exit_v0.4/v0.16_EE/EXPERIMENT_SETUP.md` | Architecture, data, search space, objective functions, constraints, and protocol |
-| `docs/tables/active_budget_anytime_exit_v0.4/v0.16_EE/RESULTS_AND_ANALYSIS.md` | Validation, holdout, per-label, timing, ablation, and research interpretation |
-| `docs/tables/active_budget_anytime_exit_v0.4/v0.16_EE/PAPER_READY_SUMMARY.md` | Paper/thesis-safe wording and non-claims |
-| `docs/tables/active_budget_anytime_exit_v0.4/v0.16_EE/PS_COMMANDS.md` | PowerShell commands for full execution, tuning, evaluation, frozen-policy reuse, and reporting |
-| `docs/tables/active_budget_anytime_exit_v0.4/v0.16_EE/*.csv` | Machine-readable selected policy, Pareto, optimisation, holdout, per-label, constraint, and cumulative summaries |
-| `docs/tables/active_budget_anytime_exit_v0.4/v0.16_EE/*.svg` | Optimisation-progress, validation-Pareto, and holdout quality–compute figures |
+| `README.md` | v0.17 branch identity, theory, settings, 3-/5-exit results, cross-version tables, policy routes, figures, ablations, fairness, commands, limitations, and current decision |
+| `DOC_STRUCTURE.md` | v0.17 code traceability, expanded package inventory, cross-version artifacts, storage policy, documentation rules, and status |
+| `docs/active_budget_anytime_exit_v0.4/README.md` | Branch-level v0.17 overview and result decision |
+| `docs/active_budget_anytime_exit_v0.4/VERSION_HISTORY.md` | New v0.17 implementation, research questions, settings, results, and findings |
+| `docs/active_budget_anytime_exit_v0.4/DOCUMENTATION_UPDATE_SUMMARY.md` | This provenance, cross-version extension, and file-by-file audit |
+| `docs/tables/active_budget_anytime_exit_v0.4/README.md` | Added the v0.17 compact package and cross-version artifacts |
+| `docs/tables/active_budget_anytime_exit_v0.4/v0.17_EE/README.md` | Indexed the new comparison tables and figures |
+| `docs/tables/active_budget_anytime_exit_v0.4/v0.17_EE/FIGURES.md` | Added figure links, interpretation, and fairness caution |
+| `docs/tables/active_budget_anytime_exit_v0.4/v0.17_EE/cross_version_3exit_table.csv` | Machine-readable canonical 3-exit table through v0.17 |
+| `docs/tables/active_budget_anytime_exit_v0.4/v0.17_EE/v017_architecture_table.csv` | Separate architecture-specific v0.17 comparison |
+| `docs/tables/active_budget_anytime_exit_v0.4/v0.17_EE/*.svg` | Four repository-rendered cross-version and architecture-extension plots |
 
 ## Non-claims
 
-- v0.16 is not the deployment winner.
-- Validation eligibility is not holdout approval.
-- The measured speedup is hardware-, CPU-, threading-, batch-, and implementation-specific.
-- Estimated FLOPs are not interchangeable with latency.
-- v0.16 is not a budget-conditioned anytime sweep.
-- v0.16 is not label-wise asynchronous exit.
-- The corrected holdout must not be retuned and then described as untouched evaluation.
-- The corrected-holdout result is not an independent external-test result because the frozen LATS-v2 configuration has related calibration provenance.
+- The five-exit result is not a fair architecture winner over the three-exit model.
+- The 5-exit success is relative to its own Always Exit 5 baseline.
+- The 3-exit validation eligibility does not imply holdout safety.
+- Estimated FLOPs are not measured latency.
+- CPU timing is hardware- and protocol-specific.
+- The corrected holdout is not an independent external test.
+- The risk mechanism should not be claimed as effective in v0.17.
+- The cross-version connecting lines are not training trajectories.
+- v0.17 is sample-wise, not label-wise asynchronous.
+- Evidence accumulation and distilled knowledge are not part of the primary v0.17 method.
+- No v0.17 backbone training was performed.

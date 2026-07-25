@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="520" viewBox="0 0 980 520" role="img" aria-labelledby="title desc">
+<title id="title">v0.17 quality and compute summary</title>
+<desc id="desc">Comparison of estimated FLOPs saved, measured speedup, and holdout quality compliance for the three-exit and five-exit policies.</desc>
+<style>text{font-family:Arial,sans-serif;fill:#202124}.title{font-size:24px;font-weight:700}.head{font-size:17px;font-weight:700}.label{font-size:16px}.small{font-size:14px}.grid{stroke:#ddd}.bar3{fill:#76b7b2}.bar5{fill:#4e79a7}.pass{fill:#2e7d32}.fail{fill:#c62828}</style>
+<rect width="980" height="520" fill="white"/>
+<text x="40" y="42" class="title">v0.17 quality–compute summary</text>
+<text x="80" y="90" class="head">Estimated FLOPs saved (%)</text>
+<line x1="80" y1="310" x2="530" y2="310" class="grid"/>
+<rect x="150" y="248" width="105" height="62" class="bar3"/><rect x="345" y="88" width="105" height="222" class="bar5"/>
+<text x="168" y="238" class="label">8.64%</text><text x="357" y="78" class="label">30.71%</text>
+<text x="158" y="338" class="label">3-exit</text><text x="353" y="338" class="label">5-exit</text>
+<text x="600" y="90" class="head">Measured CPU speedup</text>
+<text x="620" y="145" class="label">3-exit: 1.037×</text><text x="620" y="195" class="label">5-exit: 1.114×</text>
+<text x="600" y="265" class="head">Holdout constraints</text>
+<circle cx="635" cy="315" r="13" class="fail"/><text x="660" y="321" class="label">3-exit: failed all four limits</text>
+<circle cx="635" cy="365" r="13" class="pass"/><text x="660" y="371" class="label">5-exit: passed all four limits</text>
+<text x="80" y="420" class="head">Interpretation</text>
+<text x="80" y="454" class="small">The tested five-exit policy is a within-checkpoint success. The comparison is not a fair proof</text>
+<text x="80" y="478" class="small">that five exits are intrinsically superior because the training/validation manifests differ.</text>
+</svg>
