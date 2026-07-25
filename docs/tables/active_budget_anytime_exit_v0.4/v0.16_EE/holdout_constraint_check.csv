@@ -1,0 +1,5 @@
+metric,limit,holdout_value,holdout_constraint_met
+macro_f1_drop,0.01,0.013178088528984389,False
+micro_f1_drop,0.005,0.010656764714736866,False
+exact_match_drop,0.01,0.021914648212226107,False
+hamming_loss_increase,0.002,0.0031141868512110996,False

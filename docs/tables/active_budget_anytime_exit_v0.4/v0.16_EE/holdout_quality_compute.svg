@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="520" viewBox="0 0 900 520">
+<rect width="100%" height="100%" fill="white"/>
+<text x="450" y="30" text-anchor="middle" font-family="Arial" font-size="20" font-weight="bold">Holdout quality-compute comparison</text>
+<line x1="85" y1="445" x2="870" y2="445" stroke="#333"/><line x1="85" y1="55" x2="85" y2="445" stroke="#333"/>
+<line x1="85" y1="445" x2="870" y2="445" stroke="#ddd"/><line x1="85" y1="367" x2="870" y2="367" stroke="#ddd"/><line x1="85" y1="289" x2="870" y2="289" stroke="#ddd"/><line x1="85" y1="211" x2="870" y2="211" stroke="#ddd"/><line x1="85" y1="133" x2="870" y2="133" stroke="#ddd"/><line x1="85" y1="55" x2="870" y2="55" stroke="#ddd"/>
+<text x="85" y="470" text-anchor="middle" font-family="Arial" font-size="12">0.0</text><text x="308" y="470" text-anchor="middle" font-family="Arial" font-size="12">1.44</text><text x="870" y="470" text-anchor="middle" font-family="Arial" font-size="12">5.06</text>
+<polyline points="85,376 308,387 870,418" fill="none" stroke="#1f77b4" stroke-width="2.5"/><circle cx="85" cy="376" r="4" fill="#1f77b4"/><circle cx="308" cy="387" r="4" fill="#1f77b4"/><circle cx="870" cy="418" r="4" fill="#1f77b4"/>
+<polyline points="85,82 308,87 870,116" fill="none" stroke="#d62728" stroke-width="2.5"/><circle cx="85" cy="82" r="4" fill="#d62728"/><circle cx="308" cy="87" r="4" fill="#d62728"/><circle cx="870" cy="116" r="4" fill="#d62728"/>
+<polyline points="85,330 308,337 870,400" fill="none" stroke="#2ca02c" stroke-width="2.5"/><circle cx="85" cy="330" r="4" fill="#2ca02c"/><circle cx="308" cy="337" r="4" fill="#2ca02c"/><circle cx="870" cy="400" r="4" fill="#2ca02c"/>
+<line x1="655" y1="55" x2="685" y2="55" stroke="#1f77b4" stroke-width="3"/><text x="695" y="59" font-family="Arial" font-size="12">Parent Macro-F1</text><line x1="655" y1="77" x2="685" y2="77" stroke="#d62728" stroke-width="3"/><text x="695" y="81" font-family="Arial" font-size="12">Parent Micro-F1</text><line x1="655" y1="99" x2="685" y2="99" stroke="#2ca02c" stroke-width="3"/><text x="695" y="103" font-family="Arial" font-size="12">Parent Exact Match</text>
+<text x="477.5" y="500" text-anchor="middle" font-family="Arial" font-size="14">Estimated FLOPs saved (%)</text><text x="20" y="250" transform="rotate(-90 20 250)" text-anchor="middle" font-family="Arial" font-size="14">Parent metric</text>
+</svg>
