@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="430" viewBox="0 0 980 430" role="img" aria-labelledby="title desc">
+<title id="title">v0.17 holdout exit distribution</title>
+<desc id="desc">Stacked bars showing the percentage of samples stopping at each exit for the three-exit and five-exit sequential policies.</desc>
+<style>text{font-family:Arial,sans-serif;fill:#202124}.title{font-size:24px;font-weight:700}.label{font-size:16px}.small{font-size:14px}.axis{stroke:#666;stroke-width:1}.e1{fill:#4e79a7}.e2{fill:#59a14f}.e3{fill:#f28e2b}.e4{fill:#e15759}.e5{fill:#b07aa1}</style>
+<rect width="980" height="430" fill="white"/>
+<text x="40" y="42" class="title">v0.17 holdout exit distribution</text>
+<line x1="180" y1="95" x2="900" y2="95" class="axis"/>
+<line x1="180" y1="330" x2="900" y2="330" class="axis"/>
+<text x="65" y="168" class="label">3-exit</text>
+<text x="65" y="268" class="label">5-exit</text>
+<rect x="180" y="130" width="43.68" height="55" class="e1"/><rect x="223.68" y="130" width="31.25" height="55" class="e2"/><rect x="254.93" y="130" width="645.07" height="55" class="e3"/>
+<rect x="180" y="230" width="49.16" height="55" class="e1"/><rect x="229.16" y="230" width="8.80" height="55" class="e2"/><rect x="237.96" y="230" width="133.87" height="55" class="e3"/><rect x="371.83" y="230" width="189.34" height="55" class="e4"/><rect x="561.17" y="230" width="338.83" height="55" class="e5"/>
+<text x="188" y="164" class="small" fill="white">E1 6.07%</text><text x="512" y="164" class="small">E3 89.60%</text>
+<text x="188" y="264" class="small" fill="white">E1 6.83%</text><text x="269" y="264" class="small">E3 18.59%</text><text x="421" y="264" class="small">E4 26.30%</text><text x="684" y="264" class="small">E5 47.06%</text>
+<g transform="translate(180,365)"><rect width="18" height="18" class="e1"/><text x="25" y="15" class="small">Exit 1</text><rect x="115" width="18" height="18" class="e2"/><text x="140" y="15" class="small">Exit 2</text><rect x="230" width="18" height="18" class="e3"/><text x="255" y="15" class="small">Exit 3</text><rect x="345" width="18" height="18" class="e4"/><text x="370" y="15" class="small">Exit 4</text><rect x="460" width="18" height="18" class="e5"/><text x="485" y="15" class="small">Exit 5</text></g>
+</svg>

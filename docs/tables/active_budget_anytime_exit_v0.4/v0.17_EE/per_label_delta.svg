@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="560" viewBox="0 0 1080 560" role="img" aria-labelledby="title desc">
+<title id="title">Five-exit per-label F1 changes</title>
+<desc id="desc">Selected F1 gains and losses for the five-exit full sequential policy relative to Always Exit 5.</desc>
+<style>text{font-family:Arial,sans-serif;fill:#202124}.title{font-size:24px;font-weight:700}.label{font-size:15px}.axis{stroke:#333;stroke-width:1}.gain{fill:#59a14f}.loss{fill:#e15759}.zero{stroke:#666;stroke-dasharray:4 4}</style>
+<rect width="1080" height="560" fill="white"/>
+<text x="40" y="42" class="title">Five-exit full sequential: selected per-label F1 changes</text>
+<line x1="540" y1="75" x2="540" y2="500" class="zero"/>
+<text x="470" y="525" class="label">F1 decrease</text><text x="560" y="525" class="label">F1 increase</text>
+<g><text x="45" y="112" class="label">silence_present</text><rect x="540" y="92" width="288" height="28" class="gain"/><text x="838" y="112" class="label">+0.0720</text></g>
+<g><text x="45" y="162" class="label">music_present</text><rect x="540" y="142" width="63" height="28" class="gain"/><text x="613" y="162" class="label">+0.0157</text></g>
+<g><text x="45" y="212" class="label">Eckhart_Tolle</text><rect x="540" y="192" width="24" height="28" class="gain"/><text x="574" y="212" class="label">+0.0060</text></g>
+<g><text x="45" y="262" class="label">Jay_Shetty</text><rect x="540" y="242" width="22" height="28" class="gain"/><text x="572" y="262" class="label">+0.0054</text></g>
+<g><text x="45" y="332" class="label">Eric_Thomas</text><rect x="497" y="312" width="43" height="28" class="loss"/><text x="425" y="332" class="label">−0.0106</text></g>
+<g><text x="45" y="382" class="label">audience_reaction_present</text><rect x="200" y="362" width="340" height="28" class="loss"/><text x="120" y="382" class="label">−0.0851</text></g>
+<g><text x="45" y="432" class="label">Nick_Vujicic</text><rect x="161" y="412" width="379" height="28" class="loss"/><text x="80" y="432" class="label">−0.0949</text></g>
+</svg>

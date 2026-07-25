@@ -1,0 +1,13 @@
+{
+  "fair_comparison_valid": false,
+  "checks": {
+    "same_labels": true,
+    "same_validation_manifest": false,
+    "same_validation_features": true,
+    "same_lats_config": true,
+    "same_threshold_mode": true,
+    "same_optimisation_budget": true,
+    "same_constraints": true
+  },
+  "interpretation": "Invalid for a direct architecture claim until the training and validation manifests are matched."
+}

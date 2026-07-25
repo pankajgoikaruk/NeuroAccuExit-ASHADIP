@@ -1,0 +1,18 @@
+{
+  "status": "PASS",
+  "run_dir": "C:\\Users\\wwwsa\\PycharmProjects\\NeuroAccuExit-ASHADIP\\human_talk_workspace\\tata_v0.6_raw_pipeline\\main_models\\runs\\main_v06_expanded_5exit_20260603_210324",
+  "checkpoint": "C:\\Users\\wwwsa\\PycharmProjects\\NeuroAccuExit-ASHADIP\\human_talk_workspace\\tata_v0.6_raw_pipeline\\main_models\\runs\\main_v06_expanded_5exit_20260603_210324\\ckpt\\best.pt",
+  "input_source": "real_holdout_features",
+  "input_shape": [8, 1, 64, 101],
+  "tap_blocks": [1, 2, 3, 4],
+  "num_exits": 5,
+  "rtol": 1e-06,
+  "atol": 1e-07,
+  "exit_results": [
+    {"exit": 1, "passed": true, "max_abs_logit_diff": 0.0, "mean_abs_logit_diff": 0.0, "max_abs_probability_diff": 0.0},
+    {"exit": 2, "passed": true, "max_abs_logit_diff": 0.0, "mean_abs_logit_diff": 0.0, "max_abs_probability_diff": 0.0},
+    {"exit": 3, "passed": true, "max_abs_logit_diff": 0.0, "mean_abs_logit_diff": 0.0, "max_abs_probability_diff": 0.0},
+    {"exit": 4, "passed": true, "max_abs_logit_diff": 0.0, "mean_abs_logit_diff": 0.0, "max_abs_probability_diff": 0.0},
+    {"exit": 5, "passed": true, "max_abs_logit_diff": 0.0, "mean_abs_logit_diff": 0.0, "max_abs_probability_diff": 0.0}
+  ]
+}

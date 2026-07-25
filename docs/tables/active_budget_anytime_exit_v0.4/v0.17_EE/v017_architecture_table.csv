@@ -1,0 +1,5 @@
+architecture,method,reference,flops_saved_pct,speedup,macro_f1,micro_f1,samples_f1,exact_match,hamming_loss,holdout_constraints_met,fair_direct_architecture_comparison
+3-exit,Always Exit 3,Own full-depth baseline,0.00,1.000,0.862382,0.953131,0.958889,0.876586,0.013725,yes,no
+3-exit,v0.17 sequential anytime,Always Exit 3,8.64,1.037,0.840128,0.937549,0.945653,0.840830,0.018224,no,no
+5-exit,Always Exit 5,Own full-depth baseline,0.00,1.000,0.810761,0.869498,0.887906,0.673587,0.038985,yes,no
+5-exit,v0.17 sequential anytime,Always Exit 5,30.71,1.114,0.801356,0.868859,0.886945,0.688581,0.039100,yes,no

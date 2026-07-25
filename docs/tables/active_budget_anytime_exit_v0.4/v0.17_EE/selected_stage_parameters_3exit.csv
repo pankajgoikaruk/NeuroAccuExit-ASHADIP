@@ -1,0 +1,3 @@
+decision_exit,mean_confidence_threshold,max_probability_delta,max_label_risk,require_previous_label_stability,margin_Brene_Brown,margin_Eckhart_Tolle,margin_Eric_Thomas,margin_Gary_Vee,margin_Jay_Shetty,margin_Nick_Vujicic,margin_other_speaker_present,margin_music_present,margin_audience_reaction_present,margin_silence_present
+1,0.7269618070,0.5486267325,0.4214408286,0,0.2154694934,0.2000431353,0.2685801200,0.2508111552,0.1758297562,0.1404723368,0.0907088698,0.1976340780,0.3479865846,0.1974092357
+2,0.6984222763,0.5442571428,0.4559837844,1,0.2037126228,0.2435662787,0.1337608727,0.2288918193,0.1742485918,0.2871091588,0.1211510939,0.2191735145,0.2277070449,0.1197931316
