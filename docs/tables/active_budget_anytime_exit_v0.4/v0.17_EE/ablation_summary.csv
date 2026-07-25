@@ -1,0 +1,13 @@
+architecture,method,estimated_flops_saved_pct,measured_speedup,parent_macro_f1,parent_micro_f1,parent_exact_match,parent_hamming_loss,interpretation
+3-exit,full_sequential,8.635030,1.037,0.840128,0.937549,0.840830,0.018224,Primary policy; compute success but quality unsafe
+3-exit,no_exit1,3.394716,1.022,0.854086,0.946871,0.866205,0.015571,Exit 1 adds saving and most quality damage
+3-exit,no_stability,14.416423,1.047,0.838162,0.936709,0.838524,0.018454,Stability protects quality
+3-exit,no_risk,8.635030,1.040,0.840128,0.937549,0.840830,0.018224,Risk term non-binding
+3-exit,no_label_margins,30.722917,1.191,0.740154,0.850119,0.652826,0.043599,Label margins essential
+3-exit,confidence_only,67.575593,1.381,0.574954,0.729642,0.441753,0.076586,Confidence-only unsafe
+5-exit,full_sequential,30.71,1.114,0.801356,0.868859,0.688581,0.039100,Primary within-model success
+5-exit,no_exit1,26.80,1.096,0.809541,0.870906,0.687428,,Exit 1 useful but risky
+5-exit,no_stability,33.82,,0.791590,,,0.040023,Stability improves safety
+5-exit,no_risk,30.71,,0.801356,0.868859,0.688581,0.039100,Risk term nearly non-binding
+5-exit,no_label_margins,54.81,,0.704487,,0.608997,,Label margins essential
+5-exit,confidence_only,79.00,,0.475651,,0.474048,,Confidence-only unsafe
