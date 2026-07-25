@@ -1,0 +1,7 @@
+architecture,method,exit1_fraction,exit2_fraction,exit3_fraction,exit4_fraction,exit5_fraction,total_early_fraction,estimated_flops_saved_pct,measured_speedup,parent_macro_f1,parent_micro_f1,parent_samples_f1,parent_exact_match,parent_hamming_loss,holdout_quality_limits_met
+3-exit,always_final,0,0,1,,,0,0,1.000,0.862382,0.953131,0.958889,0.876586,0.013725,true
+3-exit,full_sequential,0.060669,0.043368,0.895963,,,0.104037,8.635030,1.037,0.840128,0.937549,0.945653,0.840830,0.018224,false
+3-exit,no_exit1,0,0.052826,0.947174,,,0.052826,3.394716,1.022,0.854086,0.946871,0.954150,0.866205,0.015571,false
+5-exit,always_final,0,0,0,0,1,0,0,1.000,0.810761,0.869498,0.887906,0.673587,0.038985,true
+5-exit,full_sequential,0.0683,0.0122,0.1859,0.2630,0.4706,0.5294,30.71,1.114,0.801356,0.868859,0.886945,0.688581,0.039100,true
+5-exit,no_exit1,0,,,,,,26.80,1.096,0.809541,0.870906,,0.687428,,true
