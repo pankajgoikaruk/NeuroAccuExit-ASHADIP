@@ -28,10 +28,10 @@ Set-StrictMode -Version Latest
 if (-not (Test-Path ".git")) {
     throw "Run this script from the NeuroAccuExit-ASHADIP repository root."
 }
-$ExpectedBranch = "active_budget_anytime_exit_v0.4"
+$AllowedBranches = @("main", "active_budget_anytime_exit_v0.4", "merge/v0.17_EE-main")
 $CurrentBranch = (git branch --show-current | Out-String).Trim()
-if ($CurrentBranch -ne $ExpectedBranch) {
-    throw "Current branch is '$CurrentBranch'. Switch to '$ExpectedBranch'."
+if ($AllowedBranches -notcontains $CurrentBranch) {
+    throw "Current branch is '$CurrentBranch'. Switch to main or active_budget_anytime_exit_v0.4."
 }
 
 $env:PYTHONPATH = (Get-Location).Path
