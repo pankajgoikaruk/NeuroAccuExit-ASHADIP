@@ -17,10 +17,18 @@ This package documents the completed fair 3-exit versus 5-exit study.
 - `ABLATIONS_AND_FINDINGS.md`
 - `PAPER_READY_SUMMARY.md`
 - `PS_COMMANDS.md`
+- `CROSS_VERSION_AND_HISTORICAL_TABLES.md`
 - `cross_version_3exit_table.csv`
 - `fair_architecture_headline.csv`
 - `v018_ablation_summary.csv`
 - `v018_quality_compute_summary.svg`
+
+`CROSS_VERSION_AND_HISTORICAL_TABLES.md` is the authoritative comparison guide for:
+
+1. the canonical three-exit cross-version table through v0.18;
+2. the historical non-fair v0.17 five-exit result and its paper-ready LaTeX table;
+3. the fair v0.18 three-exit/five-exit companion comparison;
+4. safe interpretation and explicit non-claims.
 
 ## Safe conclusion
 
