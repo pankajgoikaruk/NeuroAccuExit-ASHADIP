@@ -1,0 +1,9 @@
+architecture,ablation,flops_saved_pct,parent_macro_f1,parent_exact_match,parent_hamming_loss,interpretation
+3-exit,full_strict,3.82,0.85285,0.86159,0.01603,Selected strict policy
+5-exit,full_strict,12.70,0.79813,0.75779,0.03010,Selected strict policy
+5-exit,no_exit1,9.18,0.81015,0.77163,0.02872,Closest quality-constrained candidate
+5-exit,no_risk_veto,22.78,0.78119,0.73472,,Risk veto protects quality
+3-exit,no_label_margins,11.97,0.82596,0.80738,,Margins essential
+5-exit,no_label_margins,38.51,0.72721,0.62053,,Margins essential
+3-exit,confidence_only,67.58,0.57495,0.44175,0.07659,Unsafe
+5-exit,confidence_only,75.29,0.45477,0.35525,0.09469,Unsafe
