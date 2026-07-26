@@ -1,15 +1,22 @@
 # NeuroAccuExit-ASHADIP — Active Budget and Anytime Exit v0.4
 
-This branch studies **genuine computation-adaptive inference** for multi-label human-talk audio classification. It preserves the completed v0.16 multi-objective experiment and adds v0.17's fully sequential anytime policy across every available exit.
+This branch studies **genuine computation-adaptive inference** for ten-label, multi-label human-talk audio classification. It contains the complete Early-Exit progression from `v0.11_EE` through `v0.18_EE`, including fixed-exit baselines, label-aware rules, learned controllers, parent-level risk control, multi-objective optimisation, fully sequential anytime inference, and a fair 3-exit versus 5-exit retraining study.
 
-The primary v0.17 routes are:
+The current completed milestone is:
+
+```text
+v0.18_EE — fair sequential anytime exit with matched 3-exit/5-exit training,
+           stricter Exit-1 protection, and validation-derived continuation risk
+```
+
+The primary sequential routes are:
 
 ```text
 3-exit: Exit 1 → Exit 2 → Exit 3
 5-exit: Exit 1 → Exit 2 → Exit 3 → Exit 4 → Exit 5
 ```
 
-The checkpoints are frozen. The branch changes inference-time stopping, validation-time policy optimisation, staged execution, timing, and reporting; it does not retrain the CNN backbone or exit heads.
+Samples that stop are removed from the active batch and do not execute later CNN blocks.
 
 ---
 
@@ -20,43 +27,45 @@ The checkpoints are frozen. The branch changes inference-time stopping, validati
 | Git branch | `active_budget_anytime_exit_v0.4` |
 | Source branch | `active_budget_anytime_exit_v0.3` |
 | Task | 10-label human-talk speaker/context classification |
-| Current completed milestone | `v0.17_EE` sequential active-budget anytime exit |
-| Previous milestone | `v0.16_EE` multi-objective per-label Exit-2 margin optimisation |
+| Current milestone | `v0.18_EE` fair strict sequential anytime exit |
+| Previous milestones | `v0.16_EE` multi-objective Exit-2 rule; `v0.17_EE` sequential 3-/5-exit inference |
 | Canonical 3-exit checkpoint | `main_v010_human_corrected_balanced_3exit_no_hint_20260703_201845` |
-| Tested 5-exit checkpoint | `main_v06_expanded_5exit_20260603_210324` |
-| Canonical 3-exit quality reference | Always Exit 3 + frozen historical LATS-v2 |
-| 5-exit within-model reference | Always Exit 5 + the same frozen LATS-v2 evaluator |
-| Full integration | Complete for both tested checkpoints, corrected holdout, ablations, and 30-repeat CPU timing |
+| Fair 5-exit checkpoint | `main_v018_human_corrected_balanced_5exit_no_hint_auxmatched_20260725_231353` |
+| Canonical quality reference | Always Exit 3 + frozen historical LATS-v2 |
+| Evaluation unit | 4,335 segments aggregated into 867 parent clips |
+| Timing protocol | CPU, one Torch/BLAS thread, batch 128, 30 repetitions |
+| Full integration | Complete: training, fairness audit, equivalence, tuning, holdout, timing, ablations, and reporting |
 
 ---
 
 ## Current scientific verdict
 
-| Finding | Decision |
+| Finding | Confirmed decision |
 |---|---|
-| 5-exit full sequential policy | **Major within-checkpoint success** |
-| 3-exit full sequential policy | Real compute saving and speedup, but **not holdout quality-safe** |
-| Exit 1 | Useful, but the riskiest stage |
-| Label-specific margins | Essential |
+| Fair 3-exit/5-exit training | **Established in v0.18**: same manifest, features, labels, seed, optimiser settings, no-hint setting, final loss weight, and total auxiliary-loss budget |
+| 3-exit `full_strict` policy | Saves compute, but fails three of four holdout-quality constraints |
+| 5-exit `full_strict` policy | Saves more compute and gives a stronger speedup, but fails all four holdout-quality constraints |
+| 5-exit `no_exit1` ablation | **Closest feasible point**: passes Micro-F1, Exact Match, and Hamming limits; Macro-F1 drop exceeds the limit by only `0.000819` |
+| Exit 1 | Useful for additional saving, but remains the highest-risk stage |
+| Label-specific margins | Essential; removing them causes major quality collapse |
 | Previous-exit stability | Useful safety mechanism |
-| Current risk term | Non-binding under selected policies |
-| Direct 5-exit vs 3-exit superiority | **Not established** because the training/validation manifests differ |
+| v0.18 continuation-risk veto | Now demonstrably active and quality-protective, unlike the non-binding v0.17 risk term |
+| Validation-to-holdout transfer | Main unresolved bottleneck |
+| Final deployable policy | **Not established by v0.18** |
 
-The strongest confirmed v0.17 result is:
+### Final scientific verdict
 
-> Within the tested 5-exit checkpoint, `52.94%` of holdout segments stopped before Exit 5, `30.71%` estimated FLOPs were saved, median CPU speed improved by `1.114×`, and all predefined holdout-quality limits were met.
+> v0.18 resolves the fairness limitation of v0.17 and confirms that a deeper five-exit network offers greater computation-saving capacity under matched training. However, more exits do not automatically yield a quality-safe policy. The best current candidate is the five-exit `Exit 3 → Exit 5` (`no_exit1`) route, which is extremely close to satisfying all four predefined holdout constraints.
 
-This must not be rewritten as “five exits are better than three exits” until a fair five-exit checkpoint is trained with the exact canonical 3-exit manifest and preprocessing.
+### Unsuccessful finding
+
+> Neither selected `full_strict` policy is deployment-ready. The 3-exit policy fails Micro-F1, Exact Match, and Hamming constraints; the 5-exit policy fails all four constraints. Therefore, v0.18 must not be presented as a completed optimal quality–compute solution.
 
 ---
 
-## Full-depth references
+## Canonical full-depth references
 
-### Canonical three-exit reference
-
-```text
-v0.10 no-hint + frozen historical LATS-v2 + Always Exit 3
-```
+### Always Exit 3
 
 | Metric | Value |
 |---|---:|
@@ -65,94 +74,84 @@ v0.10 no-hint + frozen historical LATS-v2 + Always Exit 3
 | Parent Samples-F1 | 0.958889 |
 | Parent Exact Match | 0.876586 |
 | Parent Hamming Loss ↓ | 0.013725 |
-| Average exit depth | 3.000000 |
 | Estimated FLOPs saved | 0% |
-| 30-repeat CPU latency | 1.572119 ms/segment |
 | Parent clips | 867 |
 
-Frozen baseline package:
-
-```text
-docs/tables/active_budget_anytime_exit_v0.1/full_depth_baselines/
-```
-
-### Tested five-exit reference
-
-```text
-v0.6 expanded 5-exit checkpoint + frozen LATS-v2 + Always Exit 5
-```
+### Fair Always Exit 5 from v0.18
 
 | Metric | Value |
 |---|---:|
-| Parent Macro-F1 | 0.810761 |
-| Parent Micro-F1 | 0.869498 |
-| Parent Samples-F1 | 0.887906 |
-| Parent Exact Match | 0.673587 |
-| Parent Hamming Loss ↓ | 0.038985 |
-| Average exit depth | 5.000000 |
+| Parent Macro-F1 | 0.820970 |
+| Parent Micro-F1 | 0.907340 |
+| Parent Samples-F1 | 0.923620 |
+| Parent Exact Match | 0.779700 |
+| Parent Hamming Loss ↓ | 0.027800 |
 | Estimated FLOPs saved | 0% |
-| 30-repeat CPU latency | 1.733976 ms/segment |
+| Parent clips | 867 |
 
-The five-exit baseline is architecture-specific and is not a replacement for the canonical three-exit baseline.
-
----
-
-## Genuine staged inference
-
-`models/anytime_exit_net.py` executes the network incrementally. Samples that stop are removed from the active batch and do not execute later backbone blocks.
-
-Both checkpoints passed exact staged/full equivalence:
-
-```text
-maximum absolute logit difference       = 0.0
-mean absolute logit difference          = 0.0
-maximum absolute probability difference = 0.0
-```
-
-### Cumulative architecture costs
-
-| Exit | 3-exit cumulative FLOPs | 5-exit cumulative FLOPs |
-|---|---:|---:|
-| Exit 1 | 1,861,952 | 1,861,952 |
-| Exit 2 | 18,451,072 | 12,921,312 |
-| Exit 3 | 51,629,312 | 18,451,072 |
-| Exit 4 | — | 29,510,592 |
-| Exit 5 | — | 51,629,312 |
+The fair five-exit model is evaluated with the same frozen LATS-v2 protocol for controlled comparison. Its parent-level probability distribution is not independently recalibrated in v0.18.
 
 ---
 
 ## Version traceability
 
-| Version | Implementation | Research question | Main outcome |
+| Version | Main implementation | Research question | Confirmed outcome |
 |---|---|---|---|
-| `v0.11_EE` | Staged wrapper, fixed exits, global Exit-2/3 rule | Can the frozen checkpoint genuinely skip Blocks 4–5? | Genuine skipping established; 7.53% estimated saving, but substantial quality loss. |
-| `v0.12_EE` | Validation-derived label-risk continuation | Should labels that improve at the final exit receive continuation protection? | Small improvement over v0.11; risk alone did not establish a stronger frontier. |
-| `v0.13_EE` | Matched global, delta, label-risk, per-label-margin, and logistic policies | Which matched policy gives the best quality–compute trade-off? | Per-label margin became the quality-constrained adaptive baseline. |
-| `v0.14_EE` | Parent-aware counterfactual gates and Exit-1 ablation | Can learned parent-harm targets improve safety, and is Exit 1 useful? | Exit-2 gate unsafe; Exit 1 preserved quality but stopped too rarely and slowed inference. |
-| `v0.15_EE` | Whole-parent nonparametric and shared-logistic risk control | Does a joint parent decision correct multi-segment target mismatch? | Quality preserved, but coverage and real efficiency were negligible. |
-| `v0.16_EE` | NSGA-II-style optimisation of the lightweight per-label Exit-2 rule | Can optimisation create meaningful saving and speedup? | 5.06% FLOPs and 1.015× speedup, but all holdout-quality limits failed. |
-| `v0.17_EE` | Fully sequential 3-exit and 5-exit policies with safety-buffered Pareto-knee selection | Can every exit participate, and can more sequential opportunities improve the trade-off? | 3-exit compute-successful but unsafe; tested 5-exit policy met quality limits with 30.71% saving and 1.114× speedup. |
+| `v0.11_EE` | Staged wrapper, fixed exits, global Exit-2/3 rule | Can frozen checkpoints genuinely skip later blocks? | Genuine skipping established; 7.53% estimated saving, but substantial quality loss. |
+| `v0.12_EE` | Validation-derived label-risk continuation | Should labels benefiting from the final exit receive protection? | Small improvement over v0.11; risk alone did not form a stronger frontier. |
+| `v0.13_EE` | Matched global, delta, risk, per-label-margin, and logistic policies | Which matched policy best balances quality and compute? | Per-label margin became the current quality-constrained 3-exit baseline. |
+| `v0.14_EE` | Parent-aware counterfactual gates and Exit-1 ablation | Can parent-harm targets improve safety, and can Exit 1 help? | Exit-2 gate unsafe; Exit-1 route preserved quality but stopped too rarely and slowed inference. |
+| `v0.15_EE` | Whole-parent nonparametric and shared-logistic risk control | Does one parent-level stopping decision fix joint aggregation mismatch? | Quality preserved, but stopping coverage and real efficiency were negligible. |
+| `v0.16_EE` | NSGA-II-style optimisation of the Exit-2 per-label rule | Can multi-objective search find a useful Pareto point? | 5.06% FLOPs and 1.015× speedup; all holdout-quality limits failed. |
+| `v0.17_EE` | Fully sequential 3-/5-exit optimisation | Can every exit participate, and can extra exits improve the trade-off? | Strong 5-exit within-checkpoint result, but architecture comparison was not fair. |
+| `v0.18_EE` | Fair 5-exit retraining + strict sequential risk-veto policy | Does the v0.17 result reproduce under matched training, and can stronger safeguards transfer? | Fair comparison established; full policies remain unsafe; 5-exit No-Exit-1 is closest to feasible. |
 
-Detailed history:
-
-```text
-docs/active_budget_anytime_exit_v0.4/VERSION_HISTORY.md
-```
+Detailed history: `docs/active_budget_anytime_exit_v0.4/VERSION_HISTORY.md`.
 
 ---
 
-## v0.17 sequential decision logic
+## v0.18 fair training protocol
 
-At each non-final exit, the sample is evaluated using:
+The five-exit checkpoint was retrained with the canonical data and optimisation setup.
 
-1. mean multi-label binary confidence;
-2. ten label-specific decision margins;
-3. maximum probability change from the preceding exit;
-4. previous-exit label-set stability from Exit 2 onward;
-5. validation-derived label-risk evidence;
-6. a non-empty prediction requirement.
+| Setting | 3-exit | 5-exit |
+|---|---:|---:|
+| Training rows | 25,519 | 25,519 |
+| Validation rows | 1,883 | 1,883 |
+| Test rows | 1,961 | 1,961 |
+| Labels | 10 | 10 |
+| Tap blocks | `1,3` | `1,2,3,4` |
+| Exits | 3 | 5 |
+| Epochs | 40 | 40 |
+| Batch size | 64 | 64 |
+| Learning rate | 0.001 | 0.001 |
+| Seed | 42 | 42 |
+| Hint passing | Disabled | Disabled |
+| Final-exit loss weight | 1.0 | 1.0 |
+| Auxiliary-loss weights | `0.3,0.3` | `0.15,0.15,0.15,0.15` |
+| Total auxiliary budget | 0.60 | 0.60 |
 
-For exit `e` and label `l`:
+The fairness audit passed every required check. Only exit topology and the distribution of the matched auxiliary-loss budget differ.
+
+### Five-exit training behaviour
+
+| Exit | Test Macro-F1 | Micro-F1 | Samples-F1 | Exact | Hamming ↓ |
+|---|---:|---:|---:|---:|---:|
+| Exit 1 | 0.2106 | 0.3472 | 0.2704 | 0.1469 | 0.1296 |
+| Exit 2 | 0.3795 | 0.5075 | 0.4506 | 0.2902 | 0.1109 |
+| Exit 3 | 0.6112 | 0.6542 | 0.6196 | 0.4182 | 0.0898 |
+| Exit 4 | 0.7419 | 0.7356 | 0.7163 | 0.4946 | 0.0727 |
+| Exit 5 | **0.8320** | **0.8216** | **0.8204** | **0.6206** | **0.0502** |
+
+Quality increases consistently with depth, explaining why Exit 1 must be highly selective.
+
+---
+
+## v0.18 strict sequential policy
+
+At each non-final exit, the policy uses mean multi-label binary confidence, ten label-specific decision margins, probability change from the preceding exit, previous-exit label-set stability, validation-derived continuation-risk scores, a risk-weighted margin multiplier, a high-risk uncertainty veto, an extra Exit-1 confidence boost, and a non-empty prediction condition.
+
+For label `l` at exit `e`:
 
 ```text
 binary confidence = max(p[e,l], 1 − p[e,l])
@@ -160,81 +159,68 @@ decision margin   = |p[e,l] − threshold[e,l]|
 probability delta = |p[e,l] − p[e−1,l]|
 ```
 
-A sample stops at the first exit satisfying every active condition. Otherwise, it continues to the next exit.
+Validation-only continuation risk combines how often the final exit corrects an earlier label and how much label F1 improves at deeper exits. It is an inference-time stopping safeguard, not a training-loss penalty.
 
-The complete theoretical record is:
-
-```text
-docs/tables/active_budget_anytime_exit_v0.4/v0.17_EE/THEORY_AND_METHOD.md
-```
+A sample stops at the first exit satisfying all active conditions. Otherwise, it continues. The entire sample stops together; v0.18 is not label-wise asynchronous inference.
 
 ---
 
-## v0.17 optimiser settings
+## v0.18 optimisation settings
 
 | Setting | Value |
 |---|---:|
 | Algorithm | Constraint-aware NSGA-II-style search |
-| Population | 96 |
-| Generations | 60 |
+| Population | 112 |
+| Generations | 70 |
 | Seed | 42 |
 | Parent-grouped folds | 5 |
-| Safety fraction | 0.75 |
+| Safety fraction | 0.50 |
 | Minimum total early fraction | 0.020 |
-| Minimum Exit-1 fraction | 0.005 |
+| Minimum Exit-1 fraction | 0.0025 |
 | Segment threshold mode | `fixed_0p5` |
 | Validation segments / parents | 1,883 / 304 |
 | Holdout segments / parents | 4,335 / 867 |
 | Batch size | 128 |
 | Device | CPU |
 | Torch/BLAS threads | 1 |
-| Publication timing repetitions | 30 |
-| 3-exit unique candidates / Pareto points | 5,847 / 19 |
-| 5-exit unique candidates / Pareto points | 5,856 / 86 |
+| Timing repetitions | 30 |
 
-Every non-final exit has a separate 13-parameter block:
+### Holdout quality limits
 
-```text
-[confidence threshold,
- maximum probability delta,
- maximum label risk,
- ten per-label margins]
-```
-
-### Validation quality constraints
-
-| Metric | Limit |
+| Metric | Maximum permitted degradation |
 |---|---:|
-| Parent Macro-F1 drop | ≤ 0.010 |
-| Parent Micro-F1 drop | ≤ 0.005 |
-| Parent Exact-Match drop | ≤ 0.010 |
-| Parent Hamming increase | ≤ 0.002 |
+| Parent Macro-F1 drop | 0.010 |
+| Parent Micro-F1 drop | 0.005 |
+| Parent Exact-Match drop | 0.010 |
+| Parent Hamming increase | 0.002 |
 
-The selected candidate is a safety-buffered Pareto knee rather than v0.16's maximum-compute feasible point.
+Validation eligibility and corrected-holdout compliance are reported separately.
 
 ---
 
-## Corrected-holdout headline
+## v0.18 corrected-holdout headline
 
-| Architecture | Method | Exit distribution | FLOPs saved | Speedup | Macro-F1 | Micro-F1 | Samples-F1 | Exact | Hamming ↓ |
-|---|---|---|---:|---:|---:|---:|---:|---:|---:|
-| 3-exit | Always final | `0/0/100%` | 0% | 1.000× | 0.862382 | 0.953131 | 0.958889 | 0.876586 | 0.013725 |
-| 3-exit | Full sequential | `6.07/4.34/89.60%` | 8.64% | 1.037× | 0.840128 | 0.937549 | 0.945653 | 0.840830 | 0.018224 |
-| 5-exit | Always final | `0/0/0/0/100%` | 0% | 1.000× | 0.810761 | 0.869498 | 0.887906 | 0.673587 | 0.038985 |
-| 5-exit | Full sequential | `6.83/1.22/18.59/26.30/47.06%` | 30.71% | 1.114× | 0.801356 | 0.868859 | 0.886945 | 0.688581 | 0.039100 |
+| Architecture | Method | Exit distribution | FLOPs saved | Speedup | Macro-F1 | Micro-F1 | Samples-F1 | Exact | Hamming ↓ | All limits met? |
+|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|
+| 3-exit | Always final | `0/0/100%` | 0.00% | 1.000× | 0.862382 | 0.953131 | 0.958889 | 0.876586 | 0.013725 | Reference |
+| 3-exit | `full_strict` | `0.48/5.21/94.30%` | 3.82% | 1.018× | 0.85285 | 0.94530 | — | 0.86159 | 0.01603 | **No** |
+| 5-exit | Always final | `0/0/0/0/100%` | 0.00% | 1.000× | 0.82097 | 0.90734 | 0.92362 | 0.77970 | 0.02780 | Reference |
+| 5-exit | `full_strict` | `4.71/0/12.71/0/82.58%` | 12.70% | 1.057× | 0.79813 | 0.89832 | — | 0.75779 | 0.03010 | **No** |
+| 5-exit | `no_exit1` | `0/0/14.28/0/85.72%` | **9.18%** | **1.037×** | **0.81015** | **0.90375** | — | **0.77163** | **0.02872** | 3/4 limits |
 
-### Holdout quality audit
+`—` indicates that the compact execution summary did not provide a rounded parent Samples-F1 value for that row; the full CSV/JSON output remains authoritative.
 
-| Architecture | Macro drop | Micro drop | Exact drop | Hamming increase | All limits met? |
+### Constraint audit
+
+| Policy | Macro drop | Micro drop | Exact drop | Hamming increase | Status |
 |---|---:|---:|---:|---:|---|
-| 3-exit | 0.022254 | 0.015582 | 0.035755 | 0.004498 | **No** |
-| 5-exit | 0.009406 | 0.000639 | -0.014994 | 0.000115 | **Yes** |
+| 3-exit `full_strict` | 0.00953 | 0.00783 | 0.01499 | 0.00231 | Fails 3/4 |
+| 5-exit `full_strict` | 0.02284 | 0.00902 | 0.02191 | 0.00231 | Fails 4/4 |
+| 5-exit `no_exit1` | **0.010819** | **0.003594** | **0.008074** | **0.000923** | Fails Macro only by **0.000819** |
 
 ---
 
-## Cross-version corrected-holdout ablation
-
-The main cross-version comparison remains restricted to the **canonical 3-exit family**, because every row below is evaluated against the same Always-Exit-3 corrected-holdout reference.
+## Canonical cross-version corrected-holdout table
 
 | Method | FLOPs saved | Macro-F1 | Micro-F1 | Samples-F1 | Exact | Hamming ↓ |
 |---|---:|---:|---:|---:|---:|---:|
@@ -246,220 +232,74 @@ The main cross-version comparison remains restricted to the **canonical 3-exit f
 | v0.15 nonparametric parent risk | 0.44% | 0.863129 | 0.952681 | 0.958505 | 0.875433 | 0.013841 |
 | v0.15 shared logistic parent gate | 0.00% | 0.862382 | 0.953131 | 0.958889 | 0.876586 | 0.013725 |
 | v0.16 multi-objective margin | 5.06% | 0.849203 | 0.942474 | 0.950266 | 0.854671 | 0.016840 |
-| **v0.17 sequential anytime (3-exit)** | **8.64%** | 0.840128 | 0.937549 | 0.945653 | 0.840830 | 0.018224 |
+| v0.17 sequential anytime (3-exit) | 8.64% | 0.840128 | 0.937549 | 0.945653 | 0.840830 | 0.018224 |
+| **v0.18 strict sequential (3-exit)** | **3.82%** | **0.85285** | **0.94530** | — | **0.86159** | **0.01603** |
 
-### Policy-structure traceability
+---
 
-| Method | Stop unit | Decision route | Interpretation |
-|---|---|---|---|
-| v0.13 per-label margin | Segment | Exit 2 → Exit 3 | Current quality-constrained 3-exit adaptive baseline |
-| v0.14 Exit-1 ablation | Segment | Exit 1 → Exit 3 | Quality-preserving but insufficient coverage |
-| v0.15 parent-risk policies | Parent | Exit 2 → Exit 3 | Parent-consistent but computationally negligible |
-| v0.16 multi-objective margin | Segment | Exit 2 → Exit 3 | Compute-forward but holdout-unsafe |
-| v0.17 sequential anytime | Segment, sequential | Exit 1 → Exit 2 → Exit 3 | Uses both early exits; larger saving but holdout-unsafe |
+## Canonical policy-structure comparison
 
-The 3-exit table shows that v0.17 increases compute saving over v0.16 (`8.64%` versus `5.06%`) but does not preserve quality as safely as the lighter v0.13 and v0.14 operating points.
+| Method | Stop unit | Decision route | FLOPs saved | Parent Macro-F1 | Parent Micro-F1 | Exact Match | Hamming ↓ |
+|---|---|---|---:|---:|---:|---:|---:|
+| Always Exit 3 | None | Exit 3 only | 0.00% | 0.86238 | 0.95313 | 0.87659 | 0.01373 |
+| v0.13 per-label margin | Segment | Exit 2 → Exit 3 | 1.44% | 0.85875 | 0.95156 | 0.87428 | 0.01419 |
+| v0.14 Exit-1 ablation | Segment | Exit 1 → Exit 3 | 0.69% | 0.86144 | 0.95276 | 0.87659 | 0.01384 |
+| v0.15 nonparametric parent | Parent | Exit 2 → Exit 3 | 0.44% | 0.86313 | 0.95268 | 0.87543 | 0.01384 |
+| v0.15 shared logistic | Parent | Exit 2 → Exit 3 | 0.00% | 0.86238 | 0.95313 | 0.87659 | 0.01373 |
+| v0.16 multi-objective margin | Segment | Exit 2 → Exit 3 | 5.06% | 0.84920 | 0.94247 | 0.85467 | 0.01684 |
+| v0.17 sequential anytime | Segment, sequential | Exit 1 → Exit 2 → Exit 3 | 8.64% | 0.84013 | 0.93755 | 0.84083 | 0.01822 |
+| **v0.18 strict sequential** | Segment, sequential | Exit 1 → Exit 2 → Exit 3 | **3.82%** | **0.85285** | **0.94530** | **0.86159** | **0.01603** |
+| v0.13 logistic gate | Segment | Exit 2 → Exit 3 | 11.30% | 0.83303 | 0.94353 | 0.85582 | 0.01661 |
+| v0.14 Exit-2 parent-aware | Segment | Exit 2 → Exit 3 | 13.05% | 0.84080 | 0.93397 | 0.83506 | 0.01926 |
 
-Machine-readable table:
-
-```text
-docs/tables/active_budget_anytime_exit_v0.4/v0.17_EE/cross_version_3exit_table.csv
-```
-
-### v0.17 five-exit architecture extension — reported separately
-
-The 5-exit result is scientifically important, but it uses a different full-depth reference and a different training/validation manifest. It is therefore a **within-checkpoint architecture-extension result**, not a directly comparable row in the canonical 3-exit ranking.
-
-| Method | FLOPs saved | Speedup | Macro-F1 | Micro-F1 | Samples-F1 | Exact | Hamming ↓ |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| Always Exit 5 | 0.00% | 1.000× | 0.810761 | 0.869498 | 0.887906 | 0.673587 | 0.038985 |
-| **v0.17 sequential anytime (5-exit)** | **30.71%** | **1.114×** | 0.801356 | 0.868859 | 0.886945 | **0.688581** | 0.039100 |
-
-Machine-readable table:
-
-```text
-docs/tables/active_budget_anytime_exit_v0.4/v0.17_EE/v017_architecture_table.csv
-```
-
-### Cross-version figures
-
-![Cross-version corrected-holdout compute saving for the canonical 3-exit family](docs/tables/active_budget_anytime_exit_v0.4/v0.17_EE/cross_version_3exit_flops.svg)
-
-![Cross-version corrected-holdout quality metrics for the canonical 3-exit family](docs/tables/active_budget_anytime_exit_v0.4/v0.17_EE/cross_version_3exit_quality.svg)
-
-![Cross-version corrected-holdout Hamming loss for the canonical 3-exit family](docs/tables/active_budget_anytime_exit_v0.4/v0.17_EE/cross_version_3exit_hamming.svg)
-
-![v0.17 architecture extension: estimated FLOPs saved](docs/tables/active_budget_anytime_exit_v0.4/v0.17_EE/v017_architecture_flops.svg)
-
-The line plots are descriptive summaries of the tabulated operating points. They should not be interpreted as continuous training curves or as a fair direct comparison between the 3-exit and 5-exit architectures.
+The five-exit v0.18 results are maintained separately because they use their own Always-Exit-5 quality reference.
 
 ---
 
 ## Ablation findings
 
-### Exit 1
-
-Exit 1 adds `5.24` percentage points of saving in the 3-exit policy and `3.91` points in the 5-exit policy. However, the No-Exit-1 variants preserve Macro-F1 and Micro-F1 more strongly. Exit 1 is useful but currently the riskiest stage.
-
-### Label margins
-
-Removing per-label margins caused severe quality collapse:
-
-| Architecture | Full Macro-F1 | No-margin Macro-F1 | Full Exact | No-margin Exact |
-|---|---:|---:|---:|---:|
-| 3-exit | 0.840128 | 0.740154 | 0.840830 | 0.652826 |
-| 5-exit | 0.801356 | 0.704487 | 0.688581 | 0.608997 |
-
-### Stability
-
-Removing previous-exit label stability increased compute saving but reduced quality. Stability is a meaningful safety mechanism.
-
-### Risk
-
-`no_risk` produced the same parent metrics as the full policy in both architectures. The current risk threshold is therefore non-binding and should not be claimed as a demonstrated improvement.
-
-### Confidence only
-
-Confidence-only stopping produced very large saving but severe quality degradation. Multi-label early exit requires label-aware safeguards.
-
----
-
-## Per-label findings
-
-### Recurrent high-risk labels
-
-```text
-audience_reaction_present
-Nick_Vujicic
-Eric_Thomas
-other_speaker_present
-```
-
-### 5-exit improvements
-
-- `silence_present`: `+0.0720` F1
-- `music_present`: `+0.0157` F1
-- `Eckhart_Tolle`: `+0.0060` F1
-- `Jay_Shetty`: `+0.0054` F1
-
-### 5-exit losses
-
-- `Nick_Vujicic`: `−0.0949` F1
-- `audience_reaction_present`: `−0.0851` F1
-- `Eric_Thomas`: `−0.0106` F1
-
-Aggregate metrics must therefore be accompanied by per-label results.
-
----
-
-## Fairness audit
-
-| Check | Result |
-|---|---|
-| Same labels | Pass |
-| Same holdout/features | Pass |
-| Same LATS-v2 configuration | Pass |
-| Same threshold mode | Pass |
-| Same optimiser budget | Pass |
-| Same constraints | Pass |
-| Same training/validation manifest | **Fail** |
-
-The 3-exit model uses 25,519 training rows from the human-corrected balanced v0.8/v0.10 pipeline. The 5-exit model uses 30,950 rows from the earlier v0.6 expanded pipeline.
-
-Safe conclusion:
-
-> The tested five-exit checkpoint supports a stronger within-model sequential quality–compute trade-off. A fair architectural comparison remains future work.
-
----
-
-## v0.16 retained result
-
-v0.16 remains fully documented under:
-
-```text
-docs/tables/active_budget_anytime_exit_v0.4/v0.16_EE/
-```
-
-Its holdout result was:
-
-| Exit-2 fraction | FLOPs saved | Speedup | Macro-F1 | Micro-F1 | Exact | Hamming ↓ |
-|---:|---:|---:|---:|---:|---:|---:|
-| 7.87% | 5.06% | 1.015× | 0.849203 | 0.942474 | 0.854671 | 0.016840 |
-
-v0.16 achieved real acceleration but failed every holdout-quality limit. It remains a compute-forward Pareto ablation.
+- Disabling Exit 1 in the five-exit study reduces saving from 12.70% to 9.18% but makes the policy nearly feasible.
+- Removing the risk veto increases five-exit savings to about 22.78%, while Macro-F1 falls to about 0.78119 and Exact Match to about 0.73472.
+- Removing label margins causes major quality collapse.
+- Removing stability increases savings but reduces quality.
+- Confidence-only stopping is unsafe for this multi-label problem.
 
 ---
 
 ## Reproduction commands
 
-### Three-exit only
-
 ```powershell
 conda activate ASHADIP_V0
 
 powershell -ExecutionPolicy Bypass `
-  -File ".\scripts\v0.17_EE\sequential_anytime_exit\run_sequential_anytime_exit_v017_EE.ps1" `
-  -Run3Only
-```
-
-### Complete tested 3-exit and 5-exit study
-
-```powershell
-powershell -ExecutionPolicy Bypass `
-  -File ".\scripts\v0.17_EE\sequential_anytime_exit\run_sequential_anytime_exit_v017_EE.ps1" `
-  -RunDir5 ".\human_talk_workspace\tata_v0.6_raw_pipeline\main_models\runs\main_v06_expanded_5exit_20260603_210324" `
+  -File ".\scripts\v0.18_EE\fair_sequential_anytime_exit\run_v018_EE.ps1" `
   -TimingRepeats 30
 ```
 
-### Frozen-policy reuse
+Force retraining:
 
 ```powershell
 powershell -ExecutionPolicy Bypass `
-  -File ".\scripts\v0.17_EE\sequential_anytime_exit\run_sequential_anytime_exit_v017_EE.ps1" `
-  -RunDir5 ".\human_talk_workspace\tata_v0.6_raw_pipeline\main_models\runs\main_v06_expanded_5exit_20260603_210324" `
-  -SkipPrechecks `
-  -SkipTuning `
+  -File ".\scripts\v0.18_EE\fair_sequential_anytime_exit\run_v018_EE.ps1" `
+  -ForceRetrain5 `
   -TimingRepeats 30
 ```
 
-Full tuning, evaluation, reporting, and equivalence commands:
-
-```text
-docs/tables/active_budget_anytime_exit_v0.4/v0.17_EE/PS_COMMANDS.md
-```
-
-No v0.17 training command exists because both checkpoints are frozen.
+Full command documentation: `docs/tables/active_budget_anytime_exit_v0.4/v0.18_EE/PS_COMMANDS.md`.
 
 ---
 
-## Documentation package
+## Limitations and non-claims
 
-```text
-docs/active_budget_anytime_exit_v0.4/
-docs/tables/active_budget_anytime_exit_v0.4/v0.16_EE/
-docs/tables/active_budget_anytime_exit_v0.4/v0.17_EE/
-```
-
-The v0.17 package contains method theory, setup, results, ablations, paper-ready wording, PowerShell commands, frozen policies, Pareto fronts, optimisation histories, holdout tables, per-label deltas, fairness records, machine-readable cross-version tables, and figures.
-
----
-
-## Limitations and cautions
-
-- Do not claim that five exits are superior to three exits from this comparison.
-- The five-exit checkpoint uses a different training/validation manifest and a weaker full-depth baseline.
-- The 3-exit sequential policy is validation-eligible but fails all holdout limits.
-- The 5-exit success is relative to Always Exit 5, not to the canonical Always Exit 3 result.
-- The frozen historical LATS-v2 configuration has calibration provenance related to the corrected holdout; this is not an independent external test.
-- Segment thresholds were fixed at 0.5 because per-exit tuned threshold files were unavailable.
-- The current risk mechanism is implemented but was non-binding in the ablations.
-- CPU speedups are hardware-, threading-, batch-, and implementation-specific.
-- Estimated FLOPs and measured latency are not interchangeable.
-- The cross-version line plots connect discrete operating points; they are not optimisation trajectories.
-- v0.17 freezes one operating point per architecture; it is not a runtime user-budget sweep.
-- v0.17 stops the entire sample; it is not label-wise asynchronous inference.
-- Evidence accumulation and distilled knowledge were not part of the primary v0.17 method.
-- Holdout results must not be used for retuning and then presented as untouched evaluation.
+- Do not claim that v0.18 found the optimal quality–compute trade-off.
+- Do not call either `full_strict` policy deployment-ready.
+- Do not claim universal five-exit superiority.
+- Do not use the non-fair v0.17 five-exit result as the principal fair conclusion.
+- The frozen LATS-v2 evaluator may favour the canonical 3-exit probability distribution.
+- Validation eligibility does not imply holdout compliance.
+- Estimated FLOPs and measured latency are different quantities.
+- v0.18 is sample-wise, not label-wise asynchronous inference.
+- Evidence accumulation and distilled knowledge are not completed v0.18 components.
 
 ---
 
@@ -467,10 +307,9 @@ The v0.17 package contains method theory, setup, results, ablations, paper-ready
 
 | Role | Method |
 |---|---|
-| Canonical 3-exit deployment-quality reference | Always Exit 3 + frozen LATS-v2 |
-| 3-exit quality-constrained adaptive baseline | v0.13 per-label margin |
-| 3-exit compute-forward ablation | v0.16 multi-objective margin |
-| Current sequential research result | v0.17 |
-| Successful within-checkpoint policy | v0.17 tested 5-exit full sequential |
-| Unsuccessful v0.17 result | 3-exit full sequential holdout transfer |
-| Required next confirmation | Train a fair 5-exit checkpoint on the canonical 3-exit manifest and repeat v0.17 |
+| Canonical full-quality reference | Always Exit 3 + frozen LATS-v2 |
+| Quality-constrained 3-exit adaptive baseline | v0.13 per-label margin |
+| Fair architecture study | v0.18 |
+| Closest-to-feasible policy | v0.18 five-exit `no_exit1` (`Exit 3 → Exit 5`) |
+| Unsuccessful v0.18 result | Both selected `full_strict` policies |
+| Next experiment | Dedicated No-Exit-1 optimisation with stronger transient-label safeguards |
