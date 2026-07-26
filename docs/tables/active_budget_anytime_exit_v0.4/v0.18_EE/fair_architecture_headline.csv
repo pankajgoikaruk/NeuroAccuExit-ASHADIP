@@ -1,0 +1,6 @@
+architecture,method,exit_distribution,flops_saved_pct,speedup,parent_macro_f1,parent_micro_f1,parent_samples_f1,parent_exact_match,parent_hamming_loss,holdout_status
+3-exit,always_final,0/0/100,0.00,1.000,0.862382,0.953131,0.958889,0.876586,0.013725,reference
+3-exit,full_strict,0.48/5.21/94.30,3.82,1.018,0.85285,0.94530,,0.86159,0.01603,failed_3_of_4
+5-exit,always_final,0/0/0/0/100,0.00,1.000,0.82097,0.90734,0.92362,0.77970,0.02780,reference
+5-exit,full_strict,4.71/0/12.71/0/82.58,12.70,1.057,0.79813,0.89832,,0.75779,0.03010,failed_4_of_4
+5-exit,no_exit1,0/0/14.28/0/85.72,9.18,1.037,0.81015,0.90375,,0.77163,0.02872,failed_macro_only

@@ -1,0 +1,5 @@
+architecture,method,macro_drop,macro_limit,macro_pass,micro_drop,micro_limit,micro_pass,exact_drop,exact_limit,exact_pass,hamming_increase,hamming_limit,hamming_pass,all_pass
+3-exit,full_strict,0.0095320879,0.01,True,0.0078340269,0.005,False,0.0149942330,0.01,False,0.0023068051,0.002,False,False
+3-exit,no_exit1,0.0081186530,0.01,True,0.0070894053,0.005,False,0.0126874279,0.01,False,0.0020761246,0.002,False,False
+5-exit,full_strict,0.0228390361,0.01,False,0.0090184366,0.005,False,0.0219146482,0.01,False,0.0023068051,0.002,False,False
+5-exit,no_exit1,0.0108192433,0.01,False,0.0035938127,0.005,True,0.0080738178,0.01,True,0.0009227220,0.002,True,False

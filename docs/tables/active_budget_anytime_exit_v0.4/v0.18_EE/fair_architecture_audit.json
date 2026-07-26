@@ -1,0 +1,16 @@
+{
+  "experiment": "v0.18_EE_fair_architecture_comparison",
+  "fair_comparison_valid": true,
+  "checks": {
+    "fair_training_valid": true,
+    "same_labels": true,
+    "same_validation_manifest": true,
+    "same_validation_features": true,
+    "same_lats_config": true,
+    "same_threshold_mode": true,
+    "same_population": true,
+    "same_generations": true,
+    "same_constraints": true
+  },
+  "interpretation": "Valid direct 3-exit versus 5-exit architecture comparison; policy quality drops remain measured against each architecture's own final exit."
+}

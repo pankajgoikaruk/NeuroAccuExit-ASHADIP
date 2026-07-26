@@ -1,0 +1,10 @@
+version,method,stop_unit,decision_route,flops_saved_pct,parent_macro_f1,parent_micro_f1,parent_exact_match,parent_hamming_loss,comparison_scope
+v0.10,Always Exit 3,None,Exit 3 only,0.0,0.862382,0.953131,0.876586,0.013725,Canonical 3-exit
+v0.13,Per-label margin,Segment,Exit 2 → Exit 3,1.44,0.858748,0.951556,0.874279,0.014187,Canonical 3-exit
+v0.14,Exit-1 ablation,Segment,Exit 1 → Exit 3,0.69,0.861442,0.952756,0.876586,0.013841,Canonical 3-exit
+v0.15,Nonparametric parent,Parent,Exit 2 → Exit 3,0.44,0.863129,0.952681,0.875433,0.013841,Canonical 3-exit
+v0.15,Shared logistic,Parent,Exit 2 → Exit 3,0.0,0.862382,0.953131,0.876586,0.013725,Canonical 3-exit
+v0.16,Multi-objective margin,Segment,Exit 2 → Exit 3,5.06,0.849203,0.942474,0.854671,0.016840,Canonical 3-exit
+v0.17,Sequential anytime,"Segment, sequential",Exit 1 → Exit 2 → Exit 3,8.64,0.840128,0.937549,0.840830,0.018224,Canonical 3-exit
+v0.18,Strict sequential,"Segment, sequential",Exit 1 → Exit 2 → Exit 3,3.817202,0.852849,0.945297,0.861592,0.016032,Canonical 3-exit
+v0.18,Fair 5-exit No Exit 1,"Segment, sequential",Exit 3 → Exit 5,9.176109,0.810153,0.903750,0.771626,0.028720,Fair 5-exit own baseline

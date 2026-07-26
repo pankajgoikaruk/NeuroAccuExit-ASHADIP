@@ -1,0 +1,6 @@
+architecture,policy,decision_route,early_exit_fraction,estimated_flops_saved_pct,measured_speedup,parent_macro_f1,parent_micro_f1,parent_samples_f1,parent_exact_match,parent_hamming_loss,holdout_status
+3-exit,Always final,Exit 3 only,0.0,0.0,1.0,0.862382,0.953131,0.958889,0.876586,0.013725,Reference
+3-exit,Full strict,Exit 1 → Exit 2 → Exit 3,0.056978,3.817202,1.017832,0.852849,0.945297,0.952277,0.861592,0.016032,Failed
+5-exit,Always final,Exit 5 only,0.0,0.0,1.0,0.820972,0.907343,0.923623,0.779700,0.027797,Reference
+5-exit,Full strict,Exit 1 → Exit 3 → Exit 5 on holdout,0.174164,12.704241,1.057318,0.798133,0.898325,0.913665,0.757785,0.030104,Failed
+5-exit,No Exit 1,Exit 3 → Exit 5,0.142791,9.176109,1.036630,0.810153,0.903750,0.918894,0.771626,0.028720,Macro only failed
