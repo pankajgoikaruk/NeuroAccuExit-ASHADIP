@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "experiment": "v0.18_EE_fair_sequential_anytime_exit",
+  "branch": "active_budget_anytime_exit_v0.4",
+  "status": "completed",
+  "canonical_3exit_run": "main_v010_human_corrected_balanced_3exit_no_hint_20260703_201845",
+  "fair_5exit_run": "main_v018_human_corrected_balanced_5exit_no_hint_auxmatched_20260725_231353",
+  "fair_training_valid": true,
+  "fair_architecture_comparison": true,
+  "training": {
+    "train_rows": 25519,
+    "validation_rows": 1883,
+    "test_rows": 1961,
+    "epochs": 40,
+    "batch_size": 64,
+    "learning_rate": 0.001,
+    "seed": 42,
+    "threshold": 0.5,
+    "tap_blocks_3exit": [1, 3],
+    "tap_blocks_5exit": [1, 2, 3, 4],
+    "loss_weights_3exit": [0.3, 0.3, 1.0],
+    "loss_weights_5exit": [0.15, 0.15, 0.15, 0.15, 1.0],
+    "auxiliary_budget": 0.6,
+    "best_5exit_epoch": 34,
+    "best_5exit_validation_macro_f1": 0.8169104235
+  },
+  "optimisation": {
+    "population": 112,
+    "generations": 70,
+    "grouped_folds": 5,
+    "safety_fraction": 0.5,
+    "minimum_total_early_fraction": 0.02,
+    "minimum_exit1_fraction": 0.0025,
+    "3exit_unique_candidates": 7951,
+    "3exit_pareto_candidates": 9,
+    "5exit_unique_candidates": 7952,
+    "5exit_pareto_candidates": 112
+  },
+  "quality_limits": {"macro_f1_drop": 0.01, "micro_f1_drop": 0.005, "exact_match_drop": 0.01, "hamming_increase": 0.002},
+  "scientific_verdict": "Fair training and stronger risk safeguards succeeded methodologically, but neither full strict policy met all corrected-holdout constraints."
+}
