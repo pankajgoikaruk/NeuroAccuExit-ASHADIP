@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="520" viewBox="0 0 920 520">
+  <rect width="920" height="520" fill="white"/>
+  <text x="460" y="32" text-anchor="middle" font-family="Arial" font-size="20" font-weight="bold">v0.18 Fair Sequential Anytime Exit: Compute Saving and Macro-F1</text>
+  <text x="460" y="55" text-anchor="middle" font-family="Arial" font-size="12">Frozen corrected-holdout operating points; bars are descriptive, not a learning curve</text>
+  <line x1="90" y1="430" x2="860" y2="430" stroke="black"/>
+  <line x1="90" y1="85" x2="90" y2="430" stroke="black"/>
+  <text x="28" y="260" transform="rotate(-90 28 260)" text-anchor="middle" font-family="Arial" font-size="13">Estimated FLOPs saved (%)</text>
+  <text x="475" y="495" text-anchor="middle" font-family="Arial" font-size="13">Operating point</text>
+  <g font-family="Arial" font-size="11" text-anchor="middle">
+    <rect x="130" y="430" width="90" height="0" fill="#78909c"/>
+    <text x="175" y="450">3E Final</text><text x="175" y="415">0.00%</text><text x="175" y="468">M-F1 0.8624</text>
+    <rect x="270" y="342" width="90" height="88" fill="#42a5f5"/>
+    <text x="315" y="450">3E Strict</text><text x="315" y="330">3.82%</text><text x="315" y="468">M-F1 0.8529</text>
+    <rect x="410" y="430" width="90" height="0" fill="#78909c"/>
+    <text x="455" y="450">5E Final</text><text x="455" y="415">0.00%</text><text x="455" y="468">M-F1 0.8210</text>
+    <rect x="550" y="138" width="90" height="292" fill="#ef5350"/>
+    <text x="595" y="450">5E Strict</text><text x="595" y="126">12.70%</text><text x="595" y="468">M-F1 0.7981</text>
+    <rect x="690" y="219" width="90" height="211" fill="#66bb6a"/>
+    <text x="735" y="450">5E No Exit1</text><text x="735" y="207">9.18%</text><text x="735" y="468">M-F1 0.8102</text>
+  </g>
+  <g font-family="Arial" font-size="10" fill="#444">
+    <text x="85" y="432" text-anchor="end">0</text>
+    <text x="85" y="315" text-anchor="end">5</text>
+    <text x="85" y="200" text-anchor="end">10</text>
+    <text x="85" y="85" text-anchor="end">15</text>
+    <line x1="86" y1="315" x2="860" y2="315" stroke="#ddd"/>
+    <line x1="86" y1="200" x2="860" y2="200" stroke="#ddd"/>
+    <line x1="86" y1="85" x2="860" y2="85" stroke="#ddd"/>
+  </g>
+</svg>
