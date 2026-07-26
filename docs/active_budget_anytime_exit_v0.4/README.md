@@ -2,92 +2,71 @@
 
 ## Scope
 
-Branch:
+Branch: `active_budget_anytime_exit_v0.4`
 
-```text
-active_budget_anytime_exit_v0.4
-```
-
-This branch extends the genuine staged-inference programme from v0.11 through v0.17. It contains two completed v0.4 milestones:
-
-```text
-v0.16_EE — multi-objective optimisation of an Exit-2/Exit-3 per-label margin rule
-v0.17_EE — fully sequential active-budget anytime exit across 3 and 5 exits
-```
-
-The CNN backbone and all exit heads remain frozen. Versions tune rules, fit small controllers, optimise stopping parameters, or evaluate sequential staged execution.
-
-## Research progression
+This branch contains the completed computation-adaptive inference sequence from `v0.11_EE` through `v0.18_EE`.
 
 ```text
 v0.11 staged global rule
 → v0.12 validation-derived label risk
-→ v0.13 matched rule and gate comparison
-→ v0.14 parent-aware segment gate
+→ v0.13 matched rules and logistic gate
+→ v0.14 parent-aware counterfactual gate
 → v0.15 whole-parent risk control
-→ v0.16 multi-objective Exit-2 margin optimisation
-→ v0.17 fully sequential 3-exit and 5-exit anytime policy
+→ v0.16 multi-objective Exit-2 optimisation
+→ v0.17 full sequential 3-/5-exit anytime inference
+→ v0.18 fair 3-/5-exit training and strict continuation-risk control
 ```
 
-## v0.17 research questions
+## v0.18 research questions
 
-1. Can the controller make a decision at every non-final exit?
-2. Can very easy samples exit at Exit 1 while harder samples continue?
-3. Can the same optimisation formulation support both 3-exit and 5-exit models?
-4. Which multi-label safeguards are necessary?
-5. Does a safety-buffered Pareto knee transfer better than v0.16's maximum-compute selection?
-6. Does a deeper multi-exit checkpoint provide a better within-model quality–compute trade-off?
+1. Can a five-exit model be trained fairly against the canonical three-exit model?
+2. Does the strong v0.17 five-exit result reproduce under matched data and auxiliary-loss budget?
+3. Can stricter Exit-1 protection reduce early-stage harm?
+4. Can a redesigned label-risk veto become measurably active?
+5. Which policy terms are necessary for multi-label early exit?
+6. Can either architecture satisfy all four corrected-holdout quality constraints while saving computation?
 
-## v0.17 headline
+## Fairness protocol
 
-| Item | 3-exit full sequential | 5-exit full sequential |
-|---|---:|---:|
-| Total early-exit fraction | 10.40% | **52.94%** |
-| Estimated FLOPs saved | 8.64% | **30.71%** |
-| 30-repeat CPU speedup | 1.037× | **1.114×** |
-| Parent Macro-F1 | 0.840128 | 0.801356 |
-| Parent Micro-F1 | 0.937549 | 0.868859 |
-| Parent Exact Match | 0.840830 | 0.688581 |
-| Parent Hamming Loss | 0.018224 | 0.039100 |
-| Own-baseline quality limits | **Failed** | **Passed** |
+The audit passed the same manifest, feature root, label schema, labels, input size, epochs, batch size, optimiser settings, seed, threshold, class-balance settings, no-hint status, final-exit weight, and total auxiliary-loss budget.
+
+| Architecture | Tap blocks | Loss weights | Auxiliary budget |
+|---|---|---|---:|
+| 3-exit | `1,3` | `0.3,0.3,1.0` | 0.60 |
+| 5-exit | `1,2,3,4` | `0.15,0.15,0.15,0.15,1.0` | 0.60 |
+
+## v0.18 headline
+
+| Policy | FLOPs saved | Speedup | Macro-F1 | Micro-F1 | Exact | Hamming ↓ | Constraint status |
+|---|---:|---:|---:|---:|---:|---:|---|
+| 3-exit Always Final | 0.00% | 1.000× | 0.862382 | 0.953131 | 0.876586 | 0.013725 | Reference |
+| 3-exit `full_strict` | 3.82% | 1.018× | 0.85285 | 0.94530 | 0.86159 | 0.01603 | Failed 3/4 |
+| 5-exit Always Final | 0.00% | 1.000× | 0.82097 | 0.90734 | 0.77970 | 0.02780 | Reference |
+| 5-exit `full_strict` | 12.70% | 1.057× | 0.79813 | 0.89832 | 0.75779 | 0.03010 | Failed 4/4 |
+| 5-exit `no_exit1` | **9.18%** | **1.037×** | **0.81015** | **0.90375** | **0.77163** | **0.02872** | Passed 3/4 |
 
 ## Confirmed findings
 
-- Both 3-exit and 5-exit checkpoints passed exact staged/full equivalence.
-- Every non-final exit participates in the primary v0.17 policy.
-- The 3-exit route produced real compute saving and speedup but failed all holdout-quality limits.
-- The tested 5-exit route saved 30.71% estimated FLOPs, achieved 1.114× speedup, and met all within-checkpoint quality limits.
-- Exit 1 contributed additional saving but was the riskiest stage.
-- Label-specific margins and previous-exit stability were strongly supported by ablations.
-- Confidence-only early exit was unsafe.
-- The current risk component was non-binding.
-- Difficult labels remain `audience_reaction_present`, `Nick_Vujicic`, `Eric_Thomas`, and `other_speaker_present`.
-
-## Fairness limitation
-
-The architecture-comparison audit reports:
-
-```text
-fair_comparison_valid = false
-same_validation_manifest = false
-```
-
-The 3-exit model uses the human-corrected balanced v0.8/v0.10 manifest, while the 5-exit model uses the earlier v0.6 expanded manifest.
-
-Safe wording:
-
-> The tested five-exit checkpoint demonstrates a strong within-model sequential quality–efficiency trade-off. The present experiment does not establish that a five-exit architecture is superior to the canonical three-exit architecture.
+- Fair 3-exit/5-exit training is now established.
+- Five exits provide more computation-saving capacity under matched training.
+- Neither full strict policy is holdout-safe.
+- Exit 1 remains the riskiest stopping stage.
+- The v0.18 risk veto is active and quality-protective.
+- Label-specific margins and stability are essential.
+- Confidence-only stopping is unsafe.
+- Validation-to-holdout transfer is the principal unresolved problem.
+- The five-exit No-Exit-1 route is the closest current candidate.
 
 ## Current decision
 
-| Role | Selected method |
+| Role | Method |
 |---|---|
 | Canonical full-quality reference | Always Exit 3 + frozen LATS-v2 |
-| 3-exit quality-constrained adaptive baseline | v0.13 per-label margin |
-| v0.16 role | Compute-forward multi-objective ablation |
-| v0.17 successful result | Tested 5-exit full sequential policy |
-| v0.17 unsuccessful result | 3-exit full sequential holdout transfer |
-| Required next confirmation | Fair 5-exit retraining on the canonical manifest |
+| Quality-constrained adaptive baseline | v0.13 per-label margin |
+| Fair architecture study | v0.18 |
+| Closest-to-feasible candidate | v0.18 five-exit `no_exit1` |
+| Unsuccessful result | Both selected `full_strict` policies |
+| Next step | Dedicated validation-only optimisation of `Exit 3 → Exit 5` |
 
 ## Documentation entry points
 
@@ -98,6 +77,7 @@ docs/active_budget_anytime_exit_v0.4/DOCUMENTATION_UPDATE_SUMMARY.md
 
 docs/tables/active_budget_anytime_exit_v0.4/v0.16_EE/
 docs/tables/active_budget_anytime_exit_v0.4/v0.17_EE/
+docs/tables/active_budget_anytime_exit_v0.4/v0.18_EE/
 ```
 
 ## Main command
@@ -106,9 +86,6 @@ docs/tables/active_budget_anytime_exit_v0.4/v0.17_EE/
 conda activate ASHADIP_V0
 
 powershell -ExecutionPolicy Bypass `
-  -File ".\scripts\v0.17_EE\sequential_anytime_exit\run_sequential_anytime_exit_v017_EE.ps1" `
-  -RunDir5 ".\human_talk_workspace\tata_v0.6_raw_pipeline\main_models\runs\main_v06_expanded_5exit_20260603_210324" `
+  -File ".\scripts\v0.18_EE\fair_sequential_anytime_exit\run_v018_EE.ps1" `
   -TimingRepeats 30
 ```
-
-No new model training was performed in v0.17. The package `PS_COMMANDS.md` records execution, tuning, evaluation, frozen-policy reuse, and reporting commands.
