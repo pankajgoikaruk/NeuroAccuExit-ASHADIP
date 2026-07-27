@@ -8,6 +8,14 @@ from pathlib import Path
 import pandas as pd
 
 
+def as_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return str(value).strip().casefold() in {"true", "1", "yes"}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Create the v0.19 final decision and paper tables.")
     parser.add_argument("--comparison", required=True, type=Path)
@@ -18,11 +26,15 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
     current = pd.read_csv(args.comparison.resolve())
     full = current[current["method"] == "full_targeted"].iloc[0]
-    passed = bool(full["holdout_constraints_met"] and full["estimated_flops_saved_pct"] > 0.0)
+    validation_eligible = as_bool(full["validation_eligible"])
+    holdout_passed = as_bool(full["holdout_constraints_met"])
+    passed = bool(validation_eligible and holdout_passed and float(full["estimated_flops_saved_pct"]) > 0.0)
     recommendation = "FINALISE_V019_EXIT3_TO_EXIT5" if passed else "STOP_EE_AND_RETAIN_PREVIOUS_SAFE_BASELINE"
     decision = {
         "experiment": "v0.19_EE_final_targeted_exit3_to_exit5",
-        "holdout_constraints_met": passed,
+        "validation_eligible": validation_eligible,
+        "holdout_constraints_met": holdout_passed,
+        "final_requirements_met": passed,
         "final_recommendation": recommendation,
         "selected_method": "full_targeted" if passed else None,
         "estimated_flops_saved_pct": float(full["estimated_flops_saved_pct"]),
