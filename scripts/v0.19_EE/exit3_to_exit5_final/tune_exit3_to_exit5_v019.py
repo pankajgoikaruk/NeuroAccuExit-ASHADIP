@@ -78,7 +78,13 @@ def optimise(problem: SimpleNamespace) -> SimpleNamespace:
     args = problem.args
     lower, upper = bounds(len(problem.labels))
     rng = np.random.default_rng(args.seed)
-    population = random_population(args.population_size, lower, upper, rng, seeds=seed_vectors(len(problem.labels)))
+    population = random_population(
+        size=args.population_size,
+        lower=lower,
+        upper=upper,
+        rng=rng,
+        seeds=seed_vectors(len(problem.labels)),
+    )
     cache: dict[tuple[float, ...], dict[str, Any]] = {}
     order: list[tuple[float, ...]] = []
     history: list[dict[str, Any]] = []
