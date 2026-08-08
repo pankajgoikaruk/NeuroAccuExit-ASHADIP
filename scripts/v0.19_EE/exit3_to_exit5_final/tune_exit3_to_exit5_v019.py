@@ -36,6 +36,16 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--parent_id_col", default="parent_clip_id")
     p.add_argument("--threshold_mode", choices=["tuned_per_exit", "final_exit_tuned", "fixed_0p5"], default="fixed_0p5")
     p.add_argument("--fixed_threshold", type=float, default=0.5)
+
+    # Compatibility arguments required by the shared v0.17 prepare_problem() helper.
+    # v0.19 does not optimise these sequential bounds directly; its focused Exit-3
+    # search constructs its own bounds below. They are kept here so the shared data,
+    # checkpoint, threshold, parent-metric and FLOP preparation path can be reused.
+    p.add_argument("--confidence_bounds", default="0.55,0.995")
+    p.add_argument("--delta_bounds", default="0.00,1.00")
+    p.add_argument("--risk_bounds", default="0.00,1.00")
+    p.add_argument("--margin_bounds", default="0.00,0.50")
+
     p.add_argument("--population_size", type=int, default=160)
     p.add_argument("--generations", type=int, default=100)
     p.add_argument("--cv_folds", type=int, default=5)
@@ -137,8 +147,12 @@ def optimise(problem: SimpleNamespace) -> SimpleNamespace:
             "minimum_constraint_violation": float(violations.min()),
         })
         offspring = make_offspring(
-            population=population, objectives=objectives, violations=violations,
-            lower=lower, upper=upper, rng=rng,
+            population=population,
+            objectives=objectives,
+            violations=violations,
+            lower=lower,
+            upper=upper,
+            rng=rng,
             crossover_probability=args.crossover_probability,
             mutation_probability=args.mutation_probability,
             mutation_scale=args.mutation_scale,
@@ -153,9 +167,12 @@ def optimise(problem: SimpleNamespace) -> SimpleNamespace:
 
     all_df = pd.DataFrame([cache[k] for k in order]).drop_duplicates("genes_json")
     final_df = pd.DataFrame([evaluate(g) for g in population]).drop_duplicates("genes_json")
-    pareto = final_df.loc[pareto_front_mask(objective_matrix(final_df), final_df["constraint_violation"].to_numpy(float))].copy()
+    pareto = final_df.loc[
+        pareto_front_mask(objective_matrix(final_df), final_df["constraint_violation"].to_numpy(float))
+    ].copy()
     feasible = all_df[all_df["quality_constraints_met"] == True].copy()
     safe = feasible[feasible.apply(lambda row: within_safety(row, args), axis=1)].copy() if not feasible.empty else feasible
+
     if not safe.empty:
         selected = safe.sort_values(["estimated_flops_saved_pct", "total_early_fraction"], ascending=False).iloc[0]
         status = "safety_buffered_feasible_max_compute"
@@ -168,7 +185,15 @@ def optimise(problem: SimpleNamespace) -> SimpleNamespace:
         selected = all_df.sort_values(["constraint_violation", "estimated_flops_saved_pct"], ascending=[True, False]).iloc[0]
         status = "fallback_minimum_constraint_violation"
         eligible = False
-    return SimpleNamespace(all_df=all_df, pareto=pareto, history=history, selected=selected, status=status, eligible=eligible)
+
+    return SimpleNamespace(
+        all_df=all_df,
+        pareto=pareto,
+        history=history,
+        selected=selected,
+        status=status,
+        eligible=eligible,
+    )
 
 
 def main() -> None:
@@ -176,15 +201,25 @@ def main() -> None:
     problem = prepare_problem(args)
     if problem.num_exits != 5:
         raise RuntimeError(f"v0.19 requires the fair five-exit checkpoint, found {problem.num_exits} exits.")
+
     problem.profile = derive_strict_continuation_profile(
-        y_true=problem.y, exit_probabilities=problem.probs, thresholds_by_exit=problem.thresholds
+        y_true=problem.y,
+        exit_probabilities=problem.probs,
+        thresholds_by_exit=problem.thresholds,
     )
     result = optimise(problem)
+
     args.out_dir.resolve().mkdir(parents=True, exist_ok=True)
     result.all_df.to_csv(args.out_dir / "v019_all_candidates.csv", index=False)
     result.pareto.to_csv(args.out_dir / "v019_pareto_front.csv", index=False)
     pd.DataFrame(result.history).to_csv(args.out_dir / "v019_optimization_history.csv", index=False)
-    pd.DataFrame([{**{k: jsonable(v) for k, v in result.selected.items()}, "selection_status": result.status, "deployment_eligible": result.eligible}]).to_csv(args.out_dir / "v019_selected_policy.csv", index=False)
+    pd.DataFrame([
+        {
+            **{k: jsonable(v) for k, v in result.selected.items()},
+            "selection_status": result.status,
+            "deployment_eligible": result.eligible,
+        }
+    ]).to_csv(args.out_dir / "v019_selected_policy.csv", index=False)
 
     focused = decode_genes(json.loads(str(result.selected["genes_json"])), len(problem.labels))
     adapted = to_v018_compatible_policy(focused)
@@ -202,21 +237,31 @@ def main() -> None:
         "lats_config_json": str(args.lats_config_json.resolve()),
         "labels": problem.labels,
         "architecture": {
-            "model": "ExitNet/TinyAudioCNN", "tap_blocks": list(problem.taps), "num_exits": 5,
-            "n_mels": problem.n_mels, "sequential_route": "Exit 3 -> Exit 5 only",
+            "model": "ExitNet/TinyAudioCNN",
+            "tap_blocks": list(problem.taps),
+            "num_exits": 5,
+            "n_mels": problem.n_mels,
+            "sequential_route": "Exit 3 -> Exit 5 only",
             "disabled_stopping_exits": [1, 2, 4],
         },
         "threshold_mode": args.threshold_mode,
-        "thresholds_by_exit": {f"exit{i+1}": threshold_mapping(problem.labels, t) for i, t in enumerate(problem.thresholds)},
+        "thresholds_by_exit": {
+            f"exit{i + 1}": threshold_mapping(problem.labels, threshold)
+            for i, threshold in enumerate(problem.thresholds)
+        },
         "strict_risk_design": {
             "definition": "Validation-only continuation risk; only the Exit-3 risk vector is used.",
             **{k: v.tolist() for k, v in problem.profile.items()},
         },
         "optimisation": {
             "algorithm": "constraint-aware NSGA-II-style focused Exit-3 gate search",
-            "population_size": args.population_size, "generations": args.generations,
-            "seed": args.seed, "selection": result.status, "safety_fraction": args.safety_fraction,
-            "unique_candidates_evaluated": len(result.all_df), "pareto_candidates": len(result.pareto),
+            "population_size": args.population_size,
+            "generations": args.generations,
+            "seed": args.seed,
+            "selection": result.status,
+            "safety_fraction": args.safety_fraction,
+            "unique_candidates_evaluated": len(result.all_df),
+            "pareto_candidates": len(result.pareto),
         },
         "selection_constraints": {
             "max_parent_macro_f1_drop": args.max_macro_f1_drop,
@@ -233,11 +278,19 @@ def main() -> None:
             "deployment_eligible": result.eligible,
             "focused_exit3_parameters": focused.to_dict(),
             "parameters": adapted.to_dict(),
-            "validation_metrics": {k: jsonable(v) for k, v in result.selected.items() if k not in {"parameters_json", "genes_json"}},
+            "validation_metrics": {
+                k: jsonable(v)
+                for k, v in result.selected.items()
+                if k not in {"parameters_json", "genes_json"}
+            },
         },
         "estimated_flops_by_exit": {k: float(v) for k, v in problem.flops.items()},
-        "important_note": "The corrected holdout remains untouched during tuning. Exits 1, 2 and 4 are disabled as stopping points.",
+        "important_note": (
+            "The corrected holdout remains untouched during tuning. "
+            "Exits 1, 2 and 4 are disabled as stopping points."
+        ),
     }
+
     policy_path = args.out_dir / "frozen_exit3_to_exit5_policy_v019.json"
     save_json(frozen, policy_path)
     print("\nV0.19 final targeted Exit-3 to Exit-5 tuning complete")
