@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -84,6 +85,24 @@ def within_safety(row: pd.Series, args: argparse.Namespace) -> bool:
     )
 
 
+def format_duration(seconds: float) -> str:
+    seconds = max(0, int(round(float(seconds))))
+    hours, remainder = divmod(seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+    if hours:
+        return f"{hours}h {minutes:02d}m {secs:02d}s"
+    if minutes:
+        return f"{minutes}m {secs:02d}s"
+    return f"{secs}s"
+
+
+def progress_bar(completed: int, total: int, width: int = 28) -> str:
+    total = max(1, int(total))
+    completed = min(max(0, int(completed)), total)
+    filled = int(round(width * completed / total))
+    return "[" + "#" * filled + "-" * (width - filled) + "]"
+
+
 def optimise(problem: SimpleNamespace) -> SimpleNamespace:
     args = problem.args
     lower, upper = bounds(len(problem.labels))
@@ -98,6 +117,15 @@ def optimise(problem: SimpleNamespace) -> SimpleNamespace:
     cache: dict[tuple[float, ...], dict[str, Any]] = {}
     order: list[tuple[float, ...]] = []
     history: list[dict[str, Any]] = []
+    search_started = time.perf_counter()
+    progress_csv = problem.out_dir / "v019_optimization_progress.csv"
+
+    print(
+        f"\nV0.19 optimisation started: {args.generations} generations x "
+        f"{args.population_size} population (plus offspring evaluations).",
+        flush=True,
+    )
+    print("Progress will be reported after every completed generation.", flush=True)
 
     def evaluate(genes: np.ndarray) -> dict[str, Any]:
         key = tuple(float(v) for v in np.round(genes, 6))
@@ -139,13 +167,7 @@ def optimise(problem: SimpleNamespace) -> SimpleNamespace:
         objectives = np.vstack([objective_vector(r) for r in rows])
         violations = np.asarray([r["constraint_violation"] for r in rows], dtype=float)
         feasible = [r for r in rows if r["quality_constraints_met"]]
-        history.append({
-            "generation": generation,
-            "unique_candidates": len(cache),
-            "feasible_population": len(feasible),
-            "best_feasible_flops_saved_pct": max([r["estimated_flops_saved_pct"] for r in feasible], default=0.0),
-            "minimum_constraint_violation": float(violations.min()),
-        })
+
         offspring = make_offspring(
             population=population,
             objectives=objectives,
@@ -163,6 +185,46 @@ def optimise(problem: SimpleNamespace) -> SimpleNamespace:
             objectives=np.vstack([objectives, np.vstack([objective_vector(r) for r in offspring_rows])]),
             violations=np.concatenate([violations, np.asarray([r["constraint_violation"] for r in offspring_rows])]),
             size=args.population_size,
+        )
+
+        completed = generation + 1
+        elapsed = time.perf_counter() - search_started
+        average_generation_seconds = elapsed / completed
+        eta_seconds = average_generation_seconds * (args.generations - completed)
+        all_feasible = [r for r in cache.values() if r["quality_constraints_met"]]
+        best_feasible_flops = max(
+            [float(r["estimated_flops_saved_pct"]) for r in all_feasible],
+            default=0.0,
+        )
+        minimum_violation = min(
+            [float(r["constraint_violation"]) for r in cache.values()],
+            default=float("inf"),
+        )
+        progress_row = {
+            "generation": completed,
+            "generations_total": int(args.generations),
+            "progress_pct": 100.0 * completed / max(int(args.generations), 1),
+            "unique_candidates": len(cache),
+            "feasible_candidates_seen": len(all_feasible),
+            "best_feasible_flops_saved_pct": best_feasible_flops,
+            "minimum_constraint_violation_seen": minimum_violation,
+            "elapsed_seconds": elapsed,
+            "eta_seconds": eta_seconds,
+            "average_generation_seconds": average_generation_seconds,
+        }
+        history.append(progress_row)
+        pd.DataFrame(history).to_csv(progress_csv, index=False)
+
+        print(
+            f"{progress_bar(completed, args.generations)} "
+            f"{completed:3d}/{args.generations} "
+            f"({progress_row['progress_pct']:5.1f}%) | "
+            f"candidates={len(cache):5d} | "
+            f"feasible={len(all_feasible):4d} | "
+            f"best_FLOPs={best_feasible_flops:6.2f}% | "
+            f"elapsed={format_duration(elapsed)} | "
+            f"ETA={format_duration(eta_seconds)}",
+            flush=True,
         )
 
     all_df = pd.DataFrame([cache[k] for k in order]).drop_duplicates("genes_json")
